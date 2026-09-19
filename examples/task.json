@@ -1,0 +1,8 @@
+{
+  "id": "document-quickstart",
+  "title": "Document project quickstart",
+  "instructions": "Read the actual project and improve README.md with accurate setup and test commands. Do not invent commands. Only edit README.md.",
+  "paths": ["README.md"],
+  "tests": [["python3", "-m", "unittest", "discover", "-s", "tests", "-v"]],
+  "risk": "docs"
+}

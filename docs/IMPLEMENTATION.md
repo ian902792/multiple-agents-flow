@@ -1,0 +1,76 @@
+# v0.1 implementation contract
+
+Python 3.11+ stdlib. No server, web UI, API subscription proxy, or automatic installation.
+Herdr runs a persistent ordinary supervisor command in an explicitly created workspace.
+Native agent CLIs run as bounded subprocesses, with structured output captured to private logs.
+One implementation lane initially; planner/coder/reviewer are independently configured roles.
+
+## Files and ownership
+
+- `maf/agents.py`: runtime adapters and result parsing (Codex, Claude, Pi, Hermes).
+- `maf/core.py`: config/task validation, atomic state, worktree, stage machine, tests.
+- `maf/github.py`: publication and conservative exact-SHA merge policy.
+- `maf/cli.py`: CLI and Herdr launcher.
+- `tests/`: stdlib unittest, fake subprocesses and temporary Git repositories, no model charges.
+- `README.md`: Traditional Chinese quickstart, walkthrough, safety and recovery.
+
+## Agent adapter contract
+
+`run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int) -> dict`
+
+Return keys: `status` (`ok`, `quota`, `blocked`, `error`), `text` (final response only),
+`session_id` (string or null), `usage` (provider-reported dict or null), `detail` (brief).
+No implicit latest-session resume. Reviewer is a new session every time.
+`role` fields: `runtime`, `model`, `provider`, optional `profile`, `access` (`read`/`edit`).
+Optional `effort`: low/medium/high. Model IDs are configurable but cannot contain provider prefixes.
+Allowed subscription routes: Codex ChatGPT login; Claude first-party subscription login;
+Pi OpenCode Go; Hermes explicitly OpenCode Go. No arbitrary commands, CLI extra args or endpoints.
+Hermes currently supports coder/edit only, with native safe mode and file toolset. The shipped
+alternative is `hermes-coder`, not a misleading full-Hermes preset that cannot constrain a reviewer.
+Codex uses JSONL, Claude JSON, Pi JSONL; Hermes stream JSON shape must be verified before declaring support.
+Adapters must not mistake exit code 0 for a successful model turn (especially quota/error events).
+No YOLO, no automatic API fallback. Scrub conflicting API/provider environment overrides from children.
+Never print/read credentials. Auth status checks can inspect safe CLI status output only.
+Bounded subprocess timeouts terminate their own process group; do not kill unrelated agents.
+
+## State and CLI
+
+Tracked `.maf.json` holds roles and policy. Untracked `.maf-local.json` holds a human's
+confirmation that provider extra usage / Go Use balance are disabled. This is attestation,
+not a remotely enforceable spending cap. No model invocation until it exists.
+Private state under the repository's common Git directory `maf/runs/<id>`; atomic JSON and flock.
+Worktrees under the target repository `.maf-worktrees/`, excluded through Git info/exclude;
+never under `.git`, because native agent safety modes correctly deny edits there.
+Task JSON: `id`, `title`, `instructions`, `paths` (explicit relative path/glob allowlist),
+`tests` (nonempty arrays of argv arrays), `risk` (`manual`, `docs`, `style`, `tests`).
+Task/config snapshots pin each run. Worktrees and branches are unique; never overwrite/reuse unrelated ones.
+
+Commands: `init`, `doctor`, `confirm-billing`, `plan`, `submit`, `work`, `status`, `resume`,
+`publish`, `merge`, `herdr` (launch work in new no-focus Herdr workspace).
+`submit` only queues. `work --once` executes one runnable task; `work` polls local state.
+Execution: queued -> coding -> testing -> reviewing -> verified -> PR / needs-human / merged.
+Every agent stage records a running checkpoint BEFORE invocation. An interrupted/ambiguous stage
+requires explicit recovery acknowledgement; never blindly resend. Quota waits remain pinned
+to the same role; default requires user-supplied reset time before automatic retry.
+Bounded repair rounds, separate reviewer, exact tested SHA, clean tree required after verification.
+Planner outputs a plan for human inspection; its output cannot silently authorize task execution.
+
+## GitHub
+
+Push only owned branch without force. Reconcile existing PR after uncertain network outcomes.
+Default create draft PR. Publish on explicit command; automatic publication is an explicit
+per-submission flag. Auto merge is opt-in per task and requires nonempty approved path policy.
+Run tests on final commit; review attests same commit; base must still match remote base.
+Required GitHub checks must pass (pending/failed/unknown block); no `--admin`, no bypass.
+General docs/static CSS/test-addition categories only; protected files deny before allow.
+AGENTS/CLAUDE/SOUL, workflow/policy, CI, dependencies, auth, finance/trading never low risk.
+Test removals/modifications are manual; v0.1 auto merge supports NEW isolated test files only.
+No auto merge based solely on model-supplied risk or completion text.
+
+## Acceptance
+
+Offline fake-agent end-to-end coding -> command tests -> independent review -> verified.
+Recovery, quota, invalid reviewer JSON, stale commit, path escape, policy changes, empty tests,
+failed checks, base movement, and duplicate publication covered by runnable tests.
+Real subscription smoke only after billing confirmation. No claim that fake tests establish
+live provider, screenshot, or GitHub branch-protection behavior.
