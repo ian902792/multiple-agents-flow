@@ -8,7 +8,8 @@
 - Herdr 0.9.0：新建不切換焦點的工作區、Claude Opus 5 實作、Pi DeepSeek V4.1 Flash 唯讀審查。
 - Codex 與 Claude 的訂閱登入，以及 Pi 的 Go provider / V4.1 預設已核對。
 - 使用者明確確認三種訂閱均不使用超額額度。
-- 54 個離線 unittest 已通過；包含獨立審查發現的回歸測試。
+- 55 個離線 unittest 已通過；包含獨立審查發現與真實 permission denial 的回歸測試。
+- GitHub Actions 已在 Ubuntu 24.04 通過同一套測試（初版 commit `3a9084c`）。
 - 假 agent 的完整流程：隔離 worktree → 實作 → 真正執行測試程式 → 新 session reviewer → verified。
 - 額度等待、不重播 running 狀態、SHA 漂移、設定變動、scope／symlink、有限修正、既有 PR 核對及 strict-check 阻擋。
 - 真實非互動 smoke 已通過：Codex GPT-6 Astra 回應、Claude Opus 5 修改獨立暫存 worktree、Python 驗收、Pi DeepSeek V4.1 Flash medium 獨立審查，tested_sha 與 reviewed_sha 相同。
@@ -21,6 +22,12 @@
 - GitHub PR 實際發布與分支保護合併；單元測試使用 mock，不能證明帳號具有 branch-protection 功能。
 - Hermes coder 的真實模型呼叫尚未測試；只完成 CLI／登入探測與 parser／argv 單元測試。
 - 任意專案的 UI／E2E、睡眠／重開機實機恢復、多人或多 lane 並行。
+
+## 本帳號的 GitHub 限制
+
+對此 private repository 查詢 required status checks protection，GitHub 實際回覆 HTTP 403，要求 GitHub Pro 或 public repository。
+依使用者「不新增費用、保持 private」的選擇，未升級、未改公開、未降低合併門檻。
+因此此 repo 可建立 draft PR、執行 CI，但目前自動合併會停在人工確認。這是方案限制，不是已完成的自動合併實測。
 
 ## 重跑
 

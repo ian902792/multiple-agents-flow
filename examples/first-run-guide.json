@@ -1,0 +1,11 @@
+{
+  "id": "first-run-guide",
+  "title": "Add a concise daily workflow quick reference",
+  "instructions": "Read README.md and maf/cli.py. Create ONLY docs/usage/first-run.md: a concise Traditional Chinese daily-use cheat sheet with accurate commands for submit, work --once, status, resume, publish, and Herdr launch. Explain that --repo precedes the subcommand, no model is called while merely waiting, and this private repo currently requires manual merge because branch protection is unavailable. Do not claim full Hermes reviewer support. Do not modify any other file or run commands. This is a useful documentation improvement, not a test marker.",
+  "paths": ["docs/usage/first-run.md"],
+  "tests": [
+    ["python3", "-m", "unittest", "discover", "-s", "tests", "-q"],
+    ["python3", "-c", "from pathlib import Path; text=Path('docs/usage/first-run.md').read_text(); assert all(word in text for word in ['--repo','submit','status','resume','publish','herdr'])"]
+  ],
+  "risk": "docs"
+}
