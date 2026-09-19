@@ -82,7 +82,7 @@ def _argv(role: dict, timeout: int) -> list[str]:
                 "-c", 'model_reasoning_effort="' + effort + '"', "-"]
     if rt == "claude":
         tools = "Read,Glob,Grep" + (",Edit,Write" if edit else "")
-        return ["claude", "-p", "--output-format", "json", "--model", model, "--effort", effort, "--restricted",
+        return ["claude", "-p", "--output-format", "json", "--model", model, "--effort", effort, "--restricted", "--safe-mode",
                 "--tools", tools, "--allowedTools", tools, "--permission-mode", "acceptEdits",
                 "--permission-prompts", "none", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}']
     if rt == "pi":
@@ -280,7 +280,7 @@ def _parse_pi(out):
     usage = m.get("usage")
     if m.get("stopReason") == "error":
         return _classify(m.get("errorMessage") or "assistant error", sid, usage)
-    if m.get("stopReason") != "stop" or not any(e.get("type") == "agent_end" for e in ev):
+    if m.get("stopReason") != "stop" or not ev or ev[-1].get("type") != "agent_settled":
         return _result("error", "", sid, usage, f"incomplete turn (stopReason={m.get('stopReason')})")
     text = "".join(c.get("text", "") for c in m.get("content") or [] if isinstance(c, dict) and c.get("type") == "text")
     return _ok(text, sid, usage)

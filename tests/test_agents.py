@@ -105,6 +105,7 @@ class ArgvSafety(unittest.TestCase):
         self.assertEqual(argv[argv.index("--tools") + 1], "Read,Glob,Grep,Edit,Write")
         self.assertEqual(argv[argv.index("--allowedTools") + 1], "Read,Glob,Grep,Edit,Write")
         self.assertIn("--restricted", argv)
+        self.assertIn("--safe-mode", argv)
         self.assertIn("--strict-mcp-config", argv)
         self.assertEqual(argv[argv.index("--mcp-config") + 1], '{"mcpServers":{}}')
         self.assertEqual(self.check(dict(CLAUDE, access="read"))[argv.index("--tools") + 1], "Read,Glob,Grep")
@@ -171,13 +172,13 @@ class Parsers(unittest.TestCase):
                                                 {"type": "text", "text": "there"}],
                "usage": {"input": 5, "output": 2}, "stopReason": "stop"}
         ok = jl({"type": "session", "id": "p1"}, {"type": "agent_start"}, {"type": "message_end", "message": msg},
-                {"type": "agent_end", "messages": []})
+                {"type": "agent_settled"})
         self.assertEqual(agents._parse_pi(ok), {"status": "ok", "text": "hi there", "session_id": "p1",
                                                 "usage": {"input": 5, "output": 2}, "detail": "completed"})
         partial = jl({"type": "session", "id": "p2"}, {"type": "message_end", "message": msg})
         self.assertEqual(agents._parse_pi(partial)["status"], "error")
         err = jl({"type": "session", "id": "p3"}, {"type": "message_end", "message": dict(
-            msg, stopReason="error", errorMessage="429 quota exceeded")}, {"type": "agent_end"})
+            msg, stopReason="error", errorMessage="429 quota exceeded")}, {"type": "agent_settled"})
         self.assertEqual(agents._parse_pi(err)["status"], "quota")
         self.assertIsNone(agents._parse_pi(jl({"type": "session", "id": "p4"}, {"type": "agent_start"})))
 
