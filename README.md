@@ -31,6 +31,11 @@ python3 -m unittest discover -s tests -v
 Mixed 配置需要 `codex login`（ChatGPT）、`claude auth login`（Claude 訂閱）及 Pi 中的 OpenCode Go 登入。
 OpenCode Go 可經 Pi 使用，不需要另外安裝 OpenCode CLI。
 
+目前 Pi 0.85.1 必須收到最後 assistant 的 `stop`，以及其後本輪最終 `agent_settled` 才算完成；
+`agent_end` 是可能早於重試的底層事件，不算成功。Pi 停用自動 extensions／skills／templates／context files。
+Claude 使用 `--restricted --safe-mode`，停用自動 CLAUDE.md／skills／plugins／hooks，但保留訂閱登入與權限檢查；
+不使用僅支援 API 的 `--bare`。任務明確提供的 AGENTS／task 指示仍須遵守，需要的技能與上下文須明確指定。
+
 請在供應商控制台確認：
 
 1. Codex / Claude 沒有可自動扣用的超額 credits，未啟用額外用量。
@@ -130,7 +135,7 @@ python3 "$FLOW" --repo "$TARGET" herdr
 
 ## 5. 進度摘要與 todo.md 勾選
 
-`progress` 只讀取本機 run 狀態，不呼叫模型、不取寫入鎖，agent 工作中也能隨時查看：
+`progress` 只讀取本機 run 狀態與有時限的本機 Git 證據檢查，不呼叫模型、不取寫入鎖，agent 工作中也能隨時查看：
 
 ```sh
 python3 "$FLOW" --repo "$TARGET" progress            # 一次性摘要
@@ -139,9 +144,10 @@ python3 "$FLOW" --repo "$TARGET" progress --watch --poll 10 --planner-pane PANE_
 ```
 
 每個 run 顯示 stage／status、測試與審查對應的 commit、`verified` 與 `merged` 兩個獨立欄位，以及 checklist 同步結果。
+已完成審查的候選 run 會重新檢查證據與 worktree；僅兩個保存的 SHA 相同不算 verified。TTY 小於 100 欄時換成多行並依寬度折行（含 38 欄 pane），非 TTY 保留完整表格。
 損壞的狀態檔顯示為 `corrupt`；任務標題與 feedback 中的控制字元會被替換，不會注入終端。
 `--planner-pane` 只能在 Herdr 內（`HERDR_ENV=1`）使用，須明確給目前存活的 pane id；工具用 `herdr pane get` 核對，
-再以 `herdr pane report-metadata` 每次輪詢更新標題（TTL 15 秒，`--poll` 大於 15 時標題會在兩次輪詢間過期）。不送輸入、不改 agent 生命週期。
+再以 `herdr pane report-metadata` 每次輪詢更新 verified／總數及進行中的 stage／task；TTL 至少 15 秒並涵蓋 poll 加 15 秒。pane 消失時警告並繼續顯示。不送輸入、不改 agent 生命週期。
 
 若目標 repo 根目錄有已追蹤的 `todo.md`，可在**唯一一行** checkbox 加註記，把任務接上清單：
 
@@ -155,11 +161,16 @@ submit 時記下這一行（沒有註記＝不接清單；任務 `paths` 不得�
 
 - 打勾只代表 **worktree 上已測試並獨立審查**，不代表已合併或釋出；`merged` 欄位另行顯示。
 - 這一行被改過、消失或重複時不打勾，只顯示警告，run 的 verified 狀態不受影響；修好清單後 `progress --sync` 即可。
+- 同 task-id 即使描述或勾選狀態不同也算重複。寫入時根目錄仍須在設定的 base branch，todo 仍須為已追蹤的一般檔案。
+- 暫存內容 flush 後、replace 前重查檔案 identity／內容；保留其他編輯。未共用鎖的編輯器仍可能在最後檢查與 replace 之間競爭寫入，請避免同時編輯。
+- 僅 publish／merge 受阻的 `needs_human`，若已完成審查且當前證據全數有效，仍可打勾；未完成 coding／testing／reviewing 不可。同步或狀態儲存失敗只警告，不清除驗證證據。
 - 同步後根目錄 `todo.md` 會變成未提交變更，**先 commit 這個進度紀錄再 submit 下一個任務**；乾淨工作樹與合併檢查都不放寬。
 - 之後的失敗嘗試不會自動取消先前的勾；`todo.md` 為 symlink、未追蹤或註記重複時拒絕。
 - 舊 run 沒有快照就沒有清單，不做遷移。
 
 ## 6. 額度與中斷恢復
+
+Claude monthly spend limit／session limit 都視為額度停止；原生 `is_error` 額度結果優先於附帶的 permission_denials，真正權限拒絕仍封鎖。不提高額度、不自動重試未知重置時間。
 
 | 狀態 | 意義／下一步 |
 |---|---|

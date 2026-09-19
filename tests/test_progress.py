@@ -1,4 +1,5 @@
 import contextlib
+import copy
 import io
 import json
 import os
@@ -175,6 +176,7 @@ class ProgressTests(unittest.TestCase):
         self.assertRegex(text, r"verified\s+" + run["tested_sha"][:7] + r"\s+" + run["tested_sha"][:7] + r"\s+yes\s+no\s+marked")
 
     def test_terminal_output_is_sanitized(self):
+        self.assertEqual(progress.clean("normal spaces\u2028next\u2029end"), "normal spaces?next?end")
         self.task.update(id="evil", title="Evil \x1b[2J\x1b]0;x\x07 title\r\n  done")
         run = core.submit(self.repo, self.task)
         run.update(status="needs_human", feedback="bad \x1b[31mred\x1b[0m \x07 news")
@@ -222,9 +224,118 @@ class ProgressTests(unittest.TestCase):
         reports = [argv for argv in calls if argv[:3] == ["herdr", "pane", "report-metadata"]]
         self.assertEqual(len(reports), 2)  # Unchanged display still renews the TTL every poll.
         self.assertEqual(reports[0][3:7], ["pane-1", "--source", "maf-progress", "--title"])
-        self.assertEqual(reports[0][8:], ["--ttl-ms", "15000"])
-        self.assertIn("1 queued", reports[0][7])
+        self.assertEqual(reports[0][8:], ["--ttl-ms", "20000"])
+        self.assertIn("0/1 verified", reports[0][7])
+        self.assertIn("queued coding improve-docs", reports[0][7])
         self.assertFalse(any("input" in argv or "send" in argv or "kill" in argv for argv in calls))
+
+    def test_duplicate_id_with_different_description(self):
+        run = self.verified_run()
+        for original in (TODO, MARKED):
+            for extra in ("- [ ] Different", "- [x] Different", "Plain text"):
+                content = original + extra + " <!-- maf:improve-docs -->\n"
+                self.todo.write_bytes(content.encode())
+                with self.assertRaises(core.FlowError):
+                    progress.project(self.repo, run)
+                self.assertEqual(self.todo.read_bytes(), content.encode())
+
+    def test_projection_rechecks_tracking_and_base(self):
+        run = self.verified_run()
+        core.git(self.repo, "checkout", "-qb", "other")
+        with self.assertRaises(core.FlowError):
+            progress.project(self.repo, run)
+        core.git(self.repo, "checkout", "main")
+        core.git(self.repo, "rm", "--cached", "todo.md")
+        with self.assertRaises(core.FlowError):
+            progress.project(self.repo, run)
+        self.assertEqual(self.todo.read_bytes(), TODO.encode())
+
+    def test_projection_detects_changes_during_temp_flush(self):
+        run = self.verified_run()
+        for replacement in (False, True):
+            self.todo.write_bytes(TODO.encode())
+            def edit(_fd):
+                if replacement:
+                    other = self.repo / "replacement.md"
+                    other.write_bytes(TODO.encode())
+                    os.replace(other, self.todo)
+                else:
+                    self.todo.write_bytes((TODO + "User edit\n").encode())
+            with patch.object(progress.os, "fsync", side_effect=edit), self.assertRaises(core.FlowError):
+                progress.project(self.repo, run)
+            expected = TODO if replacement else TODO + "User edit\n"
+            self.assertEqual(self.todo.read_bytes(), expected.encode())
+            self.assertEqual(list(self.repo.glob(".tmp-todo-*")), [])
+
+    def test_completed_publish_stops_remain_verified(self):
+        run = self.verified_run()
+        run["status"] = "needs_human"
+        for stage in ("verified", "publishing", "pr", "merging", "merged"):
+            run["stage"] = stage
+            self.assertEqual(progress.row_for(self.repo, run)["verified"], "yes")
+            self.assertIn(progress.sync(self.repo, run), ("marked", "already"))
+        for stage in ("coding", "testing", "reviewing"):
+            run["stage"] = stage
+            self.assertEqual(progress.sync(self.repo, run), "pending")
+            self.assertEqual(progress.row_for(self.repo, run)["verified"], "no")
+
+    def test_display_checks_real_evidence_without_writes(self):
+        run = self.verified_run()
+        state = core.run_path(self.repo, run["id"])
+        before = state.read_bytes()
+        for change in ({"tests": [{}]}, {"tests": []},
+                       {"tests": [dict(run["tests"][0], exit_code=1)]},
+                       {"tests": [dict(run["tests"][0], argv=["wrong-command"])]},
+                       {"review": dict(run["review"], risk="invalid")},
+                       {"review": dict(run["review"], findings=["fix this"])},
+                       {"reviewed_sha": "stale"}):
+            self.assertEqual(progress.row_for(self.repo, dict(run, **change))["verified"], "no")
+        with patch.object(core.agents, "run_agent") as agent:
+            (Path(run["worktree"]) / "README.md").write_text("Dirty\n")
+            self.assertEqual(progress.rows(self.repo)[0]["verified"], "no")
+        agent.assert_not_called()
+        self.assertEqual(state.read_bytes(), before)
+        self.assertEqual(self.todo.read_bytes(), TODO.encode())
+
+    def test_sync_timeout_and_save_error_preserve_evidence(self):
+        run = self.verified_run()
+        before = copy.deepcopy(run)
+        err = io.StringIO()
+        with patch.object(core, "verified", side_effect=subprocess.TimeoutExpired("git\x1b\u2028", 60)), \
+                patch.object(core, "save", side_effect=OSError("disk\x1b\u2029 full")), contextlib.redirect_stderr(err):
+            self.assertEqual(progress.sync(self.repo, run), "failed")
+        for key in ("status", "stage", "tests", "review", "tested_sha", "reviewed_sha"):
+            self.assertEqual(run[key], before[key])
+        self.assertIn("outcome not saved", err.getvalue())
+        for char in ("\x1b", "\u2028", "\u2029"):
+            self.assertNotIn(char, err.getvalue())
+        with patch.object(core, "save", side_effect=OSError("disk full")), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(progress.sync(self.repo, run), "marked")
+        self.assertEqual(self.todo.read_bytes(), MARKED.encode())
+        saved = core.load(self.repo, run["id"])
+        for key in ("status", "stage", "tests", "review", "tested_sha", "reviewed_sha"):
+            self.assertEqual(saved[key], before[key])
+
+    def test_compact_38_columns_and_long_poll(self):
+        run = core.submit(self.repo, self.task)
+        rows = progress.rows(self.repo)
+        with patch.object(progress.shutil, "get_terminal_size", return_value=os.terminal_size((38, 24))), \
+                patch.object(progress.sys.stdout, "isatty", return_value=True):
+            self.assertTrue(progress.compact())
+            self.assertTrue(all(len(line) <= 38 for line in progress.render(rows, True).splitlines()))
+        with patch.object(progress.sys.stdout, "isatty", return_value=False):
+            self.assertFalse(progress.compact())
+        self.assertIn("CHECKLIST", progress.render(rows))
+        self.assertGreater(progress.ttl_for(60), 60000)
+        self.assertIn(run["task"]["id"], progress.title_for(rows))
+
+    def test_disappearing_pane_warns_and_returns(self):
+        with patch.object(progress, "rows", return_value=[]), \
+                patch.object(progress, "check_pane", side_effect=[None, core.FlowError("gone")]), \
+                patch.object(progress, "report_pane", side_effect=subprocess.TimeoutExpired("herdr", 15)), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as err:
+            progress.show(self.repo, pane="pane-1", poll=60)
+        self.assertIn("continuing without pane metadata", err.getvalue())
 
 
 if __name__ == "__main__":

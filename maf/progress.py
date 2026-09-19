@@ -1,20 +1,23 @@
 """Read-only progress views and the opt-in todo.md checklist projection. Zero model calls."""
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 
 from . import core
 
 TODO = "todo.md"
 MARKER = re.compile(r"^\s*- \[( |x)\] .*<!-- maf:([a-z][a-z0-9-]{0,39}) -->\s*$")
-CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f  ]")
+CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 PANE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
 # Stages past independent review. Checked never means merged; merged is its own column.
 DONE = ("verified", "publishing", "pr", "merging", "merged")
@@ -94,9 +97,11 @@ def eligible(repo, run):
     if not completed(run):
         raise core.FlowError(f"Run is {run.get('stage')}/{run.get('status')}; only tested and independently reviewed runs are projected.")
     tests = run.get("tests") or []
-    if not tests or any(item.get("exit_code") for item in tests):
+    if (not tests or any(type(item.get("exit_code")) is not int or item["exit_code"] != 0 for item in tests)
+            or [item.get("argv") for item in tests] != run["task"]["tests"]):
         raise core.FlowError("No passing test evidence.")
     head, review = run.get("tested_sha"), run.get("review") or {}
+    core.review_result(json.dumps(review), head)
     if (not head or review.get("decision") != "approve" or review.get("head_sha") != head
             or review.get("findings") or run.get("reviewed_sha") != head):
         raise core.FlowError("Independent approval does not bind to the tested SHA.")
@@ -112,22 +117,30 @@ def verified_now(repo, run):
     return True
 
 
-def replace_bytes(path, before, content, data):
+def projection_root(repo, base):
+    if core.git(repo, "ls-files", "--", TODO) != TODO:
+        raise core.FlowError("todo.md is no longer tracked by Git.")
+    if core.git(repo, "branch", "--show-current") != base:
+        raise core.FlowError(f"Repository root is not on the configured base branch {base}.")
+
+
+def replace_bytes(path, before, content, data, base):
     """Atomic replace guarded by an identity/content recheck just before the rename. Remaining race: an editor
     that is not a maf command (no writer lock) can still write inside the window between this recheck and
     os.replace; that write would be lost. Git history keeps the last committed checklist."""
-    if path.is_symlink():
-        raise core.FlowError("Refusing to write todo.md through a symlink.")
-    stat = path.stat()
-    if (stat.st_dev, stat.st_ino) != (before.st_dev, before.st_ino) or path.read_bytes() != content:
-        raise core.FlowError("todo.md changed while syncing; nothing written. Retry with progress --sync.")
     fd, temp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-todo-")
     try:
         with os.fdopen(fd, "wb") as stream:
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
-        os.chmod(temp, stat.st_mode & 0o777)
+        os.chmod(temp, before.st_mode & 0o777)
+        projection_root(path.parent, base)
+        current = path.lstat()
+        if (not stat.S_ISREG(current.st_mode)
+                or (current.st_dev, current.st_ino) != (before.st_dev, before.st_ino)
+                or path.read_bytes() != content):
+            raise core.FlowError("todo.md changed while syncing; nothing written. Retry with progress --sync.")
         os.replace(temp, path)
     finally:
         if os.path.exists(temp):
@@ -140,15 +153,14 @@ def project(repo, run):
     path = checklist_file(repo)
     if path is None:
         raise core.FlowError("todo.md no longer exists.")
-    if core.git(repo, "ls-files", "--", TODO) != TODO:
-        raise core.FlowError("todo.md is no longer tracked by Git.")
     base = run["config"]["base_branch"]
-    if core.git(repo, "branch", "--show-current") != base:
-        raise core.FlowError(f"Repository root is not on the configured base branch {base}.")
+    projection_root(repo, base)
     target = record["line"].encode("utf-8")
     done = target.replace(b"[ ]", b"[x]", 1)
     before = path.stat()
     content = path.read_bytes()
+    if content.count(f"<!-- maf:{task_id} -->".encode()) != 1:
+        raise core.FlowError(f"todo.md must have exactly one maf:{task_id} marker.")
     found = marker_lines(content, task_id)  # Any line with this marker counts, whatever its text or state.
     if len(found) != 1:
         raise core.FlowError(f"todo.md has {len(found)} lines marked maf:{task_id}; keep exactly one, then run progress --sync.")
@@ -160,7 +172,7 @@ def project(repo, run):
         raise core.FlowError("Snapshotted todo.md line was edited; update the checklist manually.")
     lines = content.splitlines(keepends=True)
     lines[index] = done + lines[index][len(target):]
-    replace_bytes(path, before, content, b"".join(lines))
+    replace_bytes(path, before, content, b"".join(lines), base)
     return "marked"
 
 
@@ -271,6 +283,9 @@ def render(rows, compact=False):
     lines.append(f"{len(rows)} run(s)" + ("; " + ", ".join(f"{n} {s}" for s, n in sorted(counts.items())) if counts else ""))
     lines.append("verified = tests + independent review at HEAD; not merged, not released." if compact else
                  "verified/checked = tests + independent review on the run worktree; not merged, not released.")
+    if compact:
+        width = max(1, shutil.get_terminal_size((38, 24)).columns)
+        lines = [part for line in lines for part in textwrap.wrap(line, width=width)]
     return "\n".join(lines)
 
 
@@ -297,7 +312,7 @@ def check_pane(repo, pane):
 
 def ttl_for(poll):
     """Metadata must outlive one poll plus the report itself, even when --poll exceeds the 15 s default."""
-    return max(TTL_MS, 2 * int(poll) * 1000)
+    return max(TTL_MS, (int(poll) + 15) * 1000)
 
 
 def report_pane(repo, pane, title, poll=5):
@@ -327,8 +342,7 @@ def show(repo, watch=False, poll=5, pane=None):
                     except (core.FlowError, OSError, subprocess.SubprocessError):
                         warn(f"progress: pane {pane} is gone; continuing without pane metadata.")
                         pane = None
-                        continue
-                    if str(exc) != herdr_error:
+                    if pane and str(exc) != herdr_error:
                         warn(f"progress: pane metadata not refreshed: {exc}")
                         herdr_error = str(exc)
             if not watch:

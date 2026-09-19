@@ -106,6 +106,7 @@ class ArgvSafety(unittest.TestCase):
         self.assertEqual(argv[argv.index("--allowedTools") + 1], "Read,Glob,Grep,Edit,Write")
         self.assertIn("--restricted", argv)
         self.assertIn("--safe-mode", argv)
+        self.assertNotIn("--bare", argv)
         self.assertIn("--strict-mcp-config", argv)
         self.assertEqual(argv[argv.index("--mcp-config") + 1], '{"mcpServers":{}}')
         self.assertEqual(self.check(dict(CLAUDE, access="read"))[argv.index("--tools") + 1], "Read,Glob,Grep")
@@ -181,6 +182,30 @@ class Parsers(unittest.TestCase):
             msg, stopReason="error", errorMessage="429 quota exceeded")}, {"type": "agent_settled"})
         self.assertEqual(agents._parse_pi(err)["status"], "quota")
         self.assertIsNone(agents._parse_pi(jl({"type": "session", "id": "p4"}, {"type": "agent_start"})))
+
+    def test_claude_quota_precedes_permission_denials(self):
+        for message in ("You've hit your monthly spend limit", "You've hit your session limit"):
+            for denials in ([], [{"tool_name": "Write"}]):
+                with self.subTest(message=message, denials=denials):
+                    result = {"type": "result", "subtype": "success", "is_error": True,
+                              "result": message, "permission_denials": denials}
+                    self.assertEqual(agents._parse_claude(json.dumps(result))["status"], "quota")
+        for error in (False, True):
+            result = {"type": "result", "subtype": "success", "is_error": error,
+                      "result": "Permission denied", "permission_denials": [{"tool_name": "Write"}]}
+            self.assertEqual(agents._parse_claude(json.dumps(result))["status"], "blocked")
+
+    def test_pi_requires_current_settled_turn(self):
+        message = {"type": "message_end", "message": {"role": "assistant", "stopReason": "stop",
+                   "content": [{"type": "text", "text": "done"}]}}
+        settled = {"type": "agent_settled"}
+        for events in ([message, {"type": "agent_end"}], [settled, message],
+                       [message, settled, {"type": "agent_start"}],
+                       [message, settled, {"type": "agent_start"}, settled],
+                       [message, settled, message]):
+            with self.subTest(events=events):
+                self.assertEqual(agents._parse_pi(jl(*events))["status"], "error")
+        self.assertEqual(agents._parse_pi(jl(message, settled, {"type": "agent_start"}, message, settled))["status"], "ok")
 
     def test_hermes(self):
         ok = jl({"type": "system", "subtype": "init", "model": "glm-5.3", "session_id": "h1"},

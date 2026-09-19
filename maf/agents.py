@@ -22,7 +22,7 @@ _ROLE_KEYS = {"runtime", "model", "provider", "profile", "access", "effort"}
 _SAFE_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _QUOTA = re.compile(
     r"usage limit|rate[ _-]?limit|quota|too many requests|\b429\b|out of (?:extra )?usage"
-    r"|hit your limit|insufficient (?:credits?|balance)|exhausted", re.I)
+    r"|hit your limit|monthly spend limit|session limit|insufficient (?:credits?|balance)|exhausted", re.I)
 _AUTH = re.compile(r"not logged in|log ?in|unauthori[sz]ed|authenticat|\b401\b|permission|approval", re.I)
 _SCRUB_PREFIX = ("ANTHROPIC_", "OPENAI_", "OPENCODE_", "OPENROUTER_", "AZURE_OPENAI_", "CLAUDE_", "PI_")
 _SCRUB_SUFFIX = ("_API_KEY", "_BASE_URL", "_AUTH_TOKEN", "_API_BASE")
@@ -261,26 +261,32 @@ def _parse_claude(out):
         return None
     r = res[-1]
     sid, usage = r.get("session_id"), r.get("usage")
-    if r.get("permission_denials"):
-        return _result("blocked", session_id=sid, usage=usage, detail="Claude reported permission denials; no approval bypass.")
+    failure = None
     if r.get("is_error") or r.get("subtype") != "success":
         errs = r.get("errors") or []
-        return _classify(f"{r.get('subtype')}: {r.get('result') or ' '.join(map(str, errs))}", sid, usage)
+        failure = _classify(f"{r.get('subtype')}: {r.get('result') or ' '.join(map(str, errs))}", sid, usage)
+        if r.get("is_error") and failure["status"] == "quota":
+            return failure
+    if r.get("permission_denials"):
+        return _result("blocked", session_id=sid, usage=usage, detail="Claude reported permission denials; no approval bypass.")
+    if failure:
+        return failure
     return _ok(r.get("result") or "", sid, usage)
 
 
 def _parse_pi(out):
     ev = _jsonl(out)
     sid = next((e.get("id") for e in ev if e.get("type") == "session"), None)
-    msgs = [e["message"] for e in ev if e.get("type") == "message_end"
+    msgs = [(i, e["message"]) for i, e in enumerate(ev) if e.get("type") == "message_end"
             and isinstance(e.get("message"), dict) and e["message"].get("role") == "assistant"]
     if not msgs:
         return None
-    m = msgs[-1]
+    index, m = msgs[-1]
     usage = m.get("usage")
     if m.get("stopReason") == "error":
         return _classify(m.get("errorMessage") or "assistant error", sid, usage)
-    if m.get("stopReason") != "stop" or not ev or ev[-1].get("type") != "agent_settled":
+    if (m.get("stopReason") != "stop" or ev[-1].get("type") != "agent_settled"
+            or any(e.get("type") in ("agent_start", "message_start") for e in ev[index + 1:])):
         return _result("error", "", sid, usage, f"incomplete turn (stopReason={m.get('stopReason')})")
     text = "".join(c.get("text", "") for c in m.get("content") or [] if isinstance(c, dict) and c.get("type") == "text")
     return _ok(text, sid, usage)
