@@ -18,6 +18,7 @@ PANE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
 DONE = ("verified", "publishing", "pr", "merging", "merged")
 COLUMNS = ("task", "run", "stage", "status", "tested", "reviewed", "verified", "merged", "checklist")
 TTL_MS = 15000
+sleep = time.sleep  # Watch pause only; subprocess waits keep the real time.sleep even when tests stub this.
 
 
 def clean(text, width=120):
@@ -252,6 +253,6 @@ def show(repo, watch=False, poll=5, pane=None):
                         herdr_error = str(exc)
             if not watch:
                 return
-            time.sleep(poll)
+            sleep(poll)
     except KeyboardInterrupt:
         print("\nprogress: watch stopped.", file=sys.stderr, flush=True)

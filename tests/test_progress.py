@@ -123,8 +123,8 @@ class ProgressTests(unittest.TestCase):
         self.commit("User edits")
         self.assertEqual(progress.sync(self.repo, run), "marked")
         self.assertEqual(self.todo.read_bytes(), edited.replace("- [ ] Improve docs", "- [x] Improve docs").encode())
-        for content in (edited.replace("Improve docs <!--", "Improve the docs <!--"),
-                        edited.replace("- [ ] Unrelated item", "- [ ] Improve docs <!-- maf:improve-docs -->")):
+        for content in (edited.replace("Improve docs <!--", "Improve the docs <!--"),  # edited line
+                        edited.replace("New line <!-- maf:other -->", "Improve docs <!-- maf:improve-docs -->")):  # duplicate
             self.todo.write_bytes(content.encode())
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(progress.sync(self.repo, run), "failed")
@@ -139,8 +139,9 @@ class ProgressTests(unittest.TestCase):
         self.commit("Duplicate marker")
         with self.assertRaises(core.FlowError):
             core.submit(self.repo, self.task)
+        self.todo.write_bytes(TODO.encode())
         core.git(self.repo, "rm", "-q", "--cached", "todo.md")
-        self.commit("Untracked todo")
+        core.git(self.repo, "commit", "-qm", "Untracked todo")  # File stays on disk but is no longer tracked.
         with self.assertRaises(core.FlowError):
             core.submit(self.repo, self.task)
         self.todo.unlink()
@@ -195,7 +196,7 @@ class ProgressTests(unittest.TestCase):
             if sleeper.calls == 3:
                 raise KeyboardInterrupt
         sleeper.calls = 0
-        with patch.object(progress.time, "sleep", side_effect=sleeper):
+        with patch.object(progress, "sleep", side_effect=sleeper):
             text = self.output(["progress", "--watch", "--poll", "2"])
         self.assertEqual(text.count("--- "), 2)
         self.assertEqual(sleeper.calls, 3)
@@ -215,7 +216,7 @@ class ProgressTests(unittest.TestCase):
         with patch.dict(os.environ, {"HERDR_ENV": "1"}), patch.object(core, "command", side_effect=fake):
             with self.assertRaises(core.FlowError):
                 progress.show(self.repo, pane="--pane")
-            with patch.object(progress.time, "sleep", side_effect=[None, KeyboardInterrupt]):
+            with patch.object(progress, "sleep", side_effect=[None, KeyboardInterrupt]):
                 self.output(["progress", "--watch", "--planner-pane", "pane-1"])
         self.assertEqual(calls[0], ["herdr", "pane", "get", "pane-1"])
         reports = [argv for argv in calls if argv[:3] == ["herdr", "pane", "report-metadata"]]
