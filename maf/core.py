@@ -247,6 +247,8 @@ def submit(repo, task, publish=False, auto_merge=False):
         raise FlowError("Submit from the configured base branch.")
     if auto_merge and (not publish or task["risk"] == "manual"):
         raise FlowError("Auto merge requires --publish and a non-manual risk category.")
+    from .progress import snapshot
+    checklist = snapshot(repo, task)  # Captured before any agent runs; None means no checklist integration.
     base = git(repo, "rev-parse", "HEAD")
     run_id = task["id"] + "-" + uuid.uuid4().hex[:10]
     worktree = worktrees_for(repo) / run_id
@@ -260,6 +262,8 @@ def submit(repo, task, publish=False, auto_merge=False):
            "base_sha": base, "owned_head": base, "config": config, "config_hash": digest(config), "task": task,
            "status": "creating", "stage": "coding", "repairs": 0, "created_at": time.time(),
            "publish": bool(publish), "auto_merge": bool(auto_merge), "feedback": "", "agents": []}
+    if checklist:
+        run["checklist"] = checklist
     save(repo, run)
     try:
         git(repo, "worktree", "add", "-b", branch, str(worktree), base)
@@ -513,6 +517,9 @@ def process(repo, run):
         run["feedback"] = "Interrupted. Confirm no previous subprocess remains before resume."
         save(repo, run)
         raise
+    if run.get("checklist"):
+        from .progress import sync
+        sync(repo, run)  # Local projection only; never raises and never touches status/stage.
 
 
 def resume(repo, run_id, acknowledge=False, after=None):

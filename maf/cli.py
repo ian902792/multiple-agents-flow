@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 
-from . import agents, core, github
+from . import agents, core, github, progress
 
 
 def parser():
@@ -31,6 +31,11 @@ def parser():
     p.add_argument("--poll", type=int, default=30)
     p = commands.add_parser("status", help="Print local run states, or one run's full evidence")
     p.add_argument("run_id", nargs="?")
+    p = commands.add_parser("progress", help="Read-only terminal summary of every run; no lock, no model calls")
+    p.add_argument("--watch", action="store_true", help="Keep polling and print only when the summary changes; Ctrl-C exits")
+    p.add_argument("--poll", type=int, default=5)
+    p.add_argument("--planner-pane", metavar="PANE_ID", help="Inside Herdr only: refresh this live pane's metadata title each poll")
+    p.add_argument("--sync", action="store_true", help="First project verified runs into todo.md under the writer lock")
     p = commands.add_parser("resume", help="Resume only after inspecting an interrupted/quota-blocked run")
     p.add_argument("run_id")
     p.add_argument("--acknowledge-stopped", action="store_true")
@@ -94,6 +99,14 @@ def main(argv=None):
                 raise core.FlowError("--poll must be 1..3600 seconds.")
             core.work(repo, args.once, args.poll)
             return
+        elif args.action == "progress":
+            if not 1 <= args.poll <= 3600:
+                raise core.FlowError("--poll must be 1..3600 seconds.")
+            if args.sync:
+                with core.exclusive(repo):
+                    progress.sync_all(repo)
+            progress.show(repo, args.watch, args.poll, args.planner_pane)
+            return
         elif args.action == "herdr":
             core.config_for(repo)
             with core.exclusive(repo):
@@ -130,6 +143,7 @@ def main(argv=None):
                     else:
                         run = core.load(repo, args.run_id)
                         getattr(github, args.action)(repo, run)
+                        progress.sync(repo, run)
                         result = run
         print(json.dumps(result, ensure_ascii=False, indent=2))
     except (core.FlowError, ValueError, OSError, subprocess.SubprocessError) as exc:

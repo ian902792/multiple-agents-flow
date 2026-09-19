@@ -10,6 +10,7 @@ One implementation lane initially; planner/coder/reviewer are independently conf
 - `maf/agents.py`: runtime adapters and result parsing (Codex, Claude, Pi, Hermes).
 - `maf/core.py`: config/task validation, atomic state, worktree, stage machine, tests.
 - `maf/github.py`: publication and conservative exact-SHA merge policy.
+- `maf/progress.py`: read-only terminal summary, optional Herdr pane metadata, todo.md checklist projection.
 - `maf/cli.py`: CLI and Herdr launcher.
 - `tests/`: stdlib unittest, fake subprocesses and temporary Git repositories, no model charges.
 - `README.md`: Traditional Chinese quickstart, walkthrough, safety and recovery.
@@ -45,7 +46,7 @@ Task JSON: `id`, `title`, `instructions`, `paths` (explicit relative path/glob a
 `tests` (nonempty arrays of argv arrays), `risk` (`manual`, `docs`, `style`, `tests`).
 Task/config snapshots pin each run. Worktrees and branches are unique; never overwrite/reuse unrelated ones.
 
-Commands: `init`, `doctor`, `confirm-billing`, `plan`, `submit`, `work`, `status`, `resume`,
+Commands: `init`, `doctor`, `confirm-billing`, `plan`, `submit`, `work`, `status`, `progress`, `resume`,
 `publish`, `merge`, `herdr` (launch work in new no-focus Herdr workspace).
 `submit` only queues. `work --once` executes one runnable task; `work` polls local state.
 Execution: queued -> coding -> testing -> reviewing -> verified -> PR / needs-human / merged.
@@ -54,6 +55,32 @@ requires explicit recovery acknowledgement; never blindly resend. Quota waits re
 to the same role; default requires user-supplied reset time before automatic retry.
 Bounded repair rounds, separate reviewer, exact tested SHA, clean tree required after verification.
 Planner outputs a plan for human inspection; its output cannot silently authorize task execution.
+
+## Progress and checklist
+
+`progress [--watch] [--poll N] [--planner-pane ID] [--sync]` reads run state without the writer lock
+and without any model call. It shows stage/status, tested and reviewed SHAs, and `verified` and `merged`
+as separate columns; corrupt runs are listed, not skipped. Titles and feedback are stripped of control
+characters before printing. `--watch` prints only on change, sleeps the bounded poll interval, and exits
+cleanly on Ctrl-C. `--planner-pane` requires `HERDR_ENV=1` and an explicit live pane id verified with
+`herdr pane get`; each poll runs `herdr pane report-metadata PANE --source maf-progress --title TEXT
+--ttl-ms 15000` to renew the TTL even when the display is unchanged. No input is sent and no agent
+lifecycle is touched; Herdr failures are warnings only.
+
+Checklist: a task opts in when the tracked, regular root `todo.md` has exactly one unchecked line
+`- [ ] text <!-- maf:task-id -->`. `submit` snapshots that full line before any agent runs (`run.checklist`);
+no marker means no integration, and runs without a snapshot need no migration. Task `paths` must not
+cover `todo.md` (no coder self-signoff); symlinks, untracked files and duplicate markers are rejected.
+After `process` returns, and on explicit `progress --sync` under the writer lock, a run whose status is
+past independent review (`verified`/`publishing`/`pr`/`merging`/`merged`), whose tests all passed, whose
+review approves the tested SHA and whose worktree HEAD still equals it (`core.verified`) has the exact
+snapshotted line replaced by `[x]` in the ROOT `todo.md`; all other bytes are preserved and the write is an
+atomic replace that refuses symlinks. A missing, edited or duplicated line fails closed with a visible
+warning; the outcome (`marked`, `already`, `failed` + detail) is recorded in `run.checklist.synced` without
+touching status/stage or replaying agents. Retry is idempotent. Nothing is ever unchecked automatically.
+A checked box means tested and independently reviewed on the run worktree; it does NOT mean merged or
+released. The root `todo.md` becomes intentionally dirty: commit that progress record before the next
+`submit`; the clean-tree and merge checks are not relaxed.
 
 ## GitHub
 

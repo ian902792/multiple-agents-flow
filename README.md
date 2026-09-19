@@ -128,7 +128,38 @@ python3 "$FLOW" --repo "$TARGET" herdr
 - 電腦重新啟動後，重新進入 Herdr、查看 `status`、處理模糊中斷，再執行 `herdr`。第一版不自動安裝 launchd。
 - 沒有 Herdr 也能手動執行 `work`；`herdr` 指令本身必須在 `HERDR_ENV=1` 的 pane 內執行。
 
-## 5. 額度與中斷恢復
+## 5. 進度摘要與 todo.md 勾選
+
+`progress` 只讀取本機 run 狀態，不呼叫模型、不取寫入鎖，agent 工作中也能隨時查看：
+
+```sh
+python3 "$FLOW" --repo "$TARGET" progress            # 一次性摘要
+python3 "$FLOW" --repo "$TARGET" progress --watch    # 只在內容改變時重印；Ctrl-C 結束
+python3 "$FLOW" --repo "$TARGET" progress --watch --poll 10 --planner-pane PANE_ID
+```
+
+每個 run 顯示 stage／status、測試與審查對應的 commit、`verified` 與 `merged` 兩個獨立欄位，以及 checklist 同步結果。
+損壞的狀態檔顯示為 `corrupt`；任務標題與 feedback 中的控制字元會被替換，不會注入終端。
+`--planner-pane` 只能在 Herdr 內（`HERDR_ENV=1`）使用，須明確給目前存活的 pane id；工具用 `herdr pane get` 核對，
+再以 `herdr pane report-metadata` 每次輪詢更新標題（TTL 15 秒，`--poll` 大於 15 時標題會在兩次輪詢間過期）。不送輸入、不改 agent 生命週期。
+
+若目標 repo 根目錄有已追蹤的 `todo.md`，可在**唯一一行** checkbox 加註記，把任務接上清單：
+
+```markdown
+- [ ] 補上本機啟動說明 <!-- maf:document-quickstart -->
+```
+
+submit 時記下這一行（沒有註記＝不接清單；任務 `paths` 不得涵蓋 `todo.md`，避免 Coder 自己簽收）。
+測試通過且 Reviewer 以相同 commit 獨立 approve 後，`work` 會把根目錄 `todo.md` 的這一行改成 `[x]`，其餘位元組不動；
+也可用 `progress --sync` 明確重做。限制：
+
+- 打勾只代表 **worktree 上已測試並獨立審查**，不代表已合併或釋出；`merged` 欄位另行顯示。
+- 這一行被改過、消失或重複時不打勾，只顯示警告，run 的 verified 狀態不受影響；修好清單後 `progress --sync` 即可。
+- 同步後根目錄 `todo.md` 會變成未提交變更，**先 commit 這個進度紀錄再 submit 下一個任務**；乾淨工作樹與合併檢查都不放寬。
+- 之後的失敗嘗試不會自動取消先前的勾；`todo.md` 為 symlink、未追蹤或註記重複時拒絕。
+- 舊 run 沒有快照就沒有清單，不做遷移。
+
+## 6. 額度與中斷恢復
 
 | 狀態 | 意義／下一步 |
 |---|---|
@@ -158,7 +189,7 @@ python3 "$FLOW" --repo "$TARGET" resume RUN_ID --acknowledge-stopped \
 `needs_human` 若已在 `verified`／`publishing`／`pr`／`merging` 階段，不使用 resume 重跑模型；依 feedback 處理發布或合併門檻。
 不要刪除 worktree、強制 reset 或重複開 PR 來「修復」狀態。
 
-## 6. PR 與低風險自動合併
+## 7. PR 與低風險自動合併
 
 ```sh
 # 先完成本機驗證，再明確發布
@@ -187,7 +218,7 @@ python3 "$FLOW" --repo "$TARGET" submit task.json --publish --auto-merge
 程式不使用 `--admin`、force push 或刪除分支／worktree。保留你現有 GitHub 保護規則。
 多人／多 PR 合併後 base 會前進；下一個舊基底任務須人工同步與重新驗證。第一版不自動解衝突或批次 rebase。
 
-## 7. 更換工具與模型
+## 8. 更換工具與模型
 
 編輯 `.maf.json` 的 `roles`，不要改程式碼：
 
@@ -212,7 +243,7 @@ Planner／Reviewer 必須 `read`，Coder 必須 `edit`；不接受任意 shell c
 Hermes adapter 使用 safe mode，停用 profile 的額外 hooks／MCP／skills，profile 僅供帳號與隔離目錄選擇，模型由本工具明確指定。
 實際支援與限制見 [實測紀錄](docs/VALIDATION.md)。不要將 profile 名稱誤認成獨立額度。
 
-## 8. UI／E2E 與省 token
+## 9. UI／E2E 與省 token
 
 將目標專案既有的 Playwright／其他 E2E 指令列入 task.tests；測試由程式執行，不由 LLM 每次重新點擊。
 若需要視覺審查，請在 instructions 明確要求 Reviewer 讀取測試產出的截圖路徑，並選用已實測可讀圖的 runtime／模型。
