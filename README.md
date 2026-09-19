@@ -155,6 +155,7 @@ python3 "$FLOW" --repo "$TARGET" resume RUN_ID --acknowledge-stopped \
 
 沒有可靠重置時間就保持等待，由你確認額度恢復後 resume。每次再遇 quota 都重新等待，不無限重試。
 達到修正上限則重新規畫、建立新任務。網路發布不明時使用 `publish RUN_ID`；合併不明時使用 `merge RUN_ID` 核對既有 PR。
+`needs_human` 若已在 `verified`／`publishing`／`pr`／`merging` 階段，不使用 resume 重跑模型；依 feedback 處理發布或合併門檻。
 不要刪除 worktree、強制 reset 或重複開 PR 來「修復」狀態。
 
 ## 6. PR 與低風險自動合併
@@ -234,6 +235,7 @@ python3 -m unittest discover -s tests -v
 ```
 
 架構／實作契約：[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。實際驗證範圍：[docs/VALIDATION.md](docs/VALIDATION.md)。
+本工具產出的每日操作速查可見 [PR #1](https://github.com/ian902792/multiple-agents-flow/pull/1)，目前因 private repo 分支保護方案限制保留為 draft，需人工確認。
 
 設計參考 [bestony/herdr-dispatch](https://github.com/bestony/herdr-dispatch) 的 task/worktree/驗收分離；本實作未複製其程式。
 介面查證：[Codex 非互動模式](https://learn.chatgpt.com/docs/non-interactive-mode)、[Claude 程式化使用](https://code.claude.com/docs/en/headless)、[Hermes CLI](https://hermes-agent.nousresearch.com/docs/reference/cli-commands)、[OpenCode Go](https://opencode.ai/docs/go/)。

@@ -16,10 +16,13 @@
 - 首次 live smoke 發現 `.git` 內 worktree 被 Claude 視為敏感檔案；已改放 `.maf-worktrees/`，保留安全模式後重跑成功。
 - Pi 獨立審查提出的恢復重播、symlink、glob、損壞狀態、agent 自行 commit、GitHub UNKNOWN 等問題已修正並補測試。
 - Hermes adapter 可切換 coder profile（safe mode）；**完整 Hermes 三角色 preset 未提供**，因原生 file toolset 不支援可靠的唯讀限制。這是已確認的限制，不是測試通過。
+- 使用工具自己的 `submit --publish --auto-merge` 與 `herdr` 完成真實文件任務：Claude 編輯 → 55 項測試及文件檢查 → Pi approve / low → [draft PR #1](https://github.com/ian902792/multiple-agents-flow/pull/1)。GitHub CI 也通過。
+- PR #1 的 tested_sha、reviewed_sha、GitHub head 均為 `d56515cefd6df9fc5e68439a29fc5097f73accde`；因下述分支保護 403，狀態正確停在 `needs_human / pr`，沒有合併。
+- 另一次較大範圍的發布前複查在 300 秒上限中止，程序群組已停止，沒有被當作批准。首輪審查的具體問題由回歸測試逐項驗證；不宣稱額外全量複查通過。
 
 ## 尚待完成／不宣稱完成
 
-- GitHub PR 實際發布與分支保護合併；單元測試使用 mock，不能證明帳號具有 branch-protection 功能。
+- GitHub 自動合併的真實成功路徑尚未完成；單元測試包含成功／拒絕路徑，實際 private repo 被方案限制安全阻擋。
 - Hermes coder 的真實模型呼叫尚未測試；只完成 CLI／登入探測與 parser／argv 單元測試。
 - 任意專案的 UI／E2E、睡眠／重開機實機恢復、多人或多 lane 並行。
 
