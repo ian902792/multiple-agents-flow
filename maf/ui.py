@@ -11,6 +11,7 @@ from . import core, flows
 
 
 PAGE = (Path(__file__).parent / "static" / "index.html").read_text()
+GUIDE = (Path(__file__).parent / "static" / "guide.html").read_text()
 
 
 def state():
@@ -46,6 +47,8 @@ def server(port=0):
                 return self.reply(403, b"Forbidden", "text/plain")
             if self.path == "/":
                 return self.reply(200, PAGE.replace("__MAF_TOKEN__", token), "text/html; charset=utf-8")
+            if self.path == "/guide":
+                return self.reply(200, GUIDE.replace("__MAF_TOKEN__", token), "text/html; charset=utf-8")
             if self.path == "/api/state" and self.headers.get("X-MAF-Token") == token:
                 try:
                     return self.reply(200, json.dumps(state(), ensure_ascii=False))

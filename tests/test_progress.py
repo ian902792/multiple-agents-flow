@@ -40,6 +40,8 @@ class ProgressTests(unittest.TestCase):
         core.init(self.repo, "economy")
         core.select_mode(self.repo, "configured")
         self.config = core.config_for(self.repo)
+        self.config["roles"]["reviewer"]["enabled"] = True
+        core.atomic(self.repo / ".maf.json", self.config)
         core.confirm_billing(self.repo, self.config)
         self.task = {"id": "improve-docs", "title": "Improve docs", "instructions": "Add usage paragraph.",
                      "paths": ["README.md"], "tests": [[sys.executable, "-c", "from pathlib import Path; assert 'After' in Path('README.md').read_text()"]],
@@ -364,7 +366,7 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(len(reports), 2)  # Unchanged display still renews the TTL every poll.
         self.assertEqual(reports[0][3:7], ["pane-1", "--source", "maf-progress", "--title"])
         self.assertEqual(reports[0][8:], ["--ttl-ms", "20000"])
-        self.assertIn("0/1 verified", reports[0][7])
+        self.assertIn("0/1 done", reports[0][7])
         self.assertIn("queued coding improve-docs", reports[0][7])
         self.assertFalse(any("input" in argv or "send" in argv or "kill" in argv for argv in calls))
         flows.set_herdr(False)

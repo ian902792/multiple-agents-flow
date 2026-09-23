@@ -35,6 +35,8 @@ class FlowTests(unittest.TestCase):
         core.init(self.repo, "economy")
         core.select_mode(self.repo, "configured")
         self.config = core.config_for(self.repo)
+        self.config["roles"]["reviewer"]["enabled"] = True
+        core.atomic(self.repo / ".maf.json", self.config)
         core.confirm_billing(self.repo, self.config)
         self.task = {"id": "improve-docs", "title": "Improve docs", "instructions": "Add usage paragraph.",
                      "paths": ["README.md"], "tests": [[sys.executable, "-c", "from pathlib import Path; assert 'After' in Path('README.md').read_text()"]],
@@ -64,6 +66,35 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(github.risk_reasons(run), [])
         self.assertEqual((self.repo / "README.md").read_text(), "Before\n")
         self.assertEqual([a["role"] for a in run["agents"]], ["coder", "reviewer"])
+        tampered = copy.deepcopy(run)
+        tampered["review"] = {}
+        with self.assertRaises(core.FlowError):
+            core.verified(self.repo, tampered)
+
+    def test_unchecked_review_stops_after_tests_and_cannot_publish(self):
+        config = copy.deepcopy(self.config)
+        config["roles"]["reviewer"]["enabled"] = False
+        core.atomic(self.repo / ".maf.json", config)
+        core.confirm_billing(self.repo, config)
+        changed_reviewer = copy.deepcopy(config)
+        changed_reviewer["roles"]["reviewer"]["model"] = "deepseek-v4.1-flash-next"
+        core.billing_check(self.repo, changed_reviewer)
+        changed_reviewer["roles"]["reviewer"]["enabled"] = True
+        with self.assertRaises(core.FlowError):
+            core.billing_check(self.repo, changed_reviewer)
+        run = core.submit(self.repo, self.task)
+        with patch.object(core.agents, "doctor_role", return_value=[]), patch.object(core.agents, "run_agent", side_effect=self.fake_agent) as agent:
+            core.execute(self.repo, run)
+        self.assertEqual(agent.call_count, 1)
+        self.assertEqual(run["status"], "tested")
+        self.assertNotIn("reviewed_sha", run)
+        self.assertIsNone(core.handoff(self.repo, run)["review"])
+        self.assertEqual(progress.row_for(self.repo, run)["complete"], "yes")
+        self.assertEqual(progress.row_for(self.repo, run)["verified"], "no")
+        with self.assertRaises(core.FlowError):
+            core.verified(self.repo, run)
+        with self.assertRaisesRegex(core.FlowError, "requires independent review"):
+            core.submit(self.repo, self.task, publish=True)
 
     def test_pi_default_and_manual_review_use_separate_sessions(self):
         self.assertEqual(self.config["roles"]["coder"]["runtime"], "pi")
@@ -121,14 +152,14 @@ class FlowTests(unittest.TestCase):
             core.execute(self.repo, old)
             core.execute(self.repo, new)
         self.assertEqual([a["runtime"] for a in old["agents"]], ["pi", "pi"])
-        self.assertEqual([a["model"] for a in new["agents"]], ["claude-opus-5-5", "gpt-6-sol"])
+        self.assertEqual([a["model"] for a in new["agents"]], ["claude-opus-5-5"])
         self.assertEqual(new["mode"], "opus-sol")
         core.verified(self.repo, old)
-        core.verified(self.repo, new)
+        core.tested(self.repo, new)
         self.config["test_timeout"] += 1
         core.atomic(self.repo / ".maf.json", self.config)
         with self.assertRaises(core.FlowError):
-            core.verified(self.repo, new)
+            core.tested(self.repo, new)
         core.billing_check(self.repo, core.execution_config(self.repo, "opus-sol")[1])
 
     def test_sensitive_task_waits_for_one_scope_approval(self):
@@ -259,6 +290,9 @@ class FlowTests(unittest.TestCase):
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")
         core.git(self.repo, "switch", "-c", "feature")
+        flow = flows.templates()["quick"]
+        flow["roles"]["reviewer"]["enabled"] = True
+        flows.save("quick", flow)
         core.select_mode(self.repo, "quick")
         core.confirm_billing(self.repo, core.execution_config(self.repo)[1])
         (self.repo / "README.md").write_text("After from Claude\n")
@@ -380,6 +414,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(result["mode"], "opus-sol")
         self.assertTrue(result["billing"])
         call("confirm-billing", "--no-overage")
+        core.confirm_billing(self.repo, core.execution_config(self.repo, "economy")[1])
         other = core.submit(self.repo, self.task)
         task_file = self.repo / "task.json"
         core.atomic(task_file, self.task)
@@ -389,7 +424,7 @@ class FlowTests(unittest.TestCase):
             self.assertEqual(json.loads(call("mode"))["mode"], "opus-sol")
         with patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
             call("work", "--once", "--run-id", run["id"])
-        self.assertEqual(core.load(self.repo, run["id"])["status"], "verified")
+        self.assertEqual(core.load(self.repo, run["id"])["status"], "tested")
         self.assertEqual(core.load(self.repo, other["id"])["status"], "queued")
 
     def test_unknown_modes_and_obsolete_billing_evidence_fail_closed(self):
@@ -605,6 +640,14 @@ class FlowTests(unittest.TestCase):
     def test_all_shipped_presets_validate(self):
         for preset in core.PRESETS:
             core.validate_config(self.repo, core.default_config(preset))
+        invalid = core.default_config("economy")
+        invalid["roles"]["reviewer"]["enabled"] = "yes"
+        with self.assertRaises((core.FlowError, ValueError)):
+            core.validate_config(self.repo, invalid)
+        invalid = core.default_config("economy")
+        invalid["roles"]["coder"]["enabled"] = True
+        with self.assertRaises(core.FlowError):
+            core.validate_config(self.repo, invalid)
         with self.assertRaises(core.FlowError):
             core.default_config("hermes")
 

@@ -2,6 +2,12 @@
 
 這份文件區分離線測試與真正的 provider / GitHub 驗證，避免把 mock 當成實際成功。
 
+## 2026-09-23：Opus 5.5、可選審查與獨立說明頁
+
+- 103 項 unittest 全數通過。離線完整流程證實未勾選審查時只呼叫 coder，通過測試後停在 `tested`；`handoff` 回傳精確 SHA 與測試結果、`review: null`，不宣稱 `verified`，也拒絕發布。勾選審查的既有 SHA 證據與發布路徑仍通過。
+- Flow Studio 在隔離的暫存全域設定目錄進行瀏覽器測試：新 flow 的主 Claude 偏好是 `claude-opus-5-5`，審查預設未勾選；切到 Antigravity、勾選與取消審查、把審查工具切為 Pi、儲存全域預設、重新載入皆正確。獨立 `/guide` 頁顯示理念、安裝、flow 範例與指令輸出。設定與說明頁在 390px 手機寬度均無整頁水平溢出。
+- 未呼叫真實模型，未修改使用者實際全域 MAF 設定。畫面的主 Claude 模型是偏好記錄；現有 Claude session 仍需以 `/model` 切換。
+
 ## 2026-09-23：Antigravity 與零專案設定的全域預設
 
 - 102 項 unittest 全數通過；新增測試涵蓋無 `.maf.json` 的 Git 專案繼承全域 flow、切換回全域預設、角色模型確認跨專案共用，以及 Antigravity 的帳號路由、stdin、sandbox、成功／額度／權限拒絕解析。

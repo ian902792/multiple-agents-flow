@@ -14,19 +14,19 @@ from . import core
 def templates():
     roles = core.default_config("economy")["roles"]
     roles["reviewer"] = {"runtime": "codex", "provider": "chatgpt", "model": "gpt-6-sol",
-                         "access": "read", "effort": "medium"}
+                         "access": "read", "effort": "medium", "enabled": False}
     planned = deepcopy(roles)
     planned["reviewer"]["effort"] = "high"
     antigravity = deepcopy(roles)
     antigravity["coder"] = {"runtime": "antigravity", "provider": "google-account",
                              "model": "gemini-3.8-flash-high", "access": "edit", "effort": "high"}
     return {
-        "quick": {"description": "小任務：Claude 主對話開發；必要時交給 Pi；Codex 獨立審查。",
-                  "manual_plan": False, "main": {"model": "opus", "effort": "medium"}, "roles": roles},
+        "quick": {"description": "小任務：Claude 主對話開發；必要時交給 Pi。",
+                  "manual_plan": False, "main": {"model": "claude-opus-5-5", "effort": "medium"}, "roles": roles},
         "planned": {"description": "中大型任務：手動 /maf-plan 規畫；Claude 實作，可交 Pi 處理明確小任務。",
-                    "manual_plan": True, "main": {"model": "opus", "effort": "high"}, "roles": planned},
-        "quick-antigravity": {"description": "小任務：Claude 主對話開發；明確小工作交 Antigravity Gemini Flash；Codex 獨立審查。",
-                              "manual_plan": False, "main": {"model": "opus", "effort": "medium"}, "roles": antigravity},
+                    "manual_plan": True, "main": {"model": "claude-opus-5-5", "effort": "high"}, "roles": planned},
+        "quick-antigravity": {"description": "小任務：Claude 主對話開發；明確小工作交 Antigravity Gemini Flash。",
+                              "manual_plan": False, "main": {"model": "claude-opus-5-5", "effort": "medium"}, "roles": antigravity},
     }
 
 

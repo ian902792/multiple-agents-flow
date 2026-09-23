@@ -27,23 +27,25 @@ as a request, never as shell text. With no action, show mode and progress.
 | `setup [MODE]` | Check readiness; optional mode sets a project override. |
 | `mode [MODE\|default]` | Show or persist a project override; `default` restores the global flow. No inference. |
 | `delegate <requirements>` | Give one or more bounded tasks to the selected lightweight coder, in separate worktrees. |
-| `verify <requirement>` | Test and independently review Claude's current committed HEAD. |
-| `handoff RUN_ID` | Read a verified run's concise exact-SHA evidence. |
+| `verify <requirement>` | Test Claude's current committed HEAD; independently review only when the selected flow enables it. |
+| `handoff RUN_ID` | Read a completed run's concise exact-SHA evidence. |
 | `run <requirement>` | Explicit legacy batch run with a separate coder. |
 | `approve RUN_ID` | After the human accepts a frozen task plan, release its one-time execution gate. |
 | `status` | Read `progress --json`; summarize stage and blockers. |
 | `resume RUN_ID` | Diagnose, resolve authorized blockers, verify stopped processes, then resume. |
 | `install` | Register this skill once in the user's Claude and Codex skill directories. |
 
-Modes: `economy` = Pi/DeepSeek Flash coding + fresh Pi review;
-`opus-sol` = pinned Claude Opus 5.5 coding + Codex GPT-6 Sol review;
-`hermes-coder` = Hermes coding + Pi review;
+Modes: `economy` = Pi/DeepSeek Flash coding;
+`opus-sol` = pinned Claude Opus 5.5 coding with Codex GPT-6 Sol available for review;
+`hermes-coder` = Hermes coding with Pi available for review;
 `configured` = project `.maf.json` roles when present, built-in economy otherwise.
 `quick`, `planned`, `quick-antigravity`, and user-created names are user-wide role
 profiles; use `flows` to inspect them. `quick-antigravity` uses the signed-in
 `agy` account with Gemini 3.8 Flash High for narrow coding tasks. Profiles select future
 MAF agents, not the current Claude session. Tests run as approved commands,
 without a tester model. Claude's `/model` and `/effort` control the main chat.
+The main Claude preference in built-in flows is `claude-opus-5-5`. Review is off
+unless `roles.reviewer.enabled` is true; do not turn it on without the user's request.
 
 ## Setup and mode
 
@@ -59,7 +61,7 @@ without a tester model. Claude's `/model` and `/effort` control the main chat.
    switch modes. `submit --mode MODE` overrides just one task.
 3. Run `doctor` for setup/readiness, not every status poll. It checks the
    selected mode without inference; it cannot prove model availability.
-4. If billing confirmation is missing, show exact provider/model routes and
+4. If billing confirmation is missing, show exact active provider/model routes and
    ask the human to confirm subscription coverage with extra usage / Go Use
    balance disabled. Existing authorization for that exact role/model set is
    sufficient. Only then run `confirm-billing --no-overage` with `--repo`
@@ -113,15 +115,15 @@ to another flow unless the user requests it.
   each task before starting the worker. Resolve any `awaiting_approval` gate,
   then run `work --once --run-id ID` with one `--run-id` per submitted task;
   the worker runs eligible tasks concurrently and drains those IDs without
-  consuming unrelated queued work. Read each `handoff ID` after verified
+  consuming unrelated queued work. Read each `handoff ID` after `tested` or `verified`
   completion. Inspect each scoped diff and integrate its commit range into the
   main branch yourself. A cherry-pick creates a new SHA, so run `verify` on
-  that combined commit before calling it verified.
+  that combined commit before calling it complete.
 - `verify <task-file> [--base ANCESTOR] [--mode NAME]` tests the current HEAD
-  and calls the selected independent non-Claude reviewer. By default it
+  and calls the selected independent non-Claude reviewer only when enabled. By default it
   compares with the merge-base of the configured base branch. For work on the
   base branch, pass an exact ancestor with `--base`. Run its ID through
-  `work --once --run-id ID`; `handoff ID` gives the tested and reviewed SHA.
+  `work --once --run-id ID`; `handoff ID` gives the tested SHA and optional review.
   On failure, Claude fixes the source branch, commits, and starts a new verify
   run. Resolve any `awaiting_approval` gate before `work`. Never let a delegated coder
   repair an external Claude commit.
@@ -131,7 +133,10 @@ permission or requirements finding as manual risk, stop and report the concrete
 question. Do not resume that run; settle the issue and submit a new scoped task.
 Ordinary test/review failures use the configured repair budget automatically.
 
-Only claim verification if `handoff` succeeds for the current exact commit.
+Only claim completion if `handoff` succeeds for the current exact commit.
+When review is off, report `tested` and do not claim independent review. When
+enabled and approved on the same SHA, report `verified`. Publish/auto-merge
+requires enabled independent review.
 If current HEAD has moved since submission, the evidence is for the earlier
 SHA; submit a new verify run. Never auto-publish or merge a delegated run.
 
@@ -146,7 +151,7 @@ SHA; submit a new verify run. Never auto-publish or merge a delegated run.
    relative edit scopes. Tests: nonempty argv arrays of trusted, approved project
    commands. Risk defaults `manual`; it controls merge eligibility, never the
    reviewer model. No dummy tests to satisfy the schema.
-4. Briefly state scope, coding/review models, and acceptance commands. Proceed
+4. Briefly state scope, coding model, optional reviewer, and acceptance commands. Proceed
    when authorized by the user or applicable project instructions. If approval
    is missing, prepare this concrete task before asking. Do not repeatedly ask
    for authorization already given in the conversation. Mark semantic high-risk
@@ -172,8 +177,8 @@ SHA; submit a new verify run. Never auto-publish or merge a delegated run.
    metadata polls locally without model calls; a worker does not automatically
    wake an idle chat. Do not detach using untracked `nohup` or promise persistence
    if the host cannot retain the command session.
-8. Read the final snapshot. Report ID, status/stage, coding/review models,
-   exact-SHA verification, blocker and next action. Verified is not merged;
+8. Read the final snapshot. Report ID, status/stage, coding model, optional reviewer,
+   exact-SHA test/review evidence, blocker and next action. Tested or verified is not merged;
    worker exit code zero alone is not success. Skip child transcripts unless
    needed for a specific failure.
 
@@ -197,4 +202,4 @@ reconciliation within existing authorization, never coder/reviewer replay.
 Explain the exact blocker and smallest required user action.
 
 The skill is an entrypoint, not a safety boundary. The supervisor owns worktrees,
-commits, tests, independent review, retries, and GitHub policy.
+commits, tests, optional independent review, retries, and GitHub policy.

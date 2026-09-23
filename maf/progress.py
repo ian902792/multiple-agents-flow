@@ -23,8 +23,8 @@ TODO = "todo.md"
 MARKER = re.compile(r"^\s*- \[( |x)\] .*<!-- maf:([a-z][a-z0-9-]{0,39}) -->\s*$")
 CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 PANE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
-# Stages past independent review. Checked never means merged; merged is its own column.
-DONE = ("verified", "publishing", "pr", "merging", "merged")
+# Completed stages. Checked never means merged; merged is its own column.
+DONE = ("tested", "verified", "publishing", "pr", "merging", "merged")
 COLUMNS = ("task", "run", "stage", "status", "tested", "reviewed", "verified", "merged", "checklist")
 TTL_MS = 15000
 COMPACT_WIDTH = 100
@@ -91,28 +91,26 @@ def snapshot(repo, task):
 
 
 def completed(run):
-    """Agent stages are finished: stage is past independent review and status is either past review or a
-    publish/merge stop (needs_human). Incomplete coding/testing/reviewing never qualifies, whatever the status."""
+    """Agent stages finished with test evidence, and review evidence when selected."""
     return run.get("stage") in DONE and (run.get("status") in DONE or run.get("status") == "needs_human")
 
 
 def eligible(repo, run):
-    """Evidence gate: passing tests, independent approval and the current worktree HEAD bind to one SHA."""
+    """Evidence gate: passing tests and optional review bind to the current HEAD."""
     if not completed(run):
-        raise core.FlowError(f"Run is {run.get('stage')}/{run.get('status')}; only tested and independently reviewed runs are projected.")
+        raise core.FlowError(f"Run is {run.get('stage')}/{run.get('status')}; only completed runs are projected.")
     tests = run.get("tests") or []
     if (not tests or any(type(item.get("exit_code")) is not int or item["exit_code"] != 0 for item in tests)
             or [item.get("argv") for item in tests] != run["task"]["tests"]):
         raise core.FlowError("No passing test evidence.")
-    head, review = run.get("tested_sha"), run.get("review") or {}
-    core.review_result(json.dumps(review), head)
-    if (not head or review.get("decision") != "approve" or review.get("head_sha") != head
-            or review.get("findings") or run.get("reviewed_sha") != head):
-        raise core.FlowError("Independent approval does not bind to the tested SHA.")
+    if not core.review_enabled(run["config"]):
+        if run["stage"] != "tested" or run.get("review") or run.get("reviewed_sha"):
+            raise core.FlowError("Test-only run has inconsistent review state.")
+        return core.tested(repo, run)
     return core.verified(repo, run)
 
 
-def verified_now(repo, run):
+def eligible_now(repo, run):
     """Display-only re-check of the evidence gate with cheap local Git reads. Never raises, never writes."""
     try:
         eligible(repo, run)
@@ -259,7 +257,7 @@ def row_for(repo, run):
     """Evidence-only row: verified means the gate passes right now on the run worktree; merged means GitHub confirmed."""
     if run.get("status") == "corrupt":
         return {"task": "?", "run": clean(run.get("id", "?"), 80), "stage": "corrupt", "status": "corrupt",
-                "tested": "-", "reviewed": "-", "verified": "no", "merged": "no", "checklist": "-",
+                "tested": "-", "reviewed": "-", "verified": "no", "complete": "no", "merged": "no", "checklist": "-",
                 "created": 0, "note": clean(run.get("feedback", "")), "activity": "-", "elapsed": "-",
                 "attention": True, "next": "Inspect the corrupt state file; do not retry or delete evidence.", "log": "", "agents": []}
     task = run.get("task") if isinstance(run.get("task"), dict) else {}
@@ -277,19 +275,21 @@ def row_for(repo, run):
     note = clean(task.get("title", ""), 80)
     if status in ("needs_human", "waiting_quota") and run.get("feedback"):
         note += " | " + clean(run["feedback"])
+    valid = completed(run) and eligible_now(repo, run)
     row = {"task": clean(task.get("id", "?"), 40), "run": clean(run.get("id", "?"), 80),
             "mode": clean(run.get("mode", "unknown"), 40),
             "stage": clean(run.get("stage", "?"), 40), "status": status,
             "tested": tested[:7] or "-", "reviewed": reviewed[:7] or "-",
-            "verified": "yes" if completed(run) and verified_now(repo, run) else "no",
+            "verified": "yes" if valid and core.review_enabled(run["config"]) else "no",
+            "complete": "yes" if valid else "no",
             "merged": "yes" if run.get("status") == "merged" else "no", "checklist": checklist,
             "created": float(run.get("created_at") or 0), "note": note,
             "agents": [{k: attempt.get(k) for k in ("role", "runtime", "provider", "model", "status", "duration_seconds", "usage_scope", "usage")}
                        for attempt in run.get("agents", [])], **diagnostics(run)}
     if run["config_hash"] != core.digest(core.config_for(repo)):
         row.update(attention=True, next="Configuration changed since submission. Do not resume/publish this run; inspect the old worker and submit a new task.")
-    elif completed(run) and row["verified"] == "no":
-        row.update(attention=True, next="Saved completion no longer verifies. Inspect tests, review and worktree HEAD before publication.")
+    elif completed(run) and not valid:
+        row.update(attention=True, next="Saved completion no longer has valid evidence. Inspect tests, review and worktree HEAD.")
     return row
 
 
@@ -340,8 +340,7 @@ def render(rows, compact=False):
             lines.extend(detail_lines(row))
     counts = counts_for(rows)
     lines.append(f"{len(rows)} run(s)" + ("; " + ", ".join(f"{n} {s}" for s, n in sorted(counts.items())) if counts else ""))
-    lines.append("verified = tests + independent review at HEAD; not merged, not released." if compact else
-                 "verified/checked = tests + independent review on the run worktree; not merged, not released.")
+    lines.append("tested = tests at HEAD; verified = tests + independent review; not merged or released.")
     if compact:
         width = max(1, shutil.get_terminal_size((38, 24)).columns)
         lines = [part for line in lines for part in textwrap.wrap(line, width=width)]
@@ -361,8 +360,8 @@ def detail_lines(row):
 
 def title_for(rows):
     """Pane title: verified/total, the active (running, else queued) stage and task, then attention counts."""
-    verified = sum(row["verified"] == "yes" for row in rows)
-    parts = [f"maf {verified}/{len(rows)} verified"]
+    done = sum(row["complete"] == "yes" for row in rows)
+    parts = [f"maf {done}/{len(rows)} done"]
     attention = sum(row["attention"] for row in rows)
     if attention:
         parts.append(f"!{attention} attention")

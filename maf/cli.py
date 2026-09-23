@@ -223,7 +223,8 @@ def main(argv=None):
                         core.select_mode(repo, args.name)
                         result = mode_info(repo)
                     elif args.action == "doctor":
-                        result = {name: agents.doctor_role(role) for name, role in config["roles"].items()}
+                        result = {name: agents.doctor_role(role) if name != "reviewer" or core.review_enabled(config) else []
+                                  for name, role in config["roles"].items()}
                         try:
                             core.billing_check(repo, config)
                             result["billing"] = []

@@ -26,9 +26,14 @@ class LocalUITests(unittest.TestCase):
                     with urlopen(url + "/") as response:
                         html = response.read().decode()
                     self.assertIn("Flow Studio", html)
-                    self.assertIn("awaiting_approval", html)
                     self.assertIn('id="coder-runtime"', html)
+                    self.assertIn('id="review-enabled"', html)
+                    self.assertIn("claude-opus-5-5", html)
                     self.assertIn('id="set-default"', html)
+                    with urlopen(url + "/guide") as response:
+                        guide = response.read().decode()
+                    self.assertIn("設計理念", guide)
+                    self.assertIn("awaiting_approval", guide)
                     token = re.search(r'const token="([0-9a-f]+)"', html).group(1)
                     with self.assertRaises(HTTPError) as denied:
                         urlopen(url + "/api/state")

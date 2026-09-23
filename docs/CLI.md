@@ -24,12 +24,12 @@ python3 "$FLOW" --repo "$TARGET" status
 | `confirm-billing --no-overage` | 在任意目錄確認全域預設 flow 的模型路由；若加 `--repo` 則確認該專案目前 mode。 |
 | `plan --goal-file FILE [--mode NAME]` | 只讀規畫，印出建議與私有結果路徑；不排入任務。 |
 | `delegate TASK.json` | 把明確小任務排給所選 flow 的 Pi／Antigravity；回傳 run ID 與狀態。 |
-| `verify TASK.json` | 排入目前 commit 的測試與獨立審查；回傳 run ID 與來源 SHA。 |
+| `verify TASK.json` | 排入目前 commit 的測試；若 flow 啟用獨立審查才呼叫 reviewer。回傳 run ID 與來源 SHA。 |
 | `submit TASK.json` | 排入獨立 coder 的批次任務；回傳 run ID 與狀態。 |
 | `approve RUN_ID` | 放行一份已檢視的凍結任務範圍；回傳更新後的 run。 |
 | `work [--once] [--run-id ID ...] [--delegate-concurrency N]` | 執行佇列；多個獨立 Pi／Antigravity 任務預設最多同時 3 個，印出各自階段與結果。 |
 | `status [RUN_ID]`、`progress [--json\|--watch]` | 查 run 的證據或只讀進度摘要。 |
-| `handoff RUN_ID` | 已驗證任務的精確 SHA、測試與審查摘要。 |
+| `handoff RUN_ID` | 完成任務的精確 SHA、測試與可選審查摘要。 |
 | `resume RUN_ID` | 診斷中斷後明確恢復；回傳更新後的 run。 |
 | `publish RUN_ID`、`merge RUN_ID` | 在已有授權下發布或核對 PR、合併結果。 |
 | `herdr` | 在 Herdr pane 內啟動背景 supervisor；回傳 workspace／pane ID。 |
@@ -56,7 +56,7 @@ python3 "$FLOW" --repo "$TARGET" doctor
 
 `doctor` 不發模型請求，因此不能證明模型實際可用；選用 Antigravity 時會用 `agy models` 檢查該 ID 是否列在帳號模型清單。`confirm-billing` 是人的確認紀錄，按角色模型組合全域儲存，不會替你修改或限制供應商帳單設定。舊版專案內的確認紀錄不再使用；升級後須重新確認一次。模型／路由改變後須重新核對；切回已確認的相同組合不需重複確認。已為某專案選另一個 mode 時，使用 `--repo "$TARGET" confirm-billing --no-overage` 確認該組合。
 
-Flow Studio 用 `python3 "$FLOW" ui` 開啟，僅監聽 `127.0.0.1`。它儲存全域 flow、預設 flow 與 Herdr 開關；專案覆寫仍在 terminal 使用 `mode NAME` 切換。小任務 Agent 可在畫面切換 Pi／Antigravity；新模型 ID 可直接輸入，建議清單不等於模型可用性檢查。主 Claude 對話的模型需用 Claude 的 `/model`、`/effort` 切換。
+Flow Studio 用 `python3 "$FLOW" ui` 開啟，僅監聽 `127.0.0.1`。設定頁儲存全域 flow、預設 flow、獨立審查開關與 Herdr 開關；安裝、指令及設計理念在獨立的 `/guide` 頁。專案覆寫仍在 terminal 使用 `mode NAME` 切換。小任務與審查 Agent 可在畫面切換工具；新模型 ID 可直接輸入，建議清單不等於模型可用性檢查。主 Claude 偏好預設為 `claude-opus-5-5`，目前對話仍需在 Claude 使用 `/model claude-opus-5-5`、`/effort` 切換。
 
 大型需求若要先規畫，由你明確執行 `/maf-plan 需求`，或直接呼叫 CLI：
 
@@ -93,7 +93,7 @@ python3 "$FLOW" --repo "$TARGET" work --once --run-id RUN_ID
 python3 "$FLOW" --repo "$TARGET" handoff RUN_ID
 ```
 
-`verify` 只針對乾淨的目前 HEAD 跑測試與非 Claude reviewer，不啟動新 coder。預設與 base branch 的共同祖先比較；若直接在 base branch 驗證單一 commit，可明確加 `--base HEAD^`。來源 commit 一旦改變，舊審查不能套用到新 SHA，應重新建立 verify run。
+`verify` 只針對乾淨的目前 HEAD 跑測試，不啟動新 coder。flow 的獨立審查預設關閉；開啟後才會呼叫非 Claude reviewer。測試通過時，關閉審查的 run 為 `tested`，開啟並通過審查的 run 為 `verified`。預設與 base branch 的共同祖先比較；若直接在 base branch 驗證單一 commit，可明確加 `--base HEAD^`。來源 commit 一旦改變，舊證據不能套用到新 SHA，應重新建立 verify run。
 
 **委派 Pi／Antigravity 小任務：**
 
@@ -175,7 +175,7 @@ python3 "$FLOW" --repo "$TARGET" herdr
 - [ ] 補上本機啟動說明 <!-- maf:document-quickstart -->
 ```
 
-同一個 commit 的測試與審查都通過後，MAF 才會將該行改為 `[x]`。這代表 worktree 已驗證，**不代表已合併**。清單有衝突時只警告；修正後可用 `progress --sync` 再投影。根目錄 `todo.md` 變成未提交修改時，先提交清單再排下一個任務。
+同一個 commit 的測試通過後，MAF 才會將該行改為 `[x]`；若啟用獨立審查，還須同一 SHA 的審查通過。這代表 worktree 已按所選檢查完成，**不代表已合併**。清單有衝突時只警告；修正後可用 `progress --sync` 再投影。根目錄 `todo.md` 變成未提交修改時，先提交清單再排下一個任務。
 
 ## PR、模型與本機資料
 
@@ -186,7 +186,7 @@ python3 "$FLOW" --repo "$TARGET" publish RUN_ID
 python3 "$FLOW" --repo "$TARGET" submit /private/path/task.json --publish --auto-merge
 ```
 
-自動合併仍要求同一 SHA 的測試與 review、乾淨 worktree、GitHub checks 成功，以及 strict required status checks；條件不明就停下，不使用管理員繞過。細節見 [GitHub 政策](IMPLEMENTATION.md#github)。
+發布與自動合併仍要求先啟用獨立審查。自動合併還要求同一 SHA 的測試與 review、乾淨 worktree、GitHub checks 成功，以及 strict required status checks；條件不明就停下，不使用管理員繞過。細節見 [GitHub 政策](IMPLEMENTATION.md#github)。
 
 在 Flow Studio 可直接切換小任務 Agent 的 runtime、model、effort 並儲存全域 flow。若要讓新專案沿用，按「設為全域預設」；若只影響目前專案，使用 `mode NAME`。模型必須是該訂閱實際支援的 ID；不要把登入成功當成模型可用性證明。已開始的任務保留自己的模型快照。
 

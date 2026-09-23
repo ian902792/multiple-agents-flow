@@ -130,13 +130,13 @@ def default_config(preset="economy"):
     roles = {
         "planner": {"runtime": "codex", "provider": "chatgpt", "model": "gpt-6-astra", "access": "read", "effort": "high"},
         "coder": {"runtime": "pi", "provider": "opencode-go", "model": "deepseek-v4.1-flash", "access": "edit", "effort": "medium"},
-        "reviewer": {"runtime": "pi", "provider": "opencode-go", "model": "deepseek-v4.1-flash", "access": "read", "effort": "medium"},
+        "reviewer": {"runtime": "pi", "provider": "opencode-go", "model": "deepseek-v4.1-flash", "access": "read", "effort": "medium", "enabled": False},
     }
     if preset == "opus-sol":
         roles["coder"] = {"runtime": "claude", "provider": "claude-subscription", "model": "claude-opus-5-5",
                           "access": "edit", "effort": "medium"}
         roles["reviewer"] = {"runtime": "codex", "provider": "chatgpt", "model": "gpt-6-sol",
-                             "access": "read", "effort": "medium"}
+                             "access": "read", "effort": "medium", "enabled": False}
     elif preset == "hermes-coder":
         roles["coder"] = {"runtime": "hermes", "provider": "opencode-go", "model": "deepseek-v4.1-flash",
                           "profile": "coder", "access": "edit"}
@@ -227,6 +227,20 @@ def validate_roles(roles):
         agents.validate_role(role)
         if role["access"] != ("edit" if name == "coder" else "read"):
             raise FlowError(f"{name} has incorrect tool access.")
+        if name == "reviewer":
+            if type(role.get("enabled", False)) is not bool:
+                raise FlowError("Reviewer enabled must be true or false.")
+        elif "enabled" in role:
+            raise FlowError("Only the reviewer can be enabled or disabled.")
+
+
+def review_enabled(config):
+    return config["roles"]["reviewer"].get("enabled", False) is True
+
+
+def billing_roles(config):
+    return {name: role for name, role in config["roles"].items()
+            if name != "reviewer" or review_enabled(config)}
 
 
 def safe_path(path):
@@ -315,7 +329,7 @@ def billing_check(repo, config):
             or any(not isinstance(h, str) or not re.fullmatch(r"[0-9a-f]{64}", h)
                    for h in record["role_hashes"])):
         raise FlowError("Invalid or missing global billing confirmation; inspect the global billing.json.")
-    if digest(config["roles"]) not in record["role_hashes"]:
+    if digest(billing_roles(config)) not in record["role_hashes"]:
         raise FlowError("Confirm subscription-only billing for these global model routes with confirm-billing.")
 
 
@@ -329,7 +343,7 @@ def confirm_billing(repo, config):
                 or any(not isinstance(h, str) or not re.fullmatch(r"[0-9a-f]{64}", h)
                        for h in record["role_hashes"])):
             raise FlowError("Invalid global billing confirmation list; inspect billing.json.")
-        atomic(path, {"role_hashes": sorted(set(record["role_hashes"] + [digest(config["roles"])])),
+        atomic(path, {"role_hashes": sorted(set(record["role_hashes"] + [digest(billing_roles(config))])),
                       "confirmed_at": time.time()})
 
 
@@ -408,8 +422,10 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch",
         raise FlowError("Delegate requires a Pi or Antigravity coder in the selected flow.")
     if kind != "delegate" and task.get("independent"):
         raise FlowError("Only lightweight delegate tasks can opt into parallel execution.")
-    if kind == "verify" and config["roles"]["reviewer"]["runtime"] == "claude":
+    if kind == "verify" and review_enabled(config) and config["roles"]["reviewer"]["runtime"] == "claude":
         raise FlowError("Claude-authored work needs an independent non-Claude reviewer.")
+    if publish and not review_enabled(config):
+        raise FlowError("Publishing requires independent review; enable it in the selected flow.")
     if auto_merge and (not publish or task["risk"] == "manual"):
         raise FlowError("Auto merge requires --publish and a non-manual risk category.")
     from .progress import snapshot
@@ -502,14 +518,24 @@ def unchanged(repo, run):
         raise FlowError("Worktree branch changed.")
 
 
-def verified(repo, run):
+def tested(repo, run):
     unchanged(repo, run)
     head = git(run["worktree"], "rev-parse", "HEAD")
-    if not run.get("tested_sha") or head != run.get("tested_sha") or head != run.get("reviewed_sha"):
-        raise FlowError("Test/review SHA does not match current HEAD.")
+    if not run.get("tested_sha") or head != run.get("tested_sha"):
+        raise FlowError("Test SHA does not match current HEAD.")
     if git(run["worktree"], "status", "--porcelain"):
-        raise FlowError("Verified worktree is no longer clean.")
+        raise FlowError("Tested worktree is no longer clean.")
     check_scope(run)
+    return head
+
+
+def verified(repo, run):
+    head = tested(repo, run)
+    if not review_enabled(run["config"]) or head != run.get("reviewed_sha"):
+        raise FlowError("Independent review does not match the tested HEAD.")
+    review = review_result(json.dumps(run.get("review")), head)
+    if review["decision"] != "approve":
+        raise FlowError("Independent review did not approve the tested HEAD.")
     return head
 
 
@@ -520,7 +546,7 @@ def handoff(repo, run):
             "source_sha": run.get("source_sha", run["base_sha"]), "head_sha": head,
             "branch": run["branch"], "paths": changed_paths(run),
             "tests": [{"argv": item["argv"], "exit_code": item["exit_code"]} for item in run["tests"]],
-            "review": run["review"]}
+            "review": run.get("review") if review_enabled(run["config"]) else None}
 
 
 def terminate(proc):
@@ -685,8 +711,12 @@ def execute(repo, run, agent_panes=False):
                 needs_repair(repo, run, json.dumps([result for result in run["tests"] if result["exit_code"]], ensure_ascii=False))
                 continue
             run["tested_sha"] = head
-            run["stage"] = "reviewing"
-            run["status"] = "queued"
+            if review_enabled(run["config"]):
+                run["stage"] = "reviewing"
+                run["status"] = "queued"
+            else:
+                tested(repo, run)
+                run["stage"] = run["status"] = "tested"
             save(repo, run)
         if run["stage"] == "reviewing":
             if git(run["worktree"], "rev-parse", "HEAD") != run["tested_sha"] or git(run["worktree"], "status", "--porcelain"):
@@ -764,7 +794,7 @@ def resume(repo, run_id, acknowledge=False, after=None):
         raise FlowError("Only quota/interrupted/needs-human runs can resume.")
     if not acknowledge:
         raise FlowError("Use --acknowledge-stopped only after confirming the previous agent/test is stopped and state is safe.")
-    if run["stage"] in ("verified", "publishing", "pr", "merging", "merged"):
+    if run["stage"] in ("tested", "verified", "publishing", "pr", "merging", "merged"):
         raise FlowError("Agent stages already finished. Use publish/merge to reconcile; never replay the reviewer.")
     if run["status"] == "creating":
         if digest(config_for(repo)) != run["config_hash"]:

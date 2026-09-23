@@ -20,7 +20,7 @@ from pathlib import Path
 _ROUTES = {"codex": "chatgpt", "claude": "claude-subscription", "pi": "opencode-go",
            "hermes": "opencode-go", "antigravity": "google-account"}
 _OUTPUT_LIMIT = 8_000_000  # bytes kept per stream (tail); result events are at the end
-_ROLE_KEYS = {"runtime", "model", "provider", "profile", "access", "effort"}
+_ROLE_KEYS = {"runtime", "model", "provider", "profile", "access", "effort", "enabled"}
 _SAFE_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _QUOTA = re.compile(
     r"usage limit|rate[ _-]?limit|quota|too many requests|\b429\b|out of (?:extra )?usage"
@@ -49,6 +49,8 @@ def validate_role(role) -> None:
     extra = set(role) - _ROLE_KEYS
     if extra:
         raise ValueError(f"unknown role keys: {sorted(extra)}")
+    if "enabled" in role and type(role["enabled"]) is not bool:
+        raise ValueError("enabled must be true or false")
     provider = _ROUTES.get(role.get("runtime"))
     if provider is None:
         raise ValueError(f"unsupported runtime: {role.get('runtime')!r}")
