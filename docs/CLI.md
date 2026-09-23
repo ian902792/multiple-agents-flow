@@ -1,6 +1,6 @@
 # 指令參考
 
-這份文件給想直接使用 Python CLI、排查阻塞或設定進階流程的人。日常開發可先看 [README](../README.md)，在 Claude Code 中使用 `/maf`，由 skill 準備任務資料。
+這份文件是主 Claude skill 與維護者的詳細指令參考。一般使用者可先看 [README](../README.md)，直接在 Claude Code 描述需求；不必逐條輸入委派、驗證或交接指令。需要手動查詢進度、切換 flow 或規畫時，再使用相應的對話指令。
 
 以下範例先設定工具與目標專案的路徑。目標必須是已有第一個 commit 的 Git repository；`--repo` 放在子命令前。
 
