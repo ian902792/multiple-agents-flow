@@ -5,7 +5,7 @@ Herdr is opt-in and runs a persistent ordinary supervisor command in an explicit
 Native agent CLIs run as bounded subprocesses, with structured output captured to private logs.
 One implementation lane initially; planner/coder/reviewer are independently configured roles.
 The economy preset uses Astra for optional planning and Pi/DeepSeek for coding and review, with one repair.
-The opus-sol preset uses Claude Opus 5 coding and Codex Sol review. Risk never overrides the reviewer role.
+The opus-sol preset uses Claude Opus 5.5 coding and Codex Sol review. Risk never overrides the reviewer role.
 Claude is the main developer. Only the manually invoked `/maf-plan` skill calls the read-only Codex planner.
 
 ## Files and ownership
@@ -21,11 +21,13 @@ Claude is the main developer. Only the manually invoked `/maf-plan` skill calls 
 - `skills/maf/SKILL.md`: shared main-chat workflow, referenced by both hosts using relative symlinks.
 - `skills/maf-plan/SKILL.md`: Claude manual-only planner entrypoint.
 - `tests/`: stdlib unittest, fake subprocesses and temporary Git repositories, no model charges.
-- `README.md`: Traditional Chinese quickstart, walkthrough, safety and recovery.
+- `README.md`: human-oriented Traditional Chinese overview and quickstart.
+- `docs/CLI.md`: direct commands, task format, approval and recovery reference.
+- `docs/AGENT-INSTRUCTIONS.md`: optional personal Claude instruction template.
 
 ## Agent adapter contract
 
-`run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int) -> dict`
+`run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int, *, live_log: Path | None = None) -> dict`
 
 Return keys: `status` (`ok`, `quota`, `blocked`, `error`), `text` (final response only),
 `session_id` (string or null), `usage` (provider-reported dict or null), `detail` (brief).
@@ -39,7 +41,7 @@ Allowed subscription routes: Codex ChatGPT login; Claude first-party subscriptio
 Pi OpenCode Go; Hermes explicitly OpenCode Go. No arbitrary commands, CLI extra args or endpoints.
 Hermes currently supports coder/edit only, with native safe mode and file toolset. The shipped
 alternative is `hermes-coder`, not a misleading full-Hermes preset that cannot constrain a reviewer.
-Codex uses JSONL, Claude JSON, Pi JSONL; Hermes stream JSON shape must be verified before declaring support.
+Codex, Claude and Pi use JSONL; Hermes stream JSON shape must be verified before declaring support.
 Adapters must not mistake exit code 0 for a successful model turn (especially quota/error events).
 Pi 0.85.1 的最後 assistant 必須 `stop` 且其後有本輪最終 `agent_settled`；舊 settled 或
 低層 `agent_end`（可能早於 retries）不能證明完成。Claude `--restricted --safe-mode` 停用自動
