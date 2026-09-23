@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from maf import cli, core, github, skills
+from maf import cli, core, flows, github, skills
 
 
 class FlowTests(unittest.TestCase):
@@ -120,6 +120,60 @@ class FlowTests(unittest.TestCase):
             core.verified(self.repo, new)
         with self.assertRaises(core.FlowError):
             core.billing_check(self.repo, core.execution_config(self.repo, "opus-sol")[1])
+
+    def test_named_flow_selects_models_without_changing_project_policy(self):
+        before = (self.repo / ".maf.json").read_bytes()
+        flow = flows.templates()["quick"]
+        flow["roles"]["coder"]["effort"] = "high"
+        flows.save(self.repo, "my-flow", flow)
+        core.select_mode(self.repo, "my-flow")
+        self.assertEqual(core.execution_config(self.repo)[1]["roles"]["coder"]["effort"], "high")
+        self.assertEqual((self.repo / ".maf.json").read_bytes(), before)
+        with self.assertRaises(core.FlowError):
+            core.billing_check(self.repo, core.execution_config(self.repo)[1])
+        with self.assertRaises(core.FlowError):
+            flows.save(self.repo, "bad", dict(flow, roles={"coder": {}}))
+
+    def test_claude_commit_verify_and_pi_delegate_bind_exact_sha(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        core.git(self.repo, "switch", "-c", "feature")
+        core.select_mode(self.repo, "quick")
+        core.confirm_billing(self.repo, core.execution_config(self.repo)[1])
+        (self.repo / "README.md").write_text("After from Claude\n")
+        core.git(self.repo, "add", "README.md")
+        core.git(self.repo, "commit", "-qm", "Claude implementation")
+        source = core.git(self.repo, "rev-parse", "HEAD")
+        review = core.submit(self.repo, self.task, kind="verify")
+        with patch.object(core.agents, "run_agent", side_effect=self.fake_agent) as agent:
+            core.execute(self.repo, review)
+        self.assertEqual(agent.call_count, 1)
+        self.assertEqual([a["role"] for a in review["agents"]], ["reviewer"])
+        self.assertEqual(core.handoff(self.repo, review)["head_sha"], source)
+        self.assertEqual(review["tested_sha"], review["reviewed_sha"])
+        delegate = core.submit(self.repo, dict(self.task, id="small-fix"), kind="delegate")
+        with patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
+            core.execute(self.repo, delegate)
+        self.assertEqual([a["runtime"] for a in delegate["agents"]], ["pi", "codex"])
+        self.assertEqual(delegate["source_sha"], source)
+        self.assertNotEqual(core.handoff(self.repo, delegate)["head_sha"], source)
+        self.assertEqual(core.git(self.repo, "rev-parse", "HEAD"), source)
+
+    def test_failed_external_verify_never_starts_a_coder(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        core.git(self.repo, "switch", "-c", "feature")
+        (self.repo / "README.md").write_text("Still wrong\n")
+        core.git(self.repo, "add", "README.md")
+        core.git(self.repo, "commit", "-qm", "Claude implementation")
+        run = core.submit(self.repo, self.task, kind="verify")
+        with patch.object(core.agents, "run_agent") as agent:
+            core.execute(self.repo, run)
+        agent.assert_not_called()
+        self.assertEqual(run["status"], "needs_human")
+        self.assertEqual(run["stage"], "external_fix")
+        with self.assertRaisesRegex(core.FlowError, "new verify"):
+            core.resume(self.repo, run["id"], True)
 
     def test_cli_mode_override_and_worker_target_do_not_consume_other_tasks(self):
         def call(*args):

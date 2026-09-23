@@ -1,23 +1,23 @@
 # multiple-agents-flow
 
-在 Herdr 裡使用不同 agent 完成程式開發：**規畫 → 實作 → 程式測試 → 獨立審查 → PR**。
-模型處理需要判斷的工作；Python 處理排程、狀態、驗收與 GitHub。
+以 **Claude Code 為主對話**開發：小任務由 Claude 完成，必要時交給 Pi 處理明確的小範圍工作；完成後由程式執行測試，交給獨立 agent review。只有你手動輸入 `/maf-plan`，才會使用 Codex GPT-6 Astra 規畫大型任務。
+Herdr 可用來分專案 workspace；Python 負責 worktree、狀態、測試證據與精確 commit SHA。Python 3.11+ 標準函式庫即可執行，支援 macOS/Linux。
 
-預設組合：Codex / GPT-6 Astra 按需規畫、Pi / DeepSeek V4.1 Flash 實作與獨立審查。
-也可選 Claude Opus 5 實作、Codex Sol 審查。`risk` 控制合併政策，不暗中更換模型。
-提供 Claude／Codex 共用 skill，底層使用 Python 3.11+ CLI，零第三方 Python 依賴，macOS/Linux。
+這也是可自行擴充的開源工具：可以儲存命名 flow、調整各 MAF agent 的 model／effort、匯入匯出 flow JSON。授權為 [MIT](LICENSE)。
 
 ## 建議使用方式：在主 agent 呼叫 skill
 
-本專案的 `.claude/skills/maf`、`.agents/skills/maf` 都指向同一份 [MAF skill](skills/maf/SKILL.md)。
+本專案的 `.claude/skills/maf`、`.agents/skills/maf` 都指向同一份 [MAF skill](skills/maf/SKILL.md)；Claude 的 [maf-plan skill](skills/maf-plan/SKILL.md) 設為只接受手動呼叫。
 在本專案開啟 Claude Code 或 Codex；若既有對話尚未顯示 skill，重新開啟專案對話。
 
 | 操作 | Claude Code | Codex CLI／IDE |
 |---|---|---|
-| 初次設定 | `/maf setup opus-sol` | `$maf setup opus-sol` |
-| 切換省額度組合 | `/maf mode economy` | `$maf mode economy` |
-| 切換 Opus＋Sol | `/maf mode opus-sol` | `$maf mode opus-sol` |
-| 開發需求 | `/maf run 修正登入表單的空白驗證` | `$maf run 修正登入表單的空白驗證` |
+| 初次設定 | `/maf setup quick` | `$maf setup quick` |
+| 切換日常 flow | `/maf mode quick` | `$maf mode quick` |
+| 切換大型任務 flow | `/maf mode planned` | `$maf mode planned` |
+| 大型任務規畫 | **手動** `/maf-plan 需求` | `plan --mode planned --goal-file ...` |
+| Pi 小範圍工作 | `/maf delegate 需求` | `$maf delegate 需求` |
+| 完成後驗證 | `/maf verify 需求` | `$maf verify 需求` |
 | 查進度與阻塞 | `/maf status` | `$maf status` |
 | 處理後恢復 | `/maf resume RUN_ID` | `$maf resume RUN_ID` |
 | 在另一個 repo 註冊 | `/maf install /path/to/repo` | `$maf install /path/to/repo` |
@@ -27,10 +27,20 @@ Claude 的 `/maf` 與 Codex 的 `/skills`／`$maf` 使用方式依據
 [Claude 官方文件](https://code.claude.com/docs/en/skills)與
 [Codex 官方文件](https://learn.chatgpt.com/docs/build-skills)。其他介面使用該介面的 skill 選擇器。
 
-`run` 讓主 agent 整理任務及驗收指令、自動產生 task JSON、啟動指定任務、回報驗收與阻塞；
-不必複製 function 或手寫 JSON。現有授權足夠就執行；欠缺信任／驗收指令授權或訂閱費用確認時才補問。
-主任務直接負責規畫，不再額外呼叫 Planner；獨立 Coder、程式測試、獨立 Reviewer 由 supervisor 執行。
-Skill 不會改變**目前對話**的模型；你可在 Claude Opus 或 Codex Astra/Sol 的主對話中使用同一份 skill。
+`delegate` 讓 Pi 在獨立 worktree 編輯，`verify` 直接測試 Claude 已提交的 HEAD 並讓非 Claude agent 獨立審查，`handoff RUN_ID` 回傳簡短證據。Claude 在主對話整理任務 JSON，使用者不用手寫。Pi 目前不能執行 shell 測試；由 supervisor 執行已核准的測試指令。整合 Pi 的 commit 後 SHA 會改變，須對整合後的 commit 再執行 `verify`。
+
+`run` 保留為明確要求的獨立 coder 批次流程。Skill 不會直接改變**目前 Claude 對話**的模型；GUI 可記住主對話偏好並複製 `/model`、`/effort` 指令，貼到 Claude 後切換。其他角色的設定影響之後啟動的 MAF agent。
+
+## 本機 Flow Studio
+
+```sh
+rtk proxy python3 flow.py ui
+```
+
+它只監聽 `127.0.0.1`，提供命名 flow、planner／Pi／reviewer 的 model 與 effort 編輯、快速切換及近期任務狀態。`quick` 是 Claude 開發、Codex Sol 審查；`planned` 提醒手動 `/maf-plan`，並提高 reviewer effort。兩者都能在需要時把明確小任務交給 Pi；規畫絕不因為選到 `planned` 自動啟動。
+Flow 存在該專案 Git 的私有 `maf/flows.json`，不會進入 commit；畫面可匯入匯出 JSON，在其他 workspace 重用。切換 profile 不改 `.maf.json`、Claude 設定或供應商帳號。變更模型後，使用前須重新確認該精確訂閱路由。
+
+CLI 也能操作：`flows` 列出 profile、`flow-save my-flow.json` 匯入、`mode quick`／`mode planned` 選擇。
 
 | 模式 | Coder | 獨立 Reviewer |
 |---|---|---|
@@ -38,6 +48,7 @@ Skill 不會改變**目前對話**的模型；你可在 Claude Opus 或 Codex As
 | `opus-sol` | Claude Opus 5，medium | Codex GPT-5.6 Sol，medium |
 | `hermes-coder` | Hermes coder / DeepSeek | Pi / DeepSeek |
 | `configured` | `.maf.json` 的 coder | `.maf.json` 的 reviewer |
+| `quick`／`planned`／自訂名稱 | Pi 小任務；Claude 留在主對話 | 預設 Codex Sol，可在 GUI 調整 |
 
 模式只影響**之後提交**的任務，存在 Git 私有狀態，不需要改設定檔再 commit；既有任務保留模型快照。
 每種有效設定第一次使用須有人的訂閱確認，之後切回已確認的組合不重問。
@@ -55,7 +66,7 @@ Herdr 內執行時會回報主任務 pane；其他環境依主 agent 的命令 s
 rtk proxy python3 /path/to/multiple-agents-flow/flow.py --repo /path/to/repo install-skills
 ```
 
-這會建立兩個專案內的 symlink，不改使用者全域設定；遇到同名 skill 或 symlink 父目錄會拒絕覆寫。
+這會建立三個專案內的 symlink（含 Claude 專用的 `maf-plan`），不改使用者全域設定；遇到同名 skill 或 symlink 父目錄會拒絕覆寫。
 其他專案的連結加入本機 Git exclude，避免把機器路徑提交出去；移動工具資料夾前需處理這些連結。
 以下為底層 CLI 細節，日常可直接使用 skill。
 
@@ -131,7 +142,7 @@ python3 "$FLOW" --repo "$TARGET" doctor
 大型任務則先寫目標文字檔：
 
 ```sh
-python3 "$FLOW" --repo "$TARGET" plan --goal-file /absolute/path/goal.md
+python3 "$FLOW" --repo "$TARGET" plan --mode planned --goal-file /absolute/path/goal.md
 ```
 
 輸出會保存於目標 repo 的 Git 私有狀態區，包含建議拆工、依賴與測試。先由你檢查，再為要執行的任務建立 JSON。
@@ -151,6 +162,24 @@ python3 "$FLOW" --repo "$TARGET" plan --goal-file /absolute/path/goal.md
 這裡的測試指令只是 Python 專案範例。**換成該專案真正能驗收需求的指令**，不能用 `true` 之類的空檢查。
 `tests` 是 argv 陣列，不是 shell 字串；需要多步驟請用多個陣列或已審查過的專案腳本。
 `paths` 使用區分大小寫的 glob（`*` 不跨目錄，`**` 可跨任意層）；請儘量精確列檔案。`risk` 預設應選 `manual`。
+
+Claude 主導時，task JSON 放在 repo 外的私人暫存檔，先提交目前程式碼並確認工作樹完全乾淨：
+
+```sh
+# 在 feature branch 上，驗證 Claude 的目前 HEAD；預設比較與 base branch 的共同祖先
+python3 "$FLOW" --repo "$TARGET" verify /absolute/path/task.json --mode quick
+python3 "$FLOW" --repo "$TARGET" work --once --run-id RUN_ID
+python3 "$FLOW" --repo "$TARGET" handoff RUN_ID
+
+# 把明確小任務交給 Pi；完成後檢查 handoff 的 source/head SHA 與變更範圍
+python3 "$FLOW" --repo "$TARGET" delegate /absolute/path/task.json --mode planned
+python3 "$FLOW" --repo "$TARGET" work --once --run-id RUN_ID
+python3 "$FLOW" --repo "$TARGET" handoff RUN_ID
+```
+
+`delegate` 不會自行把 Pi commit 合進目前分支。Claude 檢查後整合，再以新 task／新 SHA 執行 `verify`。在 base branch 直接驗證某個 commit 時，使用 `verify ... --base HEAD^` 明確指定比較起點。測試或審查失敗的 Claude commit 不會自動交給 Pi 修改；Claude 修好、重新提交後建立新的 `verify` run。
+
+以下 `submit` 是保留的獨立 coder 批次流程：
 
 ```sh
 # 只排入佇列，不呼叫模型、不 push
@@ -184,7 +213,7 @@ python3 "$FLOW" --repo "$TARGET" herdr
 之後可從另一個 pane `submit` 與 `status`。第一版使用單一寫入鎖：agent 工作中 submit 可能要求等目前任務完成；不會同時改壞狀態。
 沒有任務、等待重置、等待 GitHub CI 都不會喚醒 Planner。
 
-- 關閉 Planner 對話不會結束 supervisor。
+- 關閉 Claude 主對話不會結束 supervisor。
 - 不要停止 Herdr server，否則其中的程序也可能結束。
 - 在 supervisor pane 按 Ctrl-C 停止 worker；已保存任務與 worktree 保留。
 - 電腦重新啟動後，重新進入 Herdr、查看 `status`、處理模糊中斷，再執行 `herdr`。第一版不自動安裝 launchd。
@@ -323,7 +352,7 @@ Hermes adapter 使用 safe mode，停用 profile 的額外 hooks／MCP／skills�
 將目標專案既有的 Playwright／其他 E2E 指令列入 task.tests；測試由程式執行，不由 LLM 每次重新點擊。
 若需要視覺審查，請在 instructions 明確要求 Reviewer 讀取測試產出的截圖路徑，並選用已實測可讀圖的 runtime／模型。
 測試報告與截圖需由目標專案 `.gitignore` 排除，否則乾淨 worktree 檢查會阻擋。
-本工具本身沒有前端，因此自己的 E2E 是 CLI／Git／假 agent 流程測試；不宣稱已測過任意網站或 Tauri 原生 UI。
+工具的 Flow Studio 是本機設定畫面；目標專案的網站 E2E 仍須由該專案自己的測試指令驗證，不因 Flow Studio 可用就視為通過。
 
 第一版每次 agent invocation 是新 session，保存 session id 作追蹤但不自動續接；交接使用短任務與有限失敗摘要。
 這犧牲部分 session 快取，換取不混用對話與可重現的獨立審查。長 session 的精確恢復等實際量測後再做。
@@ -333,7 +362,7 @@ Pi usage 加總本次執行的所有 assistant `message_end`，包含工具循�
 input／cacheRead／cacheWrite／output 分開保留，reasoning 不再加進 output 或 total；`cost` 是 provider 估算，不能當訂閱帳單。
 新 Pi 紀錄的 `usage_scope` 是 `model_calls`；舊 run 沒有這個標記，用量不會被自動重寫，不能把舊最後一輪數字與新加總直接比較。
 通過的測試只交接命令、exit code 與 log 路徑，避免每次 review 都帶完整成功 log；需要時 Reviewer 可自行讀 log。
-已在主任務完成規畫就直接 submit；一個可獨立驗收的功能交給一個 Coder，避免逐檔派工及重複規畫。
+小任務由 Claude 在主對話直接處理；只把有清楚邊界與驗收方式的小工作交給 Pi，避免逐檔派工與重複規畫。
 
 ## 狀態、分享與開發
 

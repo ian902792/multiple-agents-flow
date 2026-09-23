@@ -236,7 +236,9 @@ def diagnostics(run):
             result.update(attention=True, next="Confirm quota reset and stopped process, then " + resume + " [--after TIME_WITH_ZONE].")
     elif status in ("needs_human", "creating"):
         result["attention"] = True
-        if stage in DONE:
+        if stage == "external_fix":
+            result["next"] = "Fix the source branch, commit, and start a new verify run for the new SHA."
+        elif stage in DONE:
             result["next"] = "Inspect feedback; reconcile with publish/merge. Do not replay agents."
         elif run.get("repairs", 0) > run["config"]["max_repairs"]:
             result["next"] = "Repair budget exhausted. Ask planner to diagnose the failure and submit a new scoped task."

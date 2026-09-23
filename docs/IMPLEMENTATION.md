@@ -1,12 +1,12 @@
 # v0.1 implementation contract
 
-Python 3.11+ stdlib. No server, web UI, API subscription proxy, or automatic installation.
+Python 3.11+ stdlib. Optional local-only web UI; no API subscription proxy or automatic installation.
 Herdr runs a persistent ordinary supervisor command in an explicitly created workspace.
 Native agent CLIs run as bounded subprocesses, with structured output captured to private logs.
 One implementation lane initially; planner/coder/reviewer are independently configured roles.
 The economy preset uses Astra for optional planning and Pi/DeepSeek for coding and review, with one repair.
 The opus-sol preset uses Claude Opus 5 coding and Codex Sol review. Risk never overrides the reviewer role.
-The main-chat skill reuses the host's planning and does not invoke an extra planner.
+Claude is the main developer. Only the manually invoked `/maf-plan` skill calls the read-only Codex planner.
 
 ## Files and ownership
 
@@ -15,8 +15,11 @@ The main-chat skill reuses the host's planning and does not invoke an extra plan
 - `maf/github.py`: publication and conservative exact-SHA merge policy.
 - `maf/progress.py`: read-only terminal summary, optional Herdr pane metadata, todo.md checklist projection.
 - `maf/cli.py`: CLI and Herdr launcher.
+- `maf/flows.py`: named, project-private role profiles; `.maf.json` remains policy.
+- `maf/ui.py` and `maf/static/index.html`: loopback-only flow editor and read-only run table.
 - `maf/skills.py`: project-only Claude/Codex discovery links; refuses conflicting skills and redirected parents.
 - `skills/maf/SKILL.md`: shared main-chat workflow, referenced by both hosts using relative symlinks.
+- `skills/maf-plan/SKILL.md`: Claude manual-only planner entrypoint.
 - `tests/`: stdlib unittest, fake subprocesses and temporary Git repositories, no model charges.
 - `README.md`: Traditional Chinese quickstart, walkthrough, safety and recovery.
 
@@ -56,6 +59,8 @@ not a remotely enforceable spending cap. `config_hashes` remembers each explicit
 configuration. A former singular `config_hash` is not accepted or migrated into approval.
 No model invocation until the exact execution configuration is confirmed.
 `maf/mode.json` under the common Git directory stores the local default mode, initially `configured`.
+`maf/flows.json` in the same private directory stores editable named flows; built-in `quick` and `planned`
+are available without writing that file. Import/export uses explicit JSON, never user-wide configuration.
 Named modes replace only roles; policy/timeouts stay in `.maf.json`. Submit snapshots the effective config
 and selected mode, with `config_hash` separately binding the base `.maf.json`. Changing selection never
 rewrites a run or invalidates its verification; changing base configuration still invalidates existing runs.
@@ -68,15 +73,20 @@ Task JSON: `id`, `title`, `instructions`, `paths` (explicit relative path/glob a
 `tests` (nonempty arrays of argv arrays), `risk` (`manual`, `docs`, `style`, `tests`).
 Task/config snapshots pin each run. Worktrees and branches are unique; never overwrite/reuse unrelated ones.
 
-Commands: `install-skills`, `init`, `mode`, `doctor`, `confirm-billing`, `plan`, `submit`, `work`, `status`, `progress`, `resume`,
-`publish`, `merge`, `herdr` (launch work in new no-focus Herdr workspace).
+Commands: `install-skills`, `init`, `mode`, `flows`, `flow-save`, `ui`, `doctor`, `confirm-billing`, `plan`,
+`submit`, `delegate`, `verify`, `work`, `status`, `handoff`, `progress`, `resume`, `publish`, `merge`, `herdr`.
 `submit` only queues. `work --once` executes one runnable task; `work` polls local state.
 `submit --mode NAME` overrides the mode for one task without changing the local default.
 `work --once --run-id ID` processes only that run, never another queued task and never implicitly replays
 an interrupted stage. The skill uses this form after submit/resume. Selection changes still use the writer lock.
 `install-skills` registers one shared skill in `.agents/skills/maf` and `.claude/skills/maf` in a Git repository,
-never user-wide configuration. External-repo registration paths are locally excluded from Git.
+plus manual-only `.claude/skills/maf-plan`; never user-wide configuration. External-repo registration paths are locally excluded from Git.
 Execution: queued -> coding -> testing -> reviewing -> verified -> PR / needs-human / merged.
+`delegate` snapshots a fully clean current branch HEAD, runs a Pi coder in a new worktree, then tests/reviews
+the resulting commit. It never integrates the result into the source branch. `verify` snapshots a fully clean
+current HEAD, checks the changed paths against an exact base/merge-base, and starts at testing without a coder.
+Failed tests or review of external work stop for Claude to fix and require a new run at the new SHA. `handoff`
+returns compact evidence only after tests, independent approval and the worktree HEAD all match.
 Every agent stage records a running checkpoint BEFORE invocation, with an activity label,
 start time, timeout (including up to 60 seconds for auth), and diagnostic log path.
 Each test command records its own activity checkpoint. Agent attempts also record provider and elapsed time.

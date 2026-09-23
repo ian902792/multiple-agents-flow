@@ -132,16 +132,24 @@ def config_for(repo):
     return validate_config(repo, config)
 
 
+def available_modes(repo):
+    from . import flows
+    return (*MODES, *sorted(flows.catalog(repo)))
+
+
 def execution_config(repo, mode=None):
     """Resolve the selection for NEW work without changing repository policy."""
     config = config_for(repo)
     path = root_for(repo) / "mode.json"
     if mode is None:
         mode = read_json(path) if path.exists() else "configured"
-    if not isinstance(mode, str) or mode not in MODES:
-        raise FlowError("Unknown mode; select one of: " + ", ".join(MODES))
-    if mode != "configured":
+    if not isinstance(mode, str) or mode not in available_modes(repo):
+        raise FlowError("Unknown mode; select one of: " + ", ".join(available_modes(repo)))
+    if mode in PRESETS:
         config["roles"] = default_config(mode)["roles"]
+    elif mode != "configured":
+        from . import flows
+        config["roles"] = flows.catalog(repo)[mode]["roles"]
     return mode, validate_config(repo, config)
 
 
@@ -277,20 +285,42 @@ def list_runs(repo):
     return runs
 
 
-def submit(repo, task, publish=False, auto_merge=False, mode=None):
+def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch", base_ref=None):
     repo = Path(repo).resolve()
     config_hash = digest(config_for(repo))
     mode, config = execution_config(repo, mode)
     validate_task(task)
+    if kind not in ("batch", "delegate", "verify"):
+        raise FlowError("Unknown work kind.")
     git(repo, "diff", "--exit-code")
     git(repo, "diff", "--cached", "--exit-code")
-    if git(repo, "branch", "--show-current") != config["base_branch"]:
+    current_branch = git(repo, "branch", "--show-current")
+    if not current_branch:
+        raise FlowError("Submit from a named branch, not detached HEAD.")
+    if kind == "batch" and current_branch != config["base_branch"]:
         raise FlowError("Submit from the configured base branch.")
+    if kind != "batch" and git(repo, "status", "--porcelain"):
+        raise FlowError("Commit or remove all workspace changes before delegating or verifying an exact HEAD.")
+    if kind != "batch" and (publish or auto_merge):
+        raise FlowError("Delegate and verify are local handoffs; publishing requires an explicit separate task.")
+    if kind == "delegate" and config["roles"]["coder"]["runtime"] != "pi":
+        raise FlowError("Delegate requires a Pi coder in the selected flow.")
+    if kind == "verify" and config["roles"]["reviewer"]["runtime"] == "claude":
+        raise FlowError("Claude-authored work needs an independent non-Claude reviewer.")
     if auto_merge and (not publish or task["risk"] == "manual"):
         raise FlowError("Auto merge requires --publish and a non-manual risk category.")
     from .progress import snapshot
-    checklist = snapshot(repo, task)  # Captured before any agent runs; None means no checklist integration.
-    base = git(repo, "rev-parse", "HEAD")
+    checklist = snapshot(repo, task) if kind == "batch" else None
+    source_head = git(repo, "rev-parse", "HEAD")
+    if kind == "verify":
+        if base_ref:
+            base = git(repo, "rev-parse", "--verify", base_ref + "^{commit}")
+            git(repo, "merge-base", "--is-ancestor", base, source_head)
+        else:
+            base = git(repo, "merge-base", source_head, config["base_branch"])
+        check_scope({"worktree": str(repo), "base_sha": base, "task": task})
+    else:
+        base = source_head
     run_id = task["id"] + "-" + uuid.uuid4().hex[:10]
     worktree = worktrees_for(repo) / run_id
     worktree.parent.mkdir(exist_ok=True, mode=0o700)
@@ -300,14 +330,15 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None):
             stream.write("\n/.maf-worktrees/\n")
     branch = "maf/" + run_id
     run = {"id": run_id, "repo": str(repo), "worktree": str(worktree), "branch": branch,
-           "base_sha": base, "owned_head": base, "config": config, "config_hash": config_hash, "mode": mode, "task": task,
-           "status": "creating", "stage": "coding", "repairs": 0, "created_at": time.time(),
+           "base_sha": base, "owned_head": source_head, "source_sha": source_head, "source_branch": current_branch,
+           "kind": kind, "config": config, "config_hash": config_hash, "mode": mode, "task": task,
+           "status": "creating", "stage": "testing" if kind == "verify" else "coding", "repairs": 0, "created_at": time.time(),
            "publish": bool(publish), "auto_merge": bool(auto_merge), "feedback": "", "agents": []}
     if checklist:
         run["checklist"] = checklist
     save(repo, run)
     try:
-        git(repo, "worktree", "add", "-b", branch, str(worktree), base)
+        git(repo, "worktree", "add", "-b", branch, str(worktree), source_head)
     except (FlowError, subprocess.SubprocessError, OSError) as exc:
         run.update(status="creating", feedback=f"Worktree creation incomplete: {exc}")
         save(repo, run)
@@ -364,6 +395,16 @@ def verified(repo, run):
         raise FlowError("Verified worktree is no longer clean.")
     check_scope(run)
     return head
+
+
+def handoff(repo, run):
+    from .progress import eligible
+    head = eligible(repo, run)
+    return {"run": run["id"], "kind": run.get("kind", "batch"), "status": run["status"],
+            "source_sha": run.get("source_sha", run["base_sha"]), "head_sha": head,
+            "branch": run["branch"], "paths": changed_paths(run),
+            "tests": [{"argv": item["argv"], "exit_code": item["exit_code"]} for item in run["tests"]],
+            "review": run["review"]}
 
 
 def terminate(proc):
@@ -433,6 +474,11 @@ def needs_repair(repo, run, feedback):
     run["feedback"] = feedback[-10000:]
     run.pop("tested_sha", None)
     run.pop("reviewed_sha", None)
+    if run.get("kind") == "verify":
+        run["stage"] = "external_fix"
+        run["status"] = "needs_human"
+        save(repo, run)
+        return
     run["repairs"] += 1
     run["stage"] = "coding"
     run["status"] = "queued" if run["repairs"] <= run["config"]["max_repairs"] else "needs_human"
@@ -464,7 +510,8 @@ def invoke(repo, run, role_name, prompt):
 
 def execute(repo, run):
     """One task, at most max_repairs additional passes. No unbounded model loop."""
-    if run.get("mode") not in MODES:
+    if (not isinstance(run.get("mode"), str)
+            or run["mode"] not in MODES and not re.fullmatch(r"[a-z][a-z0-9-]{0,39}", run["mode"])):
         raise FlowError("Run has no explicit supported mode. Inspect it and submit a new task; do not replay old role routing.")
     billing_check(repo, run["config"])
     unchanged(repo, run)
@@ -517,7 +564,7 @@ def execute(repo, run):
             if len(diff) > 120000:
                 raise FlowError("Diff too large for a bounded review; split the task.")
             prompt = ("Independent read-only review. Inspect relevant files and callers as needed. "
-                      "Do not edit, execute shell commands, or trust the implementer's claims. "
+                      "Do not edit, run project code, or trust the implementer's claims. "
                       "Find correctness/security/regression issues; assess whether this is genuinely low risk. "
                       "Return ONLY JSON with keys decision (approve|changes_requested), head_sha, "
                       "risk (low|manual), summary (string), findings (array of actionable strings). "
@@ -573,6 +620,8 @@ def process(repo, run):
 
 def resume(repo, run_id, acknowledge=False, after=None):
     run = load(repo, run_id)
+    if run.get("stage") == "external_fix":
+        raise FlowError("Fix the source branch, commit, and submit a new verify run for its new SHA.")
     if run["status"] not in ("waiting_quota", "needs_human", "running", "creating"):
         raise FlowError("Only quota/interrupted/needs-human runs can resume.")
     if not acknowledge:
@@ -582,15 +631,16 @@ def resume(repo, run_id, acknowledge=False, after=None):
     if run["status"] == "creating":
         if digest(config_for(repo)) != run["config_hash"]:
             raise FlowError("Configuration changed; submit a new task.")
+        source = run.get("source_sha", run["base_sha"])
         if not Path(run["worktree"]).exists():
             branches = git(repo, "branch", "--list", run["branch"])
             if branches:
-                if git(repo, "rev-parse", run["branch"]) != run["base_sha"]:
+                if git(repo, "rev-parse", run["branch"]) != source:
                     raise FlowError("Incomplete worktree's branch moved; manual recovery required.")
                 git(repo, "worktree", "add", run["worktree"], run["branch"])
             else:
-                git(repo, "worktree", "add", "-b", run["branch"], run["worktree"], run["base_sha"])
-        if git(run["worktree"], "rev-parse", "HEAD") != run["base_sha"] or git(run["worktree"], "status", "--porcelain"):
+                git(repo, "worktree", "add", "-b", run["branch"], run["worktree"], source)
+        if git(run["worktree"], "rev-parse", "HEAD") != source or git(run["worktree"], "status", "--porcelain"):
             raise FlowError("Incomplete worktree is not pristine; inspect manually.")
     unchanged(repo, run)
     if run["repairs"] > run["config"]["max_repairs"]:

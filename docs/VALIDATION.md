@@ -2,6 +2,14 @@
 
 這份文件區分離線測試與真正的 provider / GitHub 驗證，避免把 mock 當成實際成功。
 
+## 2026-09-23：Claude-first flow 與本機畫面
+
+- 92 項 unittest 在允許 loopback 的環境全數通過；一般 sandbox 禁止 bind 時，UI HTTP 測試會跳過，其餘通過。HTTP 測試涵蓋 token／Origin 限制、flow 儲存與選取。
+- 假 agent 的 `delegate` 與 `verify` 流程驗證：Pi 在獨立 worktree 編輯；Claude 既有 commit 只跑測試與非 Claude reviewer；`handoff` 要求同一 tested/reviewed SHA。失敗的外部 commit 不轉給 Pi 修復。
+- 本機 Flow Studio 用瀏覽器實看桌面與 390px 手機版：切換 quick/planned、檢查真實 run 表格及無整頁水平溢出；另在臨時 Git 專案透過畫面新增 flow、修改 Pi effort、儲存並選用，CLI 讀回相同設定，複製 `/model` 指令成功。畫面不會自動呼叫模型。
+- 視覺對照檢查了側欄寬度、白底／藍色強調、主要按鈕、三個 agent 列的文字與控制項、近期任務表格及手機版收合。相對概念圖，產品加入使用者要求的 Claude 主對話模型控制與匯入匯出；模型 ID 和任務資料改用真實值。1586×992 原生桌面視窗需向下捲動看完整表格；1586×1330 全頁截圖已覆蓋整個畫面，無裁切或整頁水平溢出。
+- 新的 `/maf-plan` Claude skill 設為手動觸發；未呼叫真實 Codex/Claude/Pi 模型，也未驗證 Claude 宿主實際列出此 skill。
+
 ## 2026-09-20：主 agent skill 與模式切換
 
 - 88 項離線 unittest 通過，新增模式切換保留任務／政策、Opus 5＋Sol 的 manual 任務路由、各設定獨立確認、單次模式覆寫、指定 run 不誤跑其他佇列，以及舊角色路由不隱含重播。

@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 
-from . import agents, core, github, progress, skills
+from . import agents, core, flows, github, progress, skills
 
 
 def parser():
@@ -19,17 +19,27 @@ def parser():
     p = commands.add_parser("init", help="Create .maf.json without overwriting existing configuration")
     p.add_argument("--preset", choices=core.PRESETS, default="economy")
     p = commands.add_parser("mode", help="Show or select the local default for new tasks; existing runs stay pinned")
-    p.add_argument("name", nargs="?", choices=core.MODES)
+    p.add_argument("name", nargs="?")
+    commands.add_parser("flows", help="List named project-private flows")
+    p = commands.add_parser("flow-save", help="Save a named flow from a JSON file")
+    p.add_argument("file", type=Path)
     commands.add_parser("doctor", help="Check runtime/auth availability without model inference")
     p = commands.add_parser("confirm-billing", help="Record your manual confirmation of subscription-only billing")
     p.add_argument("--no-overage", action="store_true", required=True)
     p = commands.add_parser("plan", help="Ask planner for a plan; never execute its output automatically")
     p.add_argument("--goal-file", type=Path, required=True)
+    p.add_argument("--mode", help="Use this named flow's planner for this request only")
     p = commands.add_parser("submit", help="Snapshot an approved task and queue its independent worktree")
     p.add_argument("task", type=Path)
-    p.add_argument("--mode", choices=core.MODES, help="Use this mode for this task only")
+    p.add_argument("--mode", help="Use this mode or named flow for this task only")
     p.add_argument("--publish", action="store_true", help="Authorize pushing this task branch and creating a draft PR")
     p.add_argument("--auto-merge", action="store_true", help="Authorize low-risk merge if all policy/GitHub gates pass")
+    for name in ("delegate", "verify"):
+        p = commands.add_parser(name, help="Queue Pi work or verify the current committed Claude work")
+        p.add_argument("task", type=Path)
+        p.add_argument("--mode", help="Use this mode or named flow for this task only")
+        if name == "verify":
+            p.add_argument("--base", help="Exact ancestor ref to compare with HEAD; default is merge-base with base branch")
     p = commands.add_parser("work", help="Process queued work; waits consume no model tokens")
     p.add_argument("--once", action="store_true")
     p.add_argument("--run-id", help="Only process this run, without consuming other queued tasks")
@@ -37,6 +47,8 @@ def parser():
     p.add_argument("--planner-pane", metavar="PANE_ID", help="Inside Herdr: update the main task pane while this worker runs")
     p = commands.add_parser("status", help="Print local run states, or one run's full evidence")
     p.add_argument("run_id", nargs="?")
+    p = commands.add_parser("handoff", help="Show compact, exact-SHA evidence for a verified run")
+    p.add_argument("run_id")
     p = commands.add_parser("progress", help="Read-only terminal summary of every run; no lock, no model calls")
     p.add_argument("--watch", action="store_true", help="Keep polling and print only when the summary changes; Ctrl-C exits")
     p.add_argument("--poll", type=int, default=5)
@@ -51,6 +63,9 @@ def parser():
         p = commands.add_parser(name, help=f"Explicitly {name} or reconcile an uncertain prior result")
         p.add_argument("run_id")
     commands.add_parser("herdr", help="Start one supervisor in a new no-focus Herdr workspace")
+    p = commands.add_parser("ui", help="Open the local flow editor and progress screen")
+    p.add_argument("--port", type=int, default=0)
+    p.add_argument("--no-open", action="store_true")
     return cli
 
 
@@ -95,8 +110,9 @@ def plan(repo, config, goal_file):
 
 def mode_info(repo):
     mode, config = core.execution_config(repo)
-    result = {"mode": mode, "available": core.MODES, "roles": config["roles"],
+    result = {"mode": mode, "available": core.available_modes(repo), "roles": config["roles"],
               "scope": "New tasks only; existing run snapshots are unchanged.", "billing": []}
+    result["flow"] = flows.catalog(repo).get(mode)
     try:
         core.billing_check(repo, config)
     except core.FlowError as exc:
@@ -115,6 +131,15 @@ def main(argv=None):
             result = core.load(repo, args.run_id) if args.run_id else [
                 {k: run.get(k) for k in ("id", "status", "stage", "repairs", "not_before", "pr_url", "feedback")}
                 for run in core.list_runs(repo)]
+        elif args.action == "handoff":
+            result = core.handoff(repo, core.load(repo, args.run_id))
+        elif args.action == "flows":
+            result = {"selected": core.execution_config(repo)[0], "flows": flows.catalog(repo)}
+        elif args.action == "ui":
+            from . import ui
+            core.execution_config(repo)
+            ui.serve(repo, args.port, not args.no_open)
+            return
         elif args.action == "work":
             if not 1 <= args.poll <= 3600:
                 raise core.FlowError("--poll must be 1..3600 seconds.")
@@ -143,12 +168,17 @@ def main(argv=None):
             with core.exclusive(repo):
                 if args.action == "install-skills":
                     result = skills.install(repo)
+                elif args.action == "flow-save":
+                    data = core.read_json(args.file)
+                    if not isinstance(data, dict) or set(data) != {"name", "flow"}:
+                        raise core.FlowError("Flow file needs name and flow, as exported by Flow Studio.")
+                    result = flows.save(repo, data["name"], data["flow"])
                 elif args.action == "init":
                     result = {"config": str(core.init(repo, args.preset)), "next": "Inspect configuration; run doctor and confirm-billing."}
                 else:
                     config = core.config_for(repo)
                     if args.action in ("doctor", "confirm-billing", "plan"):
-                        _, config = core.execution_config(repo)
+                        _, config = core.execution_config(repo, args.mode if args.action == "plan" else None)
                     if args.action == "mode":
                         core.select_mode(repo, args.name)
                         result = mode_info(repo)
@@ -171,6 +201,9 @@ def main(argv=None):
                         return
                     elif args.action == "submit":
                         result = core.submit(repo, core.read_json(args.task), args.publish, args.auto_merge, args.mode)
+                    elif args.action in ("delegate", "verify"):
+                        result = core.submit(repo, core.read_json(args.task), mode=args.mode, kind=args.action,
+                                             base_ref=getattr(args, "base", None))
                     elif args.action == "resume":
                         result = core.resume(repo, args.run_id, args.acknowledge_stopped, args.after)
                     else:

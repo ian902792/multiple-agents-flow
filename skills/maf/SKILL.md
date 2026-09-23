@@ -1,12 +1,13 @@
 ---
 name: maf
-description: Set up and operate multiple-agents-flow in the main coding chat. Use for MAF setup, economy or Opus/Sol mode selection, delegated development, progress, and blocked-run recovery.
+description: Operate multiple-agents-flow from the main coding chat. Use for named flow selection, scoped Pi delegation, exact-commit verification, progress, and blocked-run recovery.
 ---
 
 # MAF
 
-Stay in the current conversation. Use its reasoning for planning; do not launch
-another planner or delegate orchestration. Follow the user's language.
+Stay in the current conversation. Claude is the main developer for ordinary
+tasks. Never call the Codex planner automatically: only the human's explicit
+`/maf-plan` invocation may do that. Follow the user's language.
 
 ## Locate and dispatch
 
@@ -26,7 +27,10 @@ explain setup if `.maf.json` does not exist.
 | --- | --- |
 | `setup [MODE]` | Initialize if needed, select mode, check readiness. |
 | `mode [MODE]` | Show or persist the default for new tasks. No inference. |
-| `run <requirement>` | Prepare an approved task, submit, execute that exact ID. |
+| `delegate <requirement>` | Give one bounded task to Pi in its own worktree. |
+| `verify <requirement>` | Test and independently review Claude's current committed HEAD. |
+| `handoff RUN_ID` | Read a verified run's concise exact-SHA evidence. |
+| `run <requirement>` | Explicit legacy batch run with a separate coder. |
 | `status` | Read `progress --json`; summarize stage and blockers. |
 | `resume RUN_ID` | Diagnose, resolve authorized blockers, verify stopped processes, then resume. |
 | `install <repository>` | Run `install-skills` against that Git root to register this skill there. |
@@ -34,14 +38,16 @@ explain setup if `.maf.json` does not exist.
 Modes: `economy` = Pi/DeepSeek Flash coding + fresh Pi review;
 `opus-sol` = Claude Opus 5 coding + Codex Sol review;
 `hermes-coder` = Hermes coding + Pi review;
-`configured` = `.maf.json` roles. Tests run as approved commands without a
-tester model. Changing the main-chat model is a separate host UI action.
+`configured` = `.maf.json` roles. `quick`, `planned`, and user-created names
+are private role profiles; use `flows` to inspect them. Profiles select future
+MAF agents, not the current Claude session. Tests run as approved commands,
+without a tester model. Claude's `/model` and `/effort` control the main chat.
 
 ## Setup and mode
 
 1. Read target instructions and `.maf.json`. If absent, use `init --preset
    economy` (or the requested preset; `configured` initializes with economy).
-   Never overwrite an existing config.
+   Never overwrite an existing config. Use `ui` for the local flow editor.
 2. Use `mode MODE` to select; `mode` alone reports effective roles and billing
    readiness. Selection lives in private Git state, affects new submissions
    only, and preserves existing runs. Do not edit `.maf.json` to switch modes.
@@ -59,7 +65,40 @@ tester model. Changing the main-chat model is a separate host UI action.
    in another project uses `install-skills`, then opens/reloads that project's
    host session; never overwrite unrelated skills or install into user-wide paths.
 
-## Run
+## Claude-first work
+
+For ordinary tasks, implement in this Claude conversation. Do not start a
+separate Claude coder. Use Pi only for a narrow independent edit or test-writing
+task with explicit paths and approved test argv. Pi cannot execute shell tests;
+the supervisor runs them. Do not delegate planning, broad integration, or final
+sign-off to Pi.
+
+Prepare private task JSON with exactly `id`, `title`, `instructions`, `paths`,
+`tests`, `risk`, as described below. Keep it outside the Git worktree. Before
+`delegate` or `verify`, commit the current work and ensure the tree is fully
+clean; these commands snapshot exact HEAD. Do not stash or reset user changes.
+Read `mode` first. If it is still `configured` and the user has not selected
+another profile, use `--mode quick` for Claude-first delegation and review so
+the default independent reviewer is Codex Sol.
+
+- `delegate <task-file> [--mode NAME]` starts a Pi coder in an isolated
+  worktree at HEAD. Run `work --once --run-id ID`, then read `handoff ID` only
+  after verified completion. Inspect the scoped diff and integrate its commit
+  range into the main branch yourself. A cherry-pick creates a new SHA, so run
+  `verify` on that combined commit before calling it verified.
+- `verify <task-file> [--base ANCESTOR] [--mode NAME]` tests the current HEAD
+  and calls the selected independent non-Claude reviewer. By default it
+  compares with the merge-base of the configured base branch. For work on the
+  base branch, pass an exact ancestor with `--base`. Run its ID through
+  `work --once --run-id ID`; `handoff ID` gives the tested and reviewed SHA.
+  On failure, Claude fixes the source branch, commits, and starts a new verify
+  run. Never let a Pi coder repair an external Claude commit.
+
+Only claim verification if `handoff` succeeds for the current exact commit.
+If current HEAD has moved since submission, the evidence is for the earlier
+SHA; submit a new verify run. Never auto-publish or merge a delegated run.
+
+## Explicit batch run
 
 1. Read `mode` and `progress --json`. Honor billing/auth blockers. If a previous
    submission response was interrupted, inspect existing IDs before resubmitting.
