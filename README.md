@@ -55,6 +55,12 @@ python3 flow.py install-skills
 
 `planned` 只設定角色及提醒；**選到它不會自動啟動 Planner**。Pi 適合路徑明確、可獨立驗收的小任務。Pi 做完後，Claude 仍需檢查並整合變更，再對整合後的新 commit 執行 `verify`。
 
+### 同時交給多個 Pi
+
+如果有幾件**互不依賴**的小工作，可以在同一則 `/maf delegate` 中列出來，例如：「同時處理 1. 補 `docs/install.md` 安裝範例；2. 補 `docs/faq.md` 常見問題，各自用文件檢查驗收」。Claude 會先拆成不同任務、標記可並行，再一起排入；MAF 預設同時執行最多 **2 個 Pi delegate**。每個任務都有自己的 worktree、測試、審查與 commit 證據。編輯路徑重疊、使用通配路徑、需要人工核准，或不是同一來源 commit 的任務會等前一件完成。
+
+同時執行主要縮短等待時間；小範圍交給 Pi 也可減少主 Claude 對話的上下文負擔，但**並行本身不保證總 token 變少**。Claude 仍負責逐件檢查、整合，最後驗證整合後的 commit。[CLI 範例](docs/CLI.md#多個-pi-任務並行)說明如何指定 run ID 和調整並行上限。
+
 Flow Studio 可複製 flow，設定各角色 model／effort，並把新輸入的模型 ID 加入建議清單。畫面不會切換目前 Claude 對話的模型；要切換主對話，請在 Claude 輸入 `/model` 或 `/effort`。新模型是否可用，仍要以你自己的 CLI 與訂閱確認。
 
 ## 想讓 Claude 自動遵循這套流程
@@ -80,14 +86,14 @@ python3 "$FLOW" settings herdr on
 python3 "$FLOW" --repo "$TARGET" herdr
 ```
 
-主 pane 會顯示進度標題。Coder、Reviewer 執行時會開暫時 pane 顯示即時事件摘要，結束後自動關閉；你手動執行 `/maf-plan` 時也會有 Planner pane。Agent 仍由 MAF supervisor 執行與驗證。目前任務依序處理，所以同時最多一個 MAF agent 觀察 pane。Herdr 整合預設關閉；沒有 Herdr 也能正常使用 MAF。
+主 pane 會顯示進度標題。各個同時執行的 Pi 任務，其 Coder、Reviewer 會各自開暫時 pane 顯示即時事件摘要，結束後自動關閉；你手動執行 `/maf-plan` 時也會有 Planner pane。Agent 仍由 MAF supervisor 執行與驗證。Herdr 整合預設關閉；沒有 Herdr 也能正常使用 MAF。
 
 ## 使用界線與延伸閱讀
 
 - 只使用你已確認的訂閱路線；額度或登入不明時會停止，不會改用 API 計費。
 - 只在你信任的 repository 使用。工作樹不是安全沙箱，專案測試會執行你核准的命令。
 - 預設只做到本機驗證；發布 PR 或合併需要額外明確授權。
-- 目前只有一條任務執行線；多個任務會排隊，不會自動並行。
+- 並行只用於明確標記為獨立的窄範圍 Pi delegate；其他任務依序執行。
 
 需要直接使用 Python CLI、編寫任務 JSON、處理中斷或設定 PR 政策，請看[指令參考](docs/CLI.md)。想了解狀態機與安全檢查，請看[實作契約](docs/IMPLEMENTATION.md)；給 LLM 的詳細規則在[MAF skill](skills/maf/SKILL.md)，已實測與尚未實測的範圍記在[驗證紀錄](docs/VALIDATION.md)。
 

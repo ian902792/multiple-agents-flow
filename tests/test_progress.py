@@ -281,21 +281,27 @@ class ProgressTests(unittest.TestCase):
         def command(argv, *_args, **_kwargs):
             calls.append(argv)
             if argv[:3] == ["herdr", "pane", "split"]:
-                return json.dumps({"result": {"pane": {"pane_id": "w1:p2"}}})
+                splits = sum(call[:3] == ["herdr", "pane", "split"] for call in calls)
+                return json.dumps({"result": {"pane": {"pane_id": f"w1:p{splits + 1}"}}})
             return "{}"
         live = core.run_path(self.repo, "sample-run").parent / "coder.live"
+        other_live = core.run_path(self.repo, "other-run").parent / "coder.live"
         with patch.dict(os.environ, {"HERDR_ENV": "1", "HERDR_PANE_ID": "w1:p1"}), \
                 patch.object(core, "command", side_effect=command):
             with progress.agent_pane(self.repo, "MAF coder", self.repo, live, True) as pane:
                 self.assertEqual(pane, "w1:p2")
                 self.assertTrue(live.exists())
+                with progress.agent_pane(self.repo, "MAF other coder", self.repo, other_live, True) as other:
+                    self.assertEqual(other, "w1:p3")
+                    self.assertTrue(other_live.exists())
         self.assertEqual(calls[0], ["herdr", "pane", "get", "w1:p1"])
         self.assertEqual(calls[1][:5], ["herdr", "pane", "split", "w1:p1", "--direction"])
         self.assertIn("--no-focus", calls[1])
         self.assertEqual(calls[2][:4], ["herdr", "pane", "rename", "w1:p2"])
         self.assertEqual(calls[3][:4], ["herdr", "pane", "run", "w1:p2"])
         self.assertEqual(shlex.split(calls[3][-1])[-2:], ["live-view", str(live)])
-        self.assertEqual(calls[4], ["herdr", "pane", "close", "w1:p2"])
+        self.assertEqual([call for call in calls if call[:3] == ["herdr", "pane", "close"]],
+                         [["herdr", "pane", "close", "w1:p3"], ["herdr", "pane", "close", "w1:p2"]])
         self.assertFalse(any(argv[-1] == "w1:p1" for argv in calls if argv[:3] == ["herdr", "pane", "close"]))
 
     def test_live_event_shows_status_without_agent_content(self):

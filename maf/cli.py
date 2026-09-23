@@ -47,7 +47,8 @@ def parser():
             p.add_argument("--base", help="Exact ancestor ref to compare with HEAD; default is merge-base with base branch")
     p = commands.add_parser("work", help="Process queued work; waits consume no model tokens")
     p.add_argument("--once", action="store_true")
-    p.add_argument("--run-id", help="Only process this run, without consuming other queued tasks")
+    p.add_argument("--run-id", action="append", help="Only process these runs; repeat for independent Pi tasks")
+    p.add_argument("--pi-concurrency", type=int, default=2, help="Maximum simultaneous independent Pi delegates (default: 2; range: 1..8)")
     p.add_argument("--poll", type=int, default=30)
     p.add_argument("--planner-pane", metavar="PANE_ID", help="Inside Herdr: update the main task pane while this worker runs")
     p.add_argument("--agent-panes", action="store_true", help="Inside Herdr: show each supervised agent's live output in a temporary pane")
@@ -95,7 +96,7 @@ def launch_herdr(repo):
             "--agent-panes"]
     core.command(["herdr", "pane", "run", pane, shlex.join(argv)], repo)
     return {"pane": pane, "planner_pane": caller, "workspace": result["result"]["workspace"]["workspace_id"],
-            "note": "Supervisor persists independently of planner chat. Do not stop the Herdr server. Ctrl-C pauses this worker."}
+            "note": "Supervisor persists independently of planner chat. Ctrl-C stops new work and waits for active delegates to finish."}
 
 
 def plan(repo, config, goal_file):
@@ -180,7 +181,7 @@ def main(argv=None):
             if args.agent_panes:
                 progress.check_pane(repo, os.environ.get("HERDR_PANE_ID"))
             with progress.monitor(repo, args.planner_pane):
-                core.work(repo, args.once, args.poll, args.run_id, args.agent_panes)
+                core.work(repo, args.once, args.poll, args.run_id, args.agent_panes, args.pi_concurrency)
             return
         elif args.action == "progress":
             if not 1 <= args.poll <= 3600:
@@ -197,7 +198,7 @@ def main(argv=None):
             return
         elif args.action == "herdr":
             core.config_for(repo)
-            with core.exclusive(repo):
+            with core.worker_exclusive(repo):
                 pass  # Release before the new supervisor tries to claim the lock.
             result = launch_herdr(repo)
         else:
@@ -237,12 +238,14 @@ def main(argv=None):
                     elif args.action == "approve":
                         result = core.approve(repo, args.run_id)
                     elif args.action == "resume":
-                        result = core.resume(repo, args.run_id, args.acknowledge_stopped, args.after)
+                        with core.run_exclusive(repo, args.run_id):
+                            result = core.resume(repo, args.run_id, args.acknowledge_stopped, args.after)
                     else:
-                        run = core.load(repo, args.run_id)
-                        getattr(github, args.action)(repo, run)
-                        progress.sync(repo, run)
-                        result = run
+                        with core.run_exclusive(repo, args.run_id):
+                            run = core.load(repo, args.run_id)
+                            getattr(github, args.action)(repo, run)
+                            progress.sync(repo, run)
+                            result = run
         print(json.dumps(result, ensure_ascii=False, indent=2))
     except (core.FlowError, ValueError, OSError, subprocess.SubprocessError) as exc:
         print(f"flow: {exc}", file=sys.stderr)

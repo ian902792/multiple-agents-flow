@@ -7,10 +7,12 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
-from maf import cli, core, flows, github, skills
+from maf import cli, core, flows, github, progress, skills
 
 
 class FlowTests(unittest.TestCase):
@@ -247,6 +249,76 @@ class FlowTests(unittest.TestCase):
         self.assertNotEqual(core.handoff(self.repo, delegate)["head_sha"], source)
         self.assertEqual(core.git(self.repo, "rev-parse", "HEAD"), source)
 
+    def test_independent_pi_delegates_overlap_and_allow_new_submission(self):
+        self.assertEqual(cli.parser().parse_args(["work", "--run-id", "a", "--run-id", "b"]).run_id, ["a", "b"])
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        tasks = []
+        for name, path in (("a", "docs/a.md"), ("b", "docs/b.md"),
+                           ("c", "docs/a.md"), ("d", "docs/d.md")):
+            task = {"id": f"parallel-{name}", "title": f"Write {name}", "instructions": f"Create {path}.",
+                    "paths": [path], "tests": [[sys.executable, "-c",
+                    f"from pathlib import Path; assert Path('{path}').read_text() == 'After\\n'"]],
+                    "risk": "docs", "independent": True}
+            tasks.append(core.submit(self.repo, task, kind="delegate"))
+        entered, release = threading.Event(), threading.Event()
+        barrier = threading.Barrier(2, timeout=10)
+        errors = []
+
+        def agent(role, prompt, cwd, log, timeout):
+            if role["access"] == "edit":
+                if cwd.name.startswith(("parallel-a-", "parallel-b-")):
+                    barrier.wait()
+                    entered.set()
+                    if not release.wait(10):
+                        raise AssertionError("parallel agents did not finish")
+                path = "docs/b.md" if cwd.name.startswith("parallel-b-") else (
+                    "docs/d.md" if cwd.name.startswith("parallel-d-") else "docs/a.md")
+                (cwd / "docs").mkdir(exist_ok=True)
+                (cwd / path).write_text("After\n")
+                text = "Done"
+            else:
+                text = json.dumps({"decision": "approve", "head_sha": core.git(cwd, "rev-parse", "HEAD"),
+                                   "risk": "low", "summary": "Reviewed", "findings": []})
+            return {"status": "ok", "text": text, "session_id": "fake", "usage": None, "detail": ""}
+
+        def worker():
+            try:
+                core.work(self.repo, once=True, poll=0.1, run_id=[run["id"] for run in tasks], pi_concurrency=2)
+            except BaseException as exc:
+                errors.append(exc)
+
+        with patch.object(core.agents, "run_agent", side_effect=agent):
+            thread = threading.Thread(target=worker)
+            thread.start()
+            try:
+                self.assertTrue(entered.wait(10), "two Pi coders did not overlap")
+                time.sleep(0.25)  # Let the scheduler try to refill while both slots are occupied.
+                self.assertIn("2 running", progress.title_for(progress.rows(self.repo)))
+                for _ in range(20):
+                    try:
+                        with core.exclusive(self.repo):
+                            later = core.submit(self.repo, dict(tasks[1]["task"], id="parallel-later"), kind="delegate")
+                        break
+                    except core.FlowError as exc:
+                        if "Another flow command" not in str(exc):
+                            raise
+                        time.sleep(0.02)
+                else:
+                    self.fail("new work could not be submitted while Pi agents were active")
+                self.assertEqual(core.load(self.repo, tasks[2]["id"])["status"], "queued")
+                self.assertEqual(core.load(self.repo, tasks[3]["id"])["status"], "queued")
+            finally:
+                release.set()
+                thread.join(15)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        for run in tasks:
+            completed = core.load(self.repo, run["id"])
+            self.assertEqual(completed["status"], "verified")
+            self.assertEqual(core.handoff(self.repo, completed)["head_sha"], completed["tested_sha"])
+        self.assertEqual(later["status"], "queued")
+
     def test_failed_external_verify_never_starts_a_coder(self):
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")
@@ -333,11 +405,14 @@ class FlowTests(unittest.TestCase):
 
     def test_invalid_tasks(self):
         for field, value in [("id", "../escape"), ("paths", ["../a"]), ("paths", ["/tmp/a"]),
-                             ("paths", [".git/config"]), ("tests", []), ("tests", ["pytest"]), ("risk", "safe")]:
+                             ("paths", [".git/config"]), ("tests", []), ("tests", ["pytest"]),
+                             ("risk", "safe"), ("independent", "yes")]:
             with self.subTest(field=field, value=value):
                 task = dict(self.task, **{field: value})
                 with self.assertRaises(core.FlowError):
                     core.validate_task(task)
+        with self.assertRaisesRegex(core.FlowError, "Only Pi delegate"):
+            core.submit(self.repo, dict(self.task, independent=True))
 
     def test_no_implicit_billing_approval(self):
         (self.repo / ".maf-local.json").unlink()

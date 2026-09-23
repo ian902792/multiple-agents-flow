@@ -3,7 +3,7 @@
 Python 3.11+ stdlib. Local-only web UI edits user-wide flows and settings; no API subscription proxy.
 Herdr is opt-in and runs a persistent ordinary supervisor command in an explicitly created workspace.
 Native agent CLIs run as bounded subprocesses, with structured output captured to private logs.
-One implementation lane initially; planner/coder/reviewer are independently configured roles.
+Independent Pi delegates can occupy up to two execution lanes by default; planner/coder/reviewer are independently configured roles.
 The economy preset uses Astra for optional planning and Pi/DeepSeek for coding and review, with one repair.
 The opus-sol preset uses Claude Opus 5.5 coding and Codex Sol review. Risk never overrides the reviewer role.
 Claude is the main developer. Only the manually invoked `/maf-plan` skill calls the read-only Codex planner.
@@ -73,15 +73,19 @@ Private state under the repository's common Git directory `maf/runs/<id>`; atomi
 Worktrees under the target repository `.maf-worktrees/`, excluded through Git info/exclude;
 never under `.git`, because native agent safety modes correctly deny edits there.
 Task JSON: `id`, `title`, `instructions`, `paths` (explicit relative path/glob allowlist),
-`tests` (nonempty arrays of argv arrays), `risk` (`manual`, `docs`, `style`, `tests`).
+`tests` (nonempty arrays of argv arrays), `risk` (`manual`, `docs`, `style`, `tests`), and optional
+boolean `independent` for Pi delegates.
 Task/config snapshots pin each run. Worktrees and branches are unique; never overwrite/reuse unrelated ones.
 
 Commands: `install-skills`, `settings`, `init`, `mode`, `flows`, `flow-save`, `ui`, `doctor`, `confirm-billing`, `plan`,
 `submit`, `delegate`, `verify`, `approve`, `work`, `status`, `handoff`, `progress`, `resume`, `publish`, `merge`, `herdr`.
-`submit` only queues. `work --once` executes one runnable task; `work` polls local state.
+`submit` only queues. `work --once` executes one runnable task or one parallel wave of eligible Pi
+delegates; with repeated `--run-id`, it drains those IDs once each. `work` polls local state.
 `submit --mode NAME` overrides the mode for one task without changing the local default.
-`work --once --run-id ID` processes only that run, never another queued task and never implicitly replays
-an interrupted stage. The skill uses this form after submit/resume. Selection changes still use the writer lock.
+`work --once --run-id ID` processes only that run; repeating `--run-id` names a bounded set without
+consuming other queued tasks. Interrupted stages are never implicitly replayed. `--pi-concurrency N`
+sets the Pi delegate limit from 1 to 8 (default 2). The skill uses explicit IDs after delegation.
+Selection changes still use the repository writer lock.
 `install-skills` registers one shared skill in the user's `~/.agents/skills/maf` and `~/.claude/skills/maf`,
 plus manual-only `~/.claude/skills/maf-plan`. Global commands work outside a Git repository; `mode` remains per repository.
 Execution: awaiting_approval (when required) -> queued -> coding -> testing -> reviewing -> verified -> PR / needs-human / merged.
@@ -96,6 +100,14 @@ the resulting commit. It never integrates the result into the source branch. `ve
 current HEAD, checks the changed paths against an exact base/merge-base, and starts at testing without a coder.
 Failed tests or review of external work stop for Claude to fix and require a new run at the new SHA. `handoff`
 returns compact evidence only after tests, independent approval and the worktree HEAD all match.
+The scheduler runs up to two `independent: true` Pi delegates at once by default. Parallel eligibility
+requires narrow literal file paths, disjoint paths (case-insensitive comparison), the same source SHA,
+non-manual risk and no approval gate. An explicit marker is the caller's assertion that requirements and
+test resources are independent; the scheduler cannot infer semantic independence. Other runs remain serial.
+One worker lock prevents competing supervisors; the repository writer lock protects queue selection and
+serial execution, then is released during parallel delegate execution so more work can be submitted.
+Per-run locks prevent resume/publication of a run while its parallel worker is active. Worker interruption
+stops new scheduling and waits for active delegates to reach a safe checkpoint before exiting.
 Every agent stage records a running checkpoint BEFORE invocation, with an activity label,
 start time, timeout (including up to 60 seconds for auth), and diagnostic log path.
 Each test command records its own activity checkpoint. Agent attempts also record provider and elapsed time.
@@ -115,7 +127,7 @@ characters before printing. `--watch` prints only on change, sleeps the bounded 
 cleanly on Ctrl-C. `--planner-pane` requires `HERDR_ENV=1` and an explicit live pane id verified with
 `herdr pane get`; each poll runs `herdr pane report-metadata PANE --source maf-progress --title TEXT
 --ttl-ms TTL` (max of 15000 and `(poll + 15) * 1000`) to renew the TTL even when the display is unchanged.
-Titles include verified/total and active stage/task. A disappearing pane disables metadata with a warning.
+Titles include verified/total, the concurrent running count when greater than one, and an active stage/task. A disappearing pane disables metadata with a warning.
 TTY widths below 100 use multiple lines wrapped to terminal width, including 38 columns; pipes retain the table.
 No input is sent and no agent
 lifecycle is touched; Herdr failures are warnings only.
@@ -125,14 +137,14 @@ Deadlines overdue by more than 15 seconds request inspection, not an inferred ex
 Permission/auth stops, quota resets, exhausted repairs and publication recovery have distinct guidance.
 `herdr` validates the inherited HERDR_PANE_ID before creating its workspace and passes it to
 `work --planner-pane ID --agent-panes`. A local monitor thread reuses progress.show every five seconds while the worker
-holds the writer lock. It refreshes the main pane's metadata without injecting prompts or invoking models.
+runs. It refreshes the main pane's metadata without injecting prompts or invoking models.
 For each active coder/reviewer (and an explicitly invoked planner inside Herdr), MAF splits a no-focus pane
 from its own Herdr pane, labels it, and runs the private `live-view` observer. The adapter tees native
 stdout into a private live event file while retaining its bounded parser and final evidence log.
 The observer prints sanitized event names/tool types, not prompts or full transcripts. Only the pane ID
 returned by that split is closed after the role finishes; pane failures warn without replaying the agent.
 Agents still run as supervisor-owned subprocesses; Herdr's agent lifecycle display is not verification.
-The worker remains serial, so one MAF agent observer is active at a time. A manually invoked `work` needs
+Parallel Pi delegates can show multiple observer panes at once. A manually invoked `work` needs
 `--agent-panes` to opt in; plain `work` keeps its previous terminal behavior.
 Successful test logs stay in local evidence; review prompts carry only argv, exit_code and log path.
 

@@ -27,7 +27,7 @@ explain setup if `.maf.json` does not exist.
 | --- | --- |
 | `setup [MODE]` | Initialize if needed, select mode, check readiness. |
 | `mode [MODE]` | Show or persist the default for new tasks. No inference. |
-| `delegate <requirement>` | Give one bounded task to Pi in its own worktree. |
+| `delegate <requirements>` | Give one or more bounded tasks to Pi, in separate worktrees. |
 | `verify <requirement>` | Test and independently review Claude's current committed HEAD. |
 | `handoff RUN_ID` | Read a verified run's concise exact-SHA evidence. |
 | `run <requirement>` | Explicit legacy batch run with a separate coder. |
@@ -70,10 +70,15 @@ without a tester model. Claude's `/model` and `/effort` control the main chat.
 ## Claude-first work
 
 For ordinary tasks, implement in this Claude conversation. Do not start a
-separate Claude coder. Use Pi only for a narrow independent edit or test-writing
-task with explicit paths and approved test argv. Pi cannot execute shell tests;
-the supervisor runs them. Do not delegate planning, broad integration, or final
-sign-off to Pi.
+separate Claude coder. Use Pi only for narrow edits or test-writing tasks with
+explicit paths and approved test argv. Pi cannot execute shell tests; the
+supervisor runs them. Do not delegate planning, broad integration, or final
+sign-off to Pi. Mark a Pi task `"independent": true` only when it has its own
+clear acceptance criteria, exact non-overlapping editable file paths, and no
+dependency on another task or shared test resource. Queue all independent tasks
+from the same clean HEAD before starting the worker. MAF runs up to two at once
+by default; broad, sensitive, or approval-gated work remains serial. Do not
+claim that parallel execution alone reduces total tokens.
 
 Before substantial work, show the concrete goal, editable paths, test argv,
 model roles, repair limit and any publication action once. Ask for a decision
@@ -91,20 +96,23 @@ approve a changed plan by inference. New paths, commands or requirements need
 a new task and approval. Approval is for local execution only; publication and
 merge still require their own explicit authorization.
 
-Prepare private task JSON with exactly `id`, `title`, `instructions`, `paths`,
-`tests`, `risk`, as described below. Keep it outside the Git worktree. Before
+Prepare private task JSON with `id`, `title`, `instructions`, `paths`, `tests`,
+`risk`, and optional boolean `independent`, as described below. Keep it outside the Git worktree. Before
 `delegate` or `verify`, commit the current work and ensure the tree is fully
 clean; these commands snapshot exact HEAD. Do not stash or reset user changes.
 Read `mode` first. If it is still `configured` and the user has not selected
 another profile, use `--mode quick` for Claude-first delegation and review so
 the default independent reviewer is Codex Sol.
 
-- `delegate <task-file> [--mode NAME]` starts a Pi coder in an isolated
-  worktree at HEAD. Resolve any `awaiting_approval` gate first, then run
-  `work --once --run-id ID` and read `handoff ID` only
-  after verified completion. Inspect the scoped diff and integrate its commit
-  range into the main branch yourself. A cherry-pick creates a new SHA, so run
-  `verify` on that combined commit before calling it verified.
+- `delegate <task-file> [--mode NAME]` queues a Pi coder in an isolated
+  worktree at HEAD. For multiple independent requirements, prepare and submit
+  each task before starting the worker. Resolve any `awaiting_approval` gate,
+  then run `work --once --run-id ID` with one `--run-id` per submitted task;
+  the worker runs eligible tasks concurrently and drains those IDs without
+  consuming unrelated queued work. Read each `handoff ID` after verified
+  completion. Inspect each scoped diff and integrate its commit range into the
+  main branch yourself. A cherry-pick creates a new SHA, so run `verify` on
+  that combined commit before calling it verified.
 - `verify <task-file> [--base ANCESTOR] [--mode NAME]` tests the current HEAD
   and calls the selected independent non-Claude reviewer. By default it
   compares with the merge-base of the configured base branch. For work on the

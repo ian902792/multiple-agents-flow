@@ -366,6 +366,9 @@ def title_for(rows):
     attention = sum(row["attention"] for row in rows)
     if attention:
         parts.append(f"!{attention} attention")
+    running = sum(row["status"] == "running" for row in rows)
+    if running > 1:
+        parts.append(f"{running} running")
     active = next((row for status in ("running", "queued", "waiting_quota") for row in rows if row["status"] == status), None)
     if active:
         parts.append(f"{active['status']} {active['stage']} {active['task']}")

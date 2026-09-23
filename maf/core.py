@@ -1,7 +1,8 @@
-"""Single-writer task engine. No model is used for scheduling or verification."""
+"""Deterministic task engine. No model is used for scheduling or verification."""
 from __future__ import annotations
 
 import contextlib
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import copy
 import datetime as dt
 import fcntl
@@ -92,14 +93,26 @@ def worktrees_for(repo):
 
 
 @contextlib.contextmanager
-def exclusive(repo):
-    # ponytail: one writer per repository; per-run locks only when parallel lanes are added.
-    with (root_for(repo) / "lock").open("a") as lock:
+def locked(path, message, wait=False):
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with path.open("a") as lock:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(lock, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
         except BlockingIOError as exc:
-            raise FlowError("Another flow command owns this repository. Use status; do not start a second worker.") from exc
+            raise FlowError(message) from exc
         yield
+
+
+def exclusive(repo, wait=False):
+    return locked(root_for(repo) / "lock", "Another flow command is changing this repository; retry after it finishes.", wait)
+
+
+def worker_exclusive(repo):
+    return locked(root_for(repo) / "worker.lock", "Another flow worker is active; use status instead of starting a second worker.")
+
+
+def run_exclusive(repo, run_id):
+    return locked(run_path(repo, run_id).parent / "lock", f"Run {run_id} is active; inspect status before changing it.")
 
 
 PRESETS = ("economy", "opus-sol", "hermes-coder")
@@ -209,8 +222,11 @@ def safe_path(path):
 
 
 def validate_task(task):
-    if not isinstance(task, dict) or set(task) != {"id", "title", "instructions", "paths", "tests", "risk"}:
-        raise FlowError("Task needs exactly id, title, instructions, paths, tests, risk.")
+    required = {"id", "title", "instructions", "paths", "tests", "risk"}
+    if not isinstance(task, dict) or not required <= set(task) or set(task) - required - {"independent"}:
+        raise FlowError("Task needs id, title, instructions, paths, tests, risk and optional independent.")
+    if "independent" in task and type(task["independent"]) is not bool:
+        raise FlowError("Task independent must be true or false.")
     if not isinstance(task["id"], str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,39}", task["id"]):
         raise FlowError("Task id must be lowercase letters/digits/hyphens, max 40 characters.")
     for key in ("title", "instructions"):
@@ -365,6 +381,8 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch",
         raise FlowError("Delegate and verify are local handoffs; publishing requires an explicit separate task.")
     if kind == "delegate" and config["roles"]["coder"]["runtime"] != "pi":
         raise FlowError("Delegate requires a Pi coder in the selected flow.")
+    if kind != "delegate" and task.get("independent"):
+        raise FlowError("Only Pi delegate tasks can opt into parallel execution.")
     if kind == "verify" and config["roles"]["reviewer"]["runtime"] == "claude":
         raise FlowError("Claude-authored work needs an independent non-Claude reviewer.")
     if auto_merge and (not publish or task["risk"] == "manual"):
@@ -750,22 +768,97 @@ def resume(repo, run_id, acknowledge=False, after=None):
     return run
 
 
-def work(repo, once=False, poll=30, run_id=None, agent_panes=False):
-    while True:
-        with exclusive(repo):
-            candidates = [load(repo, run_id)] if run_id else list_runs(repo)
-            for run in candidates:
-                if run["status"] == "waiting_quota" and run.get("not_before") is not None and run["not_before"] <= time.time():
-                    run["status"] = "queued"
-                    save(repo, run)
-                if run["status"] == "queued" or (run["status"] == "pr" and run["auto_merge"] and run.get("next_check", 0) <= time.time()):
-                    print(f"[{run['id']}] {run['stage']}", flush=True)
-                    process(repo, run, agent_panes)
-                    print(f"[{run['id']}] {run['status']}: {run.get('feedback', '')[:500]}", flush=True)
-                    break
-            else:
-                if once:
-                    print("No runnable tasks. Quota/ambiguous stages are never retried implicitly.")
-        if once:
-            return
-        time.sleep(poll)
+def parallel_pi(run):
+    """Only an explicitly independent, narrow Pi handoff can share execution time."""
+    return (run.get("kind") == "delegate" and run["task"].get("independent") is True
+            and run["task"]["risk"] != "manual" and not run["approval"]["required"]
+            and not run["publish"] and not run["auto_merge"]
+            and run["config"]["roles"]["coder"]["runtime"] == "pi"
+            and all(not any(char in path for char in "*?[") for path in run["task"]["paths"]))
+
+
+def work(repo, once=False, poll=30, run_id=None, agent_panes=False, pi_concurrency=2):
+    if type(pi_concurrency) is not int or not 1 <= pi_concurrency <= 8:
+        raise FlowError("Pi concurrency must be 1..8.")
+    run_ids = [run_id] if isinstance(run_id, str) else run_id
+    if run_ids is not None and len(run_ids) != len(set(run_ids)):
+        raise FlowError("Each --run-id may be given only once.")
+    with worker_exclusive(repo), ThreadPoolExecutor(max_workers=pi_concurrency) as pool:
+        active = {}  # future -> (run, per-run lock)
+        started = False
+        processed_ids = set()
+        try:
+            while True:
+                selected = []
+                ran_serial = False
+                if not once or not started or run_ids is not None:
+                    with exclusive(repo, wait=True):
+                        candidates = [load(repo, item) for item in run_ids] if run_ids is not None else list_runs(repo)
+                        ready = []
+                        for run in candidates:
+                            if (run["status"] == "waiting_quota" and run.get("not_before") is not None
+                                    and run["not_before"] <= time.time()):
+                                run["status"] = "queued"
+                                save(repo, run)
+                            if (run["id"] not in processed_ids
+                                    and (run["status"] == "queued" or (run["status"] == "pr" and run["auto_merge"]
+                                                                          and run.get("next_check", 0) <= time.time()))):
+                                ready.append(run)
+                        for run in ready:
+                            if len(active) + len(selected) >= pi_concurrency:
+                                break
+                            if not parallel_pi(run):
+                                if not active and not selected:
+                                    print(f"[{run['id']}] {run['stage']}", flush=True)
+                                    process(repo, run, agent_panes)
+                                    print(f"[{run['id']}] {run['status']}: {run.get('feedback', '')[:500]}", flush=True)
+                                    started = True
+                                    ran_serial = True
+                                    if once:
+                                        processed_ids.add(run["id"])
+                                break
+                            peers = [item[0] for item in active.values()] + selected
+                            if peers and (run["source_sha"] != peers[0]["source_sha"]
+                                          or any({p.casefold() for p in run["task"]["paths"]}
+                                                 & {p.casefold() for p in peer["task"]["paths"]} for peer in peers)):
+                                continue
+                            selected.append(run)
+                            if len(active) + len(selected) == pi_concurrency:
+                                break
+                        for run in selected:
+                            guard = run_exclusive(repo, run["id"])
+                            guard.__enter__()
+                            try:
+                                print(f"[{run['id']}] {run['stage']}", flush=True)
+                                future = pool.submit(process, repo, run, agent_panes)
+                            except BaseException:
+                                guard.__exit__(None, None, None)
+                                raise
+                            active[future] = (run, guard)
+                            started = True
+                            if once:
+                                processed_ids.add(run["id"])
+                if once and not active and (run_ids is None and started or not selected and not ran_serial):
+                    if not started:
+                        print("No runnable tasks. Quota/ambiguous stages are never retried implicitly.")
+                    return
+                if active:
+                    done, _ = wait(active, timeout=poll, return_when=FIRST_COMPLETED)
+                    for future in done:
+                        run, guard = active.pop(future)
+                        try:
+                            future.result()
+                        finally:
+                            guard.__exit__(None, None, None)
+                        print(f"[{run['id']}] {run['status']}: {run.get('feedback', '')[:500]}", flush=True)
+                elif not once:
+                    time.sleep(poll)
+        finally:
+            # Ctrl-C stops new scheduling but lets active subprocesses reach a safe checkpoint.
+            for future, (run, guard) in active.items():
+                try:
+                    future.result()
+                except BaseException:
+                    pass
+                finally:
+                    guard.__exit__(None, None, None)

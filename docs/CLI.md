@@ -27,7 +27,7 @@ python3 "$FLOW" --repo "$TARGET" status
 | `verify TASK.json` | 排入目前 commit 的測試與獨立審查；回傳 run ID 與來源 SHA。 |
 | `submit TASK.json` | 排入獨立 coder 的批次任務；回傳 run ID 與狀態。 |
 | `approve RUN_ID` | 放行一份已檢視的凍結任務範圍；回傳更新後的 run。 |
-| `work [--once] [--run-id ID]` | 執行已排隊任務；持續印出階段與結果。 |
+| `work [--once] [--run-id ID ...] [--pi-concurrency N]` | 執行佇列；多個獨立 Pi 任務預設最多同時 2 個，印出各自階段與結果。 |
 | `status [RUN_ID]`、`progress [--json\|--watch]` | 查 run 的證據或只讀進度摘要。 |
 | `handoff RUN_ID` | 已驗證任務的精確 SHA、測試與審查摘要。 |
 | `resume RUN_ID` | 診斷中斷後明確恢復；回傳更新後的 run。 |
@@ -81,7 +81,7 @@ Planner 只回傳建議與私有結果檔，不會自動排隊或執行計畫。
 }
 ```
 
-`tests` 是一個或多個 argv 陣列，須換成該專案真正能驗收需求、已核准執行的命令；不要用空檢查。路徑是相對專案根目錄的精確檔案或 glob；`*` 不跨目錄，`**` 可跨多層。風險可用 `manual`、`docs`、`style`、`tests`；不確定時選 `manual`。任務以已提交的 HEAD 建立 worktree，開始前需檢查工作樹。
+`tests` 是一個或多個 argv 陣列，須換成該專案真正能驗收需求、已核准執行的命令；不要用空檢查。路徑是相對專案根目錄的精確檔案或 glob；`*` 不跨目錄，`**` 可跨多層。風險可用 `manual`、`docs`、`style`、`tests`；不確定時選 `manual`。Pi delegate 可額外使用布林欄位 `"independent": true`，明確表示它不依賴其他任務或共用測試資源；未標記時依序執行。任務以已提交的 HEAD 建立 worktree，開始前需檢查工作樹。
 
 網站專案可把既有的 Playwright 等 E2E 命令列入 `tests`；MAF 執行該命令，並依退出碼判定。若審查需要看截圖，須在任務說明指定輸出位置與可讀圖的 reviewer；測試產物也應由目標專案忽略，避免污染乾淨工作樹檢查。
 
@@ -104,6 +104,26 @@ python3 "$FLOW" --repo "$TARGET" handoff RUN_ID
 ```
 
 Pi 在獨立 worktree 工作；MAF 不會自動把結果合進 Claude 的分支。Claude 檢查並整合後，對新的整合 commit 再執行 `verify`。Pi 不能自行執行 shell 測試；測試由 supervisor 執行。
+
+### 多個 Pi 任務並行
+
+例如把「安裝說明」與「常見問題」拆成兩份任務 JSON，兩者各有自己的精確檔案路徑與驗收命令；先從**同一個乾淨 HEAD** 排入，再一起執行：
+
+```json
+{"id":"install-docs","title":"補安裝說明","instructions":"新增 docs/install.md 的實際安裝步驟。","paths":["docs/install.md"],"tests":[["python3","-c","from pathlib import Path; assert Path('docs/install.md').is_file()"]],"risk":"docs","independent":true}
+```
+
+第二份只修改 `docs/faq.md`，並用自己的測試檢查該檔。儲存為 `/private/path/install.json` 與 `/private/path/faq.json` 後：
+
+```sh
+python3 "$FLOW" --repo "$TARGET" delegate /private/path/install.json --mode quick
+python3 "$FLOW" --repo "$TARGET" delegate /private/path/faq.json --mode quick
+python3 "$FLOW" --repo "$TARGET" work --once --run-id INSTALL_RUN_ID --run-id FAQ_RUN_ID
+python3 "$FLOW" --repo "$TARGET" handoff INSTALL_RUN_ID
+python3 "$FLOW" --repo "$TARGET" handoff FAQ_RUN_ID
+```
+
+`delegate` 回傳的 JSON 有各自的 run ID；請把它填入後續指令。`work --once` 會把指定 ID 各處理一次，不會帶入其他排隊任務。預設最多同時 **2** 個 Pi delegate；用 `--pi-concurrency N` 調整上限（1–8），設為 `1` 會依序執行。只有標記獨立、相同來源 SHA、編輯檔案不重疊、無通配路徑且無人工核准門檻的低風險 Pi delegate 會並行；其他任務照順序處理。即使兩個 worktree 都已驗證，整合後仍要對新 commit 執行 `verify`。Herdr supervisor 已在執行時，只需排入任務，讓它自行接手。
 
 `submit TASK.json` 是明確要求 MAF 啟動獨立 coder 的批次入口。它只排隊，真正執行靠 `work`；可加 `--mode NAME` 覆寫單一任務的角色設定，不改專案下次的預設。任務使用受限的修改路徑、測試與修復次數；Coder 不能替自己批准 review。
 
@@ -144,8 +164,8 @@ python3 "$FLOW" settings herdr on
 python3 "$FLOW" --repo "$TARGET" herdr
 ```
 
-`herdr` 建立不搶焦點的 supervisor workspace，更新呼叫端 pane 標題；Coder／Reviewer 執行時顯示暫時觀察 pane，完成後關閉。Planner 仍需你手動使用 `/maf-plan`。沒有常駐 supervisor 時，在 Herdr 內可用 `work --once --run-id RUN_ID --agent-panes`。這些 pane 顯示進度，不是驗證證據；目前只依序執行一個 MAF agent。
-在 supervisor pane 按 Ctrl-C 會停止 worker；狀態和工作樹保留。再次啟動前先用 `status` 檢查中斷的 run，不要假設正在執行的 agent 已正常完成。
+`herdr` 建立不搶焦點的 supervisor workspace，更新呼叫端 pane 標題；每個執行中的 Coder／Reviewer 都有自己的暫時觀察 pane，完成後關閉。Planner 仍需你手動使用 `/maf-plan`。沒有常駐 supervisor 時，在 Herdr 內可用 `work --once --run-id RUN_ID --agent-panes`；多個任務就重複 `--run-id`。這些 pane 顯示進度，不是驗證證據。
+在 supervisor pane 按 Ctrl-C 會停止接新任務，並等待正在執行的 Pi delegate 到達安全完成點後退出；狀態和工作樹保留。再次啟動前先用 `status` 檢查中斷的 run，不要假設正在執行的 agent 已正常完成。
 
 若專案根目錄有已追蹤的 `todo.md`，可把任務 ID 接到唯一一行：
 

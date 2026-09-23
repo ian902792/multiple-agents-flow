@@ -9,6 +9,12 @@
 - 用瀏覽器在隔離的暫存全域設定目錄新增 `docs-review` flow、儲存 Herdr 開關；畫面提示 terminal 使用 `/maf mode docs-review`，且沒有 mode 切換按鈕。說明頁列出 32 筆 skill／CLI 指令；390px 手機寬度沒有整頁水平溢出。
 - 沒有在 Herdr pane 或真實模型上執行新整合；Herdr 命令與 pane metadata 以 mock 測試。下列較早紀錄描述當時的專案內安裝與 GUI 切換，已被目前設計取代。
 
+## 2026-09-23：獨立 Pi 任務並行
+
+- 100 項 unittest 全數通過。
+- 離線測試使用兩個假 Pi coder 的同步屏障，確認同時執行；在它們工作時仍可排入新任務。測試也確認同時任務數上限、重疊編輯路徑延後、各自測試與 review 綁定各自精確 SHA。
+- Herdr 觀察 pane 的模擬測試確認兩個 pane 可同時開啟並各自關閉；尚未在真實 Herdr 與模型供應商上執行並行驗證。
+
 ## 2026-09-23：Claude-first flow 與本機畫面
 
 - 92 項 unittest 在允許 loopback 的環境全數通過；一般 sandbox 禁止 bind 時，UI HTTP 測試會跳過，其餘通過。HTTP 測試涵蓋 token／Origin 限制、flow 儲存與選取。
@@ -55,7 +61,7 @@
 
 - GitHub 自動合併的真實成功路徑尚未完成；單元測試包含成功／拒絕路徑，實際 private repo 被方案限制安全阻擋。
 - Hermes coder 的真實模型呼叫尚未測試；只完成 CLI／登入探測與 parser／argv 單元測試。
-- 任意專案的 UI／E2E、睡眠／重開機實機恢復、多人或多 lane 並行。
+- 任意專案的 UI／E2E、睡眠／重開機實機恢復、多人跨程序同時操作、真實 Pi／Herdr 併發。
 
 ## 本帳號的 GitHub 限制
 
