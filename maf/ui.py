@@ -7,25 +7,17 @@ from pathlib import Path
 import secrets
 import webbrowser
 
-from . import core, flows, progress
+from . import core, flows
 
 
 PAGE = (Path(__file__).parent / "static" / "index.html").read_text()
 
 
-def state(repo):
-    mode, config = core.execution_config(repo)
-    try:
-        core.billing_check(repo, config)
-        billing = "ready"
-    except core.FlowError:
-        billing = "confirmation needed for this exact profile"
-    return {"mode": mode, "flows": flows.catalog(repo), "rows": progress.rows(repo),
-            "billing": billing, "project": Path(repo).name}
+def state():
+    return {"flows": flows.catalog(), "settings": flows.settings()}
 
 
-def server(repo, port=0):
-    repo = Path(repo).resolve()
+def server(port=0):
     token = secrets.token_hex(24)
 
     class Handler(BaseHTTPRequestHandler):
@@ -56,7 +48,7 @@ def server(repo, port=0):
                 return self.reply(200, PAGE.replace("__MAF_TOKEN__", token), "text/html; charset=utf-8")
             if self.path == "/api/state" and self.headers.get("X-MAF-Token") == token:
                 try:
-                    return self.reply(200, json.dumps(state(repo), ensure_ascii=False))
+                    return self.reply(200, json.dumps(state(), ensure_ascii=False))
                 except (core.FlowError, OSError, ValueError) as exc:
                     return self.reply(409, json.dumps({"error": str(exc)}))
             self.reply(404, b"Not found", "text/plain")
@@ -75,24 +67,23 @@ def server(repo, port=0):
                 if not 0 < length <= 65536:
                     raise ValueError("Request must be 1..65536 bytes.")
                 body = json.loads(self.rfile.read(length))
-                with core.exclusive(repo):
-                    if self.path == "/api/flow" and isinstance(body, dict) and set(body) == {"name", "flow"}:
-                        flows.save(repo, body["name"], body["flow"])
-                    elif self.path == "/api/mode" and isinstance(body, dict) and set(body) == {"name"}:
-                        core.select_mode(repo, body["name"])
-                    else:
-                        return self.reply(400, json.dumps({"error": "Unknown operation or payload."}))
-                self.reply(200, json.dumps(state(repo), ensure_ascii=False))
+                if self.path == "/api/flow" and isinstance(body, dict) and set(body) == {"name", "flow"}:
+                    flows.save(body["name"], body["flow"])
+                elif self.path == "/api/settings" and isinstance(body, dict) and set(body) == {"herdr_enabled"}:
+                    flows.set_herdr(body["herdr_enabled"])
+                else:
+                    return self.reply(400, json.dumps({"error": "Unknown operation or payload."}))
+                self.reply(200, json.dumps(state(), ensure_ascii=False))
             except (core.FlowError, OSError, ValueError, TypeError, KeyError) as exc:
                 self.reply(409, json.dumps({"error": str(exc)}))
 
     return ThreadingHTTPServer(("127.0.0.1", port), Handler)
 
 
-def serve(repo, port=0, open_browser=True):
+def serve(port=0, open_browser=True):
     if not 0 <= port <= 65535:
         raise core.FlowError("Port must be 0..65535.")
-    http = server(repo, port)
+    http = server(port)
     url = f"http://127.0.0.1:{http.server_port}/"
     print(f"MAF Flow Studio: {url}", flush=True)
     if open_browser:

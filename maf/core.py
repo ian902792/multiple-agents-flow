@@ -134,7 +134,7 @@ def config_for(repo):
 
 def available_modes(repo):
     from . import flows
-    return (*MODES, *sorted(flows.catalog(repo)))
+    return (*MODES, *sorted(flows.catalog()))
 
 
 def execution_config(repo, mode=None):
@@ -149,7 +149,7 @@ def execution_config(repo, mode=None):
         config["roles"] = default_config(mode)["roles"]
     elif mode != "configured":
         from . import flows
-        config["roles"] = flows.catalog(repo)[mode]["roles"]
+        config["roles"] = flows.catalog()[mode]["roles"]
     return mode, validate_config(repo, config)
 
 
@@ -162,12 +162,9 @@ def select_mode(repo, mode):
 def validate_config(repo, config):
     if not isinstance(config, dict) or set(config) != set(default_config()):
         raise FlowError("Invalid config keys; compare with flow init output.")
-    if config["version"] != 1 or not isinstance(config["roles"], dict) or set(config["roles"]) != {"planner", "coder", "reviewer"}:
-        raise FlowError("Invalid version or roles.")
-    for name, role in config["roles"].items():
-        agents.validate_role(role)
-        if role["access"] != ("edit" if name == "coder" else "read"):
-            raise FlowError(f"{name} has incorrect tool access.")
+    if config["version"] != 1:
+        raise FlowError("Invalid config version.")
+    validate_roles(config["roles"])
     for key in ("agent_timeout", "test_timeout", "max_repairs"):
         if type(config[key]) is not int or not 0 <= config[key] <= 86400:
             raise FlowError(f"Invalid {key}.")
@@ -184,6 +181,15 @@ def validate_config(repo, config):
         for path in patterns:
             safe_path(path)
     return config
+
+
+def validate_roles(roles):
+    if not isinstance(roles, dict) or set(roles) != {"planner", "coder", "reviewer"}:
+        raise FlowError("Invalid roles.")
+    for name, role in roles.items():
+        agents.validate_role(role)
+        if role["access"] != ("edit" if name == "coder" else "read"):
+            raise FlowError(f"{name} has incorrect tool access.")
 
 
 def safe_path(path):

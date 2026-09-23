@@ -1,7 +1,7 @@
 # v0.1 implementation contract
 
-Python 3.11+ stdlib. Optional local-only web UI; no API subscription proxy or automatic installation.
-Herdr runs a persistent ordinary supervisor command in an explicitly created workspace.
+Python 3.11+ stdlib. Local-only web UI edits user-wide flows and settings; no API subscription proxy.
+Herdr is opt-in and runs a persistent ordinary supervisor command in an explicitly created workspace.
 Native agent CLIs run as bounded subprocesses, with structured output captured to private logs.
 One implementation lane initially; planner/coder/reviewer are independently configured roles.
 The economy preset uses Astra for optional planning and Pi/DeepSeek for coding and review, with one repair.
@@ -15,9 +15,9 @@ Claude is the main developer. Only the manually invoked `/maf-plan` skill calls 
 - `maf/github.py`: publication and conservative exact-SHA merge policy.
 - `maf/progress.py`: read-only terminal summary, optional Herdr pane metadata, todo.md checklist projection.
 - `maf/cli.py`: CLI and Herdr launcher.
-- `maf/flows.py`: named, project-private role profiles; `.maf.json` remains policy.
-- `maf/ui.py` and `maf/static/index.html`: loopback-only flow editor and read-only run table.
-- `maf/skills.py`: project-only Claude/Codex discovery links; refuses conflicting skills and redirected parents.
+- `maf/flows.py`: user-wide named role profiles and Herdr setting; `.maf.json` remains project policy.
+- `maf/ui.py` and `maf/static/index.html`: loopback-only flow and integration settings editor; no mode switching or run control.
+- `maf/skills.py`: one-time user-wide Claude/Codex discovery links; refuses conflicting skills and redirected parents.
 - `skills/maf/SKILL.md`: shared main-chat workflow, referenced by both hosts using relative symlinks.
 - `skills/maf-plan/SKILL.md`: Claude manual-only planner entrypoint.
 - `tests/`: stdlib unittest, fake subprocesses and temporary Git repositories, no model charges.
@@ -59,8 +59,9 @@ not a remotely enforceable spending cap. `config_hashes` remembers each explicit
 configuration. A former singular `config_hash` is not accepted or migrated into approval.
 No model invocation until the exact execution configuration is confirmed.
 `maf/mode.json` under the common Git directory stores the local default mode, initially `configured`.
-`maf/flows.json` in the same private directory stores editable named flows; built-in `quick` and `planned`
-are available without writing that file. Import/export uses explicit JSON, never user-wide configuration.
+`$XDG_CONFIG_HOME/multiple-agents-flow/flows.json` (default `~/.config/multiple-agents-flow/flows.json`)
+stores editable user-wide named flows; built-in `quick` and `planned` are available without writing that file.
+The adjacent `settings.json` holds `herdr_enabled`, default false. Import/export uses explicit JSON.
 Named modes replace only roles; policy/timeouts stay in `.maf.json`. Submit snapshots the effective config
 and selected mode, with `config_hash` separately binding the base `.maf.json`. Changing selection never
 rewrites a run or invalidates its verification; changing base configuration still invalidates existing runs.
@@ -73,14 +74,14 @@ Task JSON: `id`, `title`, `instructions`, `paths` (explicit relative path/glob a
 `tests` (nonempty arrays of argv arrays), `risk` (`manual`, `docs`, `style`, `tests`).
 Task/config snapshots pin each run. Worktrees and branches are unique; never overwrite/reuse unrelated ones.
 
-Commands: `install-skills`, `init`, `mode`, `flows`, `flow-save`, `ui`, `doctor`, `confirm-billing`, `plan`,
+Commands: `install-skills`, `settings`, `init`, `mode`, `flows`, `flow-save`, `ui`, `doctor`, `confirm-billing`, `plan`,
 `submit`, `delegate`, `verify`, `work`, `status`, `handoff`, `progress`, `resume`, `publish`, `merge`, `herdr`.
 `submit` only queues. `work --once` executes one runnable task; `work` polls local state.
 `submit --mode NAME` overrides the mode for one task without changing the local default.
 `work --once --run-id ID` processes only that run, never another queued task and never implicitly replays
 an interrupted stage. The skill uses this form after submit/resume. Selection changes still use the writer lock.
-`install-skills` registers one shared skill in `.agents/skills/maf` and `.claude/skills/maf` in a Git repository,
-plus manual-only `.claude/skills/maf-plan`; never user-wide configuration. External-repo registration paths are locally excluded from Git.
+`install-skills` registers one shared skill in the user's `~/.agents/skills/maf` and `~/.claude/skills/maf`,
+plus manual-only `~/.claude/skills/maf-plan`. Global commands work outside a Git repository; `mode` remains per repository.
 Execution: queued -> coding -> testing -> reviewing -> verified -> PR / needs-human / merged.
 `delegate` snapshots a fully clean current branch HEAD, runs a Pi coder in a new worktree, then tests/reviews
 the resulting commit. It never integrates the result into the source branch. `verify` snapshots a fully clean

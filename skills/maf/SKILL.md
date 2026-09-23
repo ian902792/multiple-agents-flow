@@ -33,13 +33,13 @@ explain setup if `.maf.json` does not exist.
 | `run <requirement>` | Explicit legacy batch run with a separate coder. |
 | `status` | Read `progress --json`; summarize stage and blockers. |
 | `resume RUN_ID` | Diagnose, resolve authorized blockers, verify stopped processes, then resume. |
-| `install <repository>` | Run `install-skills` against that Git root to register this skill there. |
+| `install` | Register this skill once in the user's Claude and Codex skill directories. |
 
 Modes: `economy` = Pi/DeepSeek Flash coding + fresh Pi review;
 `opus-sol` = pinned Claude Opus 5.5 coding + Codex GPT-6 Sol review;
 `hermes-coder` = Hermes coding + Pi review;
 `configured` = `.maf.json` roles. `quick`, `planned`, and user-created names
-are private role profiles; use `flows` to inspect them. Profiles select future
+are user-wide role profiles; use `flows` to inspect them. Profiles select future
 MAF agents, not the current Claude session. Tests run as approved commands,
 without a tester model. Claude's `/model` and `/effort` control the main chat.
 
@@ -47,7 +47,8 @@ without a tester model. Claude's `/model` and `/effort` control the main chat.
 
 1. Read target instructions and `.maf.json`. If absent, use `init --preset
    economy` (or the requested preset; `configured` initializes with economy).
-   Never overwrite an existing config. Use `ui` for the local flow editor.
+   Never overwrite an existing config. Use `ui` to edit user-wide flows and
+   the optional Herdr setting; it never selects the target project's mode.
 2. Use `mode MODE` to select; `mode` alone reports effective roles and billing
    readiness. Selection lives in private Git state, affects new submissions
    only, and preserves existing runs. Do not edit `.maf.json` to switch modes.
@@ -61,9 +62,9 @@ without a tester model. Claude's `/model` and `/effort` control the main chat.
    a setup request is not billing attestation. Approved configurations are
    remembered, so switching back needs no repeated attestation.
 5. Report the mode and remaining blockers. No inference, commit, push, provider
-   setting change, or global agent configuration change during setup. Installing
-   in another project uses `install-skills`, then opens/reloads that project's
-   host session; never overwrite unrelated skills or install into user-wide paths.
+   setting change, or global agent configuration change during setup. The skill
+   is installed once for this user via `install-skills`; another project only
+   needs its own `.maf.json`. Never overwrite unrelated skills.
 
 ## Claude-first work
 
@@ -119,9 +120,10 @@ SHA; submit a new verify run. Never auto-publish or merge a delegated run.
    files; do not stash, reset, or commit them automatically. Never add `--publish`
    or `--auto-merge` without explicit authorization.
 6. Capture the returned ID and run `work --once --run-id RUN_ID` through the
-   host's managed long-running command/session facility. Inside Herdr only,
-   with `HERDR_ENV=1` and inherited `HERDR_PANE_ID`, append `--planner-pane
-   <that-id>` for main-pane progress. Never guess pane IDs. If an existing worker
+   host's managed long-running command/session facility. Only if the user-wide
+   `settings` has `herdr_enabled=true` and this session is inside Herdr with
+   `HERDR_ENV=1` and inherited `HERDR_PANE_ID`, append `--planner-pane <that-id>`
+   for main-pane progress. Never guess pane IDs. If an existing worker
    owns the lock, inspect its status; do not start competing workers or resubmit.
 7. Report meaningful progress in the main chat. Read `progress --json` at useful
    intervals or on request, not every few seconds through model turns. Herdr

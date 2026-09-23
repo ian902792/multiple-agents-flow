@@ -15,12 +15,15 @@ def parser():
     cli = argparse.ArgumentParser(description="Subscription-first multi-agent workflow (Python 3.11+, macOS/Linux).")
     cli.add_argument("--repo", type=Path, default=Path.cwd(), help="Target Git repository root (default: cwd)")
     commands = cli.add_subparsers(dest="action", required=True)
-    commands.add_parser("install-skills", help="Register the shared MAF skill in this project for Claude and Codex")
+    commands.add_parser("install-skills", help="Register MAF skills once for this user in Claude and Codex")
+    p = commands.add_parser("settings", help="Show or change user-wide optional integrations")
+    p.add_argument("key", nargs="?", choices=("herdr",))
+    p.add_argument("value", nargs="?", choices=("on", "off"))
     p = commands.add_parser("init", help="Create .maf.json without overwriting existing configuration")
     p.add_argument("--preset", choices=core.PRESETS, default="economy")
     p = commands.add_parser("mode", help="Show or select the local default for new tasks; existing runs stay pinned")
     p.add_argument("name", nargs="?")
-    commands.add_parser("flows", help="List named project-private flows")
+    commands.add_parser("flows", help="List user-wide named flows")
     p = commands.add_parser("flow-save", help="Save a named flow from a JSON file")
     p.add_argument("file", type=Path)
     commands.add_parser("doctor", help="Check runtime/auth availability without model inference")
@@ -63,7 +66,7 @@ def parser():
         p = commands.add_parser(name, help=f"Explicitly {name} or reconcile an uncertain prior result")
         p.add_argument("run_id")
     commands.add_parser("herdr", help="Start one supervisor in a new no-focus Herdr workspace")
-    p = commands.add_parser("ui", help="Open the local flow editor and progress screen")
+    p = commands.add_parser("ui", help="Open the local user-wide flow and integration settings editor")
     p.add_argument("--port", type=int, default=0)
     p.add_argument("--no-open", action="store_true")
     return cli
@@ -112,7 +115,7 @@ def mode_info(repo):
     mode, config = core.execution_config(repo)
     result = {"mode": mode, "available": core.available_modes(repo), "roles": config["roles"],
               "scope": "New tasks only; existing run snapshots are unchanged.", "billing": []}
-    result["flow"] = flows.catalog(repo).get(mode)
+    result["flow"] = flows.catalog().get(mode)
     try:
         core.billing_check(repo, config)
     except core.FlowError as exc:
@@ -124,6 +127,29 @@ def main(argv=None):
     args = parser().parse_args(argv)
     repo = args.repo.resolve()
     try:
+        if args.action == "install-skills":
+            result = skills.install()
+        elif args.action == "settings":
+            if args.value:
+                result = flows.set_herdr(args.value == "on")
+            else:
+                result = flows.settings()
+        elif args.action == "flows":
+            result = {"flows": flows.catalog()}
+        elif args.action == "flow-save":
+            data = core.read_json(args.file)
+            if not isinstance(data, dict) or set(data) != {"name", "flow"}:
+                raise core.FlowError("Flow file needs name and flow, as exported by Flow Studio.")
+            result = flows.save(data["name"], data["flow"])
+        elif args.action == "ui":
+            from . import ui
+            ui.serve(args.port, not args.no_open)
+            return
+        else:
+            result = None
+        if result is not None:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return
         core.root_for(repo)
         if args.action == "mode" and not args.name:
             result = mode_info(repo)
@@ -133,13 +159,6 @@ def main(argv=None):
                 for run in core.list_runs(repo)]
         elif args.action == "handoff":
             result = core.handoff(repo, core.load(repo, args.run_id))
-        elif args.action == "flows":
-            result = {"selected": core.execution_config(repo)[0], "flows": flows.catalog(repo)}
-        elif args.action == "ui":
-            from . import ui
-            core.execution_config(repo)
-            ui.serve(repo, args.port, not args.no_open)
-            return
         elif args.action == "work":
             if not 1 <= args.poll <= 3600:
                 raise core.FlowError("--poll must be 1..3600 seconds.")
@@ -166,14 +185,7 @@ def main(argv=None):
             result = launch_herdr(repo)
         else:
             with core.exclusive(repo):
-                if args.action == "install-skills":
-                    result = skills.install(repo)
-                elif args.action == "flow-save":
-                    data = core.read_json(args.file)
-                    if not isinstance(data, dict) or set(data) != {"name", "flow"}:
-                        raise core.FlowError("Flow file needs name and flow, as exported by Flow Studio.")
-                    result = flows.save(repo, data["name"], data["flow"])
-                elif args.action == "init":
+                if args.action == "init":
                     result = {"config": str(core.init(repo, args.preset)), "next": "Inspect configuration; run doctor and confirm-billing."}
                 else:
                     config = core.config_for(repo)

@@ -17,6 +17,11 @@ class FlowTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        self.config_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.config_temp.cleanup)
+        env = patch.dict(os.environ, {"XDG_CONFIG_HOME": self.config_temp.name})
+        env.start()
+        self.addCleanup(env.stop)
         self.repo = Path(self.temp.name)
         subprocess.run(["git", "init", "-q", "-b", "main", str(self.repo)], check=True)
         core.git(self.repo, "config", "user.email", "test@example.invalid")
@@ -125,23 +130,44 @@ class FlowTests(unittest.TestCase):
         before = (self.repo / ".maf.json").read_bytes()
         flow = flows.templates()["quick"]
         flow["roles"]["coder"]["effort"] = "high"
-        flows.save(self.repo, "my-flow", flow)
+        flows.save("my-flow", flow)
         core.select_mode(self.repo, "my-flow")
         self.assertEqual(core.execution_config(self.repo)[1]["roles"]["coder"]["effort"], "high")
         self.assertEqual((self.repo / ".maf.json").read_bytes(), before)
         with self.assertRaises(core.FlowError):
             core.billing_check(self.repo, core.execution_config(self.repo)[1])
         with self.assertRaises(core.FlowError):
-            flows.save(self.repo, "bad", dict(flow, roles={"coder": {}}))
+            flows.save("bad", dict(flow, roles={"coder": {}}))
+        with tempfile.TemporaryDirectory() as other_dir:
+            other = Path(other_dir)
+            subprocess.run(["git", "init", "-q", "-b", "main", str(other)], check=True)
+            core.init(other, "economy")
+            core.select_mode(other, "my-flow")
+            self.assertEqual(core.execution_config(other)[0], "my-flow")
+            self.assertEqual(core.execution_config(self.repo)[0], "my-flow")
+            core.select_mode(other, "quick")
+            self.assertEqual(core.execution_config(self.repo)[0], "my-flow")
+
+    def test_global_commands_work_without_a_git_repository(self):
+        missing_repo = Path(self.config_temp.name) / "not-a-repo"
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.main(["--repo", str(missing_repo), "settings"])
+            cli.main(["--repo", str(missing_repo), "settings", "herdr", "on"])
+            cli.main(["--repo", str(missing_repo), "flows"])
+        lines = out.getvalue()
+        self.assertIn('"herdr_enabled": false', lines)
+        self.assertIn('"herdr_enabled": true', lines)
+        self.assertIn('"quick"', lines)
 
     def test_current_model_suggestions_allow_deeper_codex_effort_but_not_pi(self):
         flow = flows.templates()["quick"]
         flow["main"]["effort"] = "max"
         flow["roles"]["reviewer"]["effort"] = "xhigh"
-        flows.save(self.repo, "deep-review", flow)
+        flows.save("deep-review", flow)
         flow["roles"]["coder"]["effort"] = "xhigh"
         with self.assertRaises(ValueError):
-            flows.save(self.repo, "invalid-pi-effort", flow)
+            flows.save("invalid-pi-effort", flow)
 
     def test_claude_commit_verify_and_pi_delegate_bind_exact_sha(self):
         core.git(self.repo, "add", ".maf.json")
@@ -224,9 +250,10 @@ class FlowTests(unittest.TestCase):
             core.execute(self.repo, run)
         agent.assert_not_called()
 
-    def test_project_skill_registration_is_shared_idempotent_and_excluded(self):
-        result = skills.install(self.repo)
-        self.assertEqual(skills.install(self.repo), result)
+    def test_global_skill_registration_is_shared_and_idempotent(self):
+        home = Path(self.config_temp.name) / "home"
+        result = skills.install(home)
+        self.assertEqual(skills.install(home), result)
         paths = [Path(p) for p in result["skills"]]
         self.assertEqual(paths[0].resolve(), paths[1].resolve())
         for path in paths:
@@ -234,19 +261,21 @@ class FlowTests(unittest.TestCase):
             self.assertFalse(Path(os.readlink(path)).is_absolute())
             self.assertEqual((path / "SKILL.md").resolve().parents[2] / "flow.py",
                              Path(__file__).resolve().parents[1] / "flow.py")
-            core.git(self.repo, "check-ignore", str(path))
+        self.assertEqual(paths, [home / ".agents/skills/maf", home / ".claude/skills/maf"])
+        self.assertTrue((home / ".claude/skills/maf-plan/SKILL.md").is_file())
 
     def test_skill_registration_refuses_conflicts_and_redirected_parents(self):
-        folder = self.repo / ".claude" / "skills" / "maf"
+        home = Path(self.config_temp.name) / "home"
+        folder = home / ".claude" / "skills" / "maf"
         folder.mkdir(parents=True)
         with self.assertRaises(core.FlowError):
-            skills.install(self.repo)
-        self.assertFalse((self.repo / ".agents").exists())
+            skills.install(home)
+        self.assertFalse((home / ".agents").exists())
         folder.rmdir()
-        redirected = self.repo / ".agents"
-        redirected.symlink_to(self.repo / ".claude", target_is_directory=True)
+        redirected = home / ".agents"
+        redirected.symlink_to(home / ".claude", target_is_directory=True)
         with self.assertRaises(core.FlowError):
-            skills.install(self.repo)
+            skills.install(home)
         self.assertFalse(folder.exists())
 
     def test_invalid_tasks(self):

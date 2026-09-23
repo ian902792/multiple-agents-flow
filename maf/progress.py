@@ -372,6 +372,9 @@ def title_for(rows):
 
 def check_pane(repo, pane):
     """Explicit live pane only: no focused-pane guessing, no input, no lifecycle changes."""
+    from . import flows
+    if not flows.settings()["herdr_enabled"]:
+        raise core.FlowError("Herdr integration is off; enable it with settings herdr on or in Flow Studio.")
     if os.environ.get("HERDR_ENV") != "1":
         raise core.FlowError("--planner-pane needs HERDR_ENV=1 (run inside Herdr) and the current live pane id.")
     if not isinstance(pane, str) or not PANE_ID.fullmatch(pane):
@@ -385,6 +388,9 @@ def ttl_for(poll):
 
 
 def report_pane(repo, pane, title, poll=5):
+    from . import flows
+    if not flows.settings()["herdr_enabled"]:
+        raise core.FlowError("Herdr integration is off; pane reporting stopped.")
     core.command(["herdr", "pane", "report-metadata", pane, "--source", "maf-progress",
                   "--title", title, "--ttl-ms", str(ttl_for(poll))], repo, timeout=15)
 

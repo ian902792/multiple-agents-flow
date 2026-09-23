@@ -3,26 +3,32 @@
 以 **Claude Code 為主對話**開發：小任務由 Claude 完成，必要時交給 Pi 處理明確的小範圍工作；完成後由程式執行測試，交給獨立 agent review。只有你手動輸入 `/maf-plan`，才會使用 Codex GPT-6 Astra 規畫大型任務。
 Herdr 可用來分專案 workspace；Python 負責 worktree、狀態、測試證據與精確 commit SHA。Python 3.11+ 標準函式庫即可執行，支援 macOS/Linux。
 
-這也是可自行擴充的開源工具：可以儲存命名 flow、調整各 MAF agent 的 model／effort、匯入匯出 flow JSON。授權為 [MIT](LICENSE)。
+這也是可自行擴充的開源工具：全域儲存命名 flow、調整各 MAF agent 的 model／effort、匯入匯出 flow JSON。授權為 [MIT](LICENSE)。
 
 ## 最短安裝流程
 
-先準備 Python 3.11+、Git、Claude Code；預設的 `quick`／`planned` flow 也需要已登入的 Codex CLI 與 Pi CLI，因為 `doctor` 會檢查所有角色。目標專案須是已有第一個 commit 的 Git repository。以下指令在終端機執行，將 `TARGET` 改成自己的專案路徑：
+先準備 Python 3.11+、Git、Claude Code；預設的 `quick`／`planned` flow 也需要已登入的 Codex CLI 與 Pi CLI，因為 `doctor` 會檢查所有角色。目標專案須是已有第一個 commit 的 Git repository。先在一般 terminal **全域安裝一次**：
 
 ```sh
 git clone https://github.com/ian902792/multiple-agents-flow.git
 cd multiple-agents-flow
 FLOW="$PWD/flow.py"
-TARGET="/path/to/your-git-project"
-
-python3 "$FLOW" --repo "$TARGET" init
-python3 "$FLOW" --repo "$TARGET" install-skills
-python3 "$FLOW" --repo "$TARGET" mode quick
-python3 "$FLOW" --repo "$TARGET" doctor
-python3 "$FLOW" --repo "$TARGET" ui
+python3 "$FLOW" install-skills
+python3 "$FLOW" ui
 ```
 
-`init` 建立目標專案的 `.maf.json`；`install-skills` 只在該專案註冊 `/maf`、`/maf-plan` 等 skill，不修改全域設定。`ui` 開啟只監聽本機的 Flow Studio；沒有 Herdr 也能用。若 `doctor` 顯示 billing 未確認，先核對供應商控制台中的登入、訂閱模型與額外用量設定，然後執行：
+`install-skills` 會在使用者目錄建立 Claude 的 `~/.claude/skills/maf`、`~/.claude/skills/maf-plan`，以及 Codex 的 `~/.agents/skills/maf` symlink。之後在任何專案都能使用；遇到既有同名 skill 會拒絕覆寫。`ui` 只監聽 `127.0.0.1`，用於設定全域 flow 及可選的 Herdr 整合，**不會選 mode 或執行任務**。
+
+每個專案只需要建立自己的 `.maf.json` 政策並在 terminal 選 mode；不需再安裝 skill。在該專案的 Claude 對話輸入 `/maf setup quick`，或直接用 CLI：
+
+```sh
+TARGET="/path/to/your-git-project"
+python3 "$FLOW" --repo "$TARGET" init
+python3 "$FLOW" --repo "$TARGET" mode quick
+python3 "$FLOW" --repo "$TARGET" doctor
+```
+
+若 `doctor` 顯示 billing 未確認，先核對供應商控制台中的登入、訂閱模型與額外用量設定。**只有核對完成後**才執行：
 
 ```sh
 python3 "$FLOW" --repo "$TARGET" confirm-billing --no-overage
@@ -33,8 +39,7 @@ python3 "$FLOW" --repo "$TARGET" doctor
 
 ## 建議使用方式：在主 agent 呼叫 skill
 
-本專案的 `.claude/skills/maf`、`.agents/skills/maf` 都指向同一份 [MAF skill](skills/maf/SKILL.md)；Claude 的 [maf-plan skill](skills/maf-plan/SKILL.md) 設為只接受手動呼叫。
-在已安裝 skill 的目標專案開啟 Claude Code 或 Codex；若既有對話尚未顯示 skill，重新開啟專案對話。
+全域安裝的 Claude／Codex 入口指向同一份 [MAF skill](skills/maf/SKILL.md)；Claude 的 [maf-plan skill](skills/maf-plan/SKILL.md) 設為只接受手動呼叫。若既有對話尚未顯示 skill，重新開啟對話。
 
 | 操作 | Claude Code | Codex CLI／IDE |
 |---|---|---|
@@ -46,7 +51,7 @@ python3 "$FLOW" --repo "$TARGET" doctor
 | 完成後驗證 | `/maf verify 需求` | `$maf verify 需求` |
 | 查進度與阻塞 | `/maf status` | `$maf status` |
 | 處理後恢復 | `/maf resume RUN_ID` | `$maf resume RUN_ID` |
-| 在另一個 repo 註冊 | `/maf install /path/to/repo` | `$maf install /path/to/repo` |
+| 補做全域註冊 | `/maf install` | `$maf install` |
 
 Codex 也可以輸入 **`/skills` → 選取 `maf`**，再輸入上述動作；不把 `/maf` 宣稱為 Codex 原生指令。
 Claude 的 `/maf` 與 Codex 的 `/skills`／`$maf` 使用方式依據
@@ -55,22 +60,23 @@ Claude 的 `/maf` 與 Codex 的 `/skills`／`$maf` 使用方式依據
 
 `delegate` 讓 Pi 在獨立 worktree 編輯，`verify` 直接測試 Claude 已提交的 HEAD 並讓非 Claude agent 獨立審查，`handoff RUN_ID` 回傳簡短證據。Claude 在主對話整理任務 JSON，使用者不用手寫。Pi 目前不能執行 shell 測試；由 supervisor 執行已核准的測試指令。整合 Pi 的 commit 後 SHA 會改變，須對整合後的 commit 再執行 `verify`。
 
-`run` 保留為明確要求的獨立 coder 批次流程。Skill 不會直接改變**目前 Claude 對話**的模型；GUI 可記住主對話偏好並複製 `/model`、`/effort` 指令，貼到 Claude 後切換。其他角色的設定影響之後啟動的 MAF agent。
+`run` 保留為明確要求的獨立 coder 批次流程。Skill 不會直接改變**目前 Claude 對話**的模型；GUI 可記住主對話建議偏好，實際切換請在 Claude terminal 使用 `/model`、`/effort`。其他角色的設定影響之後啟動的 MAF agent。
 
 ## 本機 Flow Studio
 
 ```sh
-python3 "$FLOW" --repo "$TARGET" ui
+python3 "$FLOW" ui
 ```
 
-它只監聽 `127.0.0.1`，提供命名 flow、planner／Pi／reviewer 的 model 與 effort 編輯、快速切換及近期任務狀態。畫面內有安裝步驟、原理和操作範例。`quick` 是 Claude 開發、Codex Sol 審查；`planned` 提醒手動 `/maf-plan`，並提高 reviewer effort。兩者都能在需要時把明確小任務交給 Pi；規畫絕不因為選到 `planned` 自動啟動。
-Flow 存在該專案 Git 的私有 `maf/flows.json`，不會進入 commit；畫面可匯入匯出 JSON，在其他 workspace 重用。切換 profile 不改 `.maf.json`、Claude 設定或供應商帳號。變更 MAF agent 模型後，使用前須重新確認該精確訂閱路由。
+它只監聽 `127.0.0.1`，**只負責全域 flow 的定義與適用範圍、各角色 model／effort、Herdr 開關**。畫面內有安裝步驟、原理、各指令用法和輸出，以及操作範例。`quick` 是 Claude 開發、Codex Sol 審查；`planned` 提醒手動 `/maf-plan`，並提高 reviewer effort。兩者都能在需要時把明確小任務交給 Pi；規畫絕不因為選到 `planned` 自動啟動。
 
-Model 欄位可直接挑常用選項，並會把本專案已儲存 flow 的模型加入建議清單；新模型只需在一個 flow 輸入並儲存一次。主 Claude 偏好可用 `opus`，由 Claude Code 依供應商更新到最新 Opus；自動執行的 Claude 角色使用固定 ID，例如 `claude-opus-5-5`。Codex 使用明確的 `gpt-6-sol` 等 ID；日後推出新版本時可直接輸入新 ID，無須改程式。建議清單不是可用性檢查，仍須用自己的訂閱／CLI 確認。Claude／Codex 可選 `xhigh`、`max` effort；Pi 保留 `low`／`medium`／`high`。參考 [Claude Code 模型設定](https://code.claude.com/docs/en/model-config)與 [Codex 模型](https://learn.chatgpt.com/docs/models)。
+儲存後，在**目標專案的 terminal** 輸入 `/maf mode quick`、`/maf mode planned` 或 `/maf mode 你的名稱`。這才切換該專案的後續任務。CLI 等價指令是 `python3 "$FLOW" --repo "$TARGET" mode 名稱`。Flow 預設存在 `~/.config/multiple-agents-flow/flows.json`；若設定絕對路徑的 `XDG_CONFIG_HOME`，則存在該目錄下的 `multiple-agents-flow/flows.json`。每個專案目前選用的 mode 仍存在該專案 Git 的私有狀態。GUI 不展示或控制任務執行；使用 `/maf status` 或 `progress` 看進度。變更 MAF agent 模型後，使用前須重新確認該精確訂閱路由。
 
-主 Claude 的偏好僅顯示和產生複製指令，不會改目前對話。直接貼 `/model opus` 或 `/effort high` 會儲存為 Claude 之後 session 的預設；若 Herdr 中不同 pane 想各自用不同設定，在 Claude Code 2.1.257+ 開啟 `/model`／`/effort` 選單，選好按 `s` 只套用本 session；新 pane 也可用 `claude --model opus --effort medium` 啟動。
+Model 欄位可直接挑常用選項，並會把全域已儲存 flow 的模型加入建議清單；新模型只需在一個 flow 輸入並儲存一次。主 Claude 偏好可用 `opus`，由 Claude Code 依供應商更新到最新 Opus；自動執行的 Claude 角色使用固定 ID，例如 `claude-opus-5-5`。Codex 使用明確的 `gpt-6-sol` 等 ID；日後推出新版本時可直接輸入新 ID，無須改程式。建議清單不是可用性檢查，仍須用自己的訂閱／CLI 確認。Claude／Codex 可選 `xhigh`、`max` effort；Pi 保留 `low`／`medium`／`high`。參考 [Claude Code 模型設定](https://code.claude.com/docs/en/model-config)與 [Codex 模型](https://learn.chatgpt.com/docs/models)。
 
-CLI 也能操作：`flows` 列出 profile、`flow-save my-flow.json` 匯入、`mode quick`／`mode planned` 選擇。
+主 Claude 的偏好僅顯示，不會改目前對話。直接在 Claude terminal 輸入 `/model` 或 `/effort` 切換；若 Herdr 中不同 pane 想各自用不同設定，在 Claude Code 2.1.257+ 開啟 `/model`／`/effort` 選單，選好按 `s` 只套用本 session；新 pane 也可用 `claude --model opus --effort medium` 啟動。
+
+CLI 也能操作：`flows` 列出全域 profile、`flow-save my-flow.json` 匯入；`mode quick`／`mode planned` 在指定專案選用。
 
 | 模式 | Coder | 獨立 Reviewer |
 |---|---|---|
@@ -86,18 +92,17 @@ CLI 也能操作：`flows` 列出 profile、`flow-save my-flow.json` 匯入、`m
 沒有明確 mode 快照的舊任務可查看證據，但不可重跑模型；需重新建立任務，避免沿用已移除的隱含角色規則。
 只切換模式不呼叫模型；單次任務可用 `submit --mode opus-sol`，不改下次的預設。
 
-Herdr 內執行時會回報主任務 pane；其他環境依主 agent 的命令 session 回報進度。
+Herdr 整合預設關閉。啟用後且在 Herdr 內明確執行 `herdr` 才會建立背景 supervisor，並回報主任務 pane；其他環境依主 agent 的命令 session 回報進度。
 權限、登入、額度或模糊中斷會停在具體原因，`resume` 先診斷及確認程序停止，不能直接略過。
 主對話閒置時不會自動被 worker 喚醒；可用 `status` 取得最新摘要。
 
-想從尚未安裝 skill 的另一個專案直接開始，也可只執行一次：
+想從另一個專案直接開始，只需在那個專案初始化政策，**不用再安裝 skill**：
 
 ```sh
-python3 /path/to/multiple-agents-flow/flow.py --repo /path/to/repo install-skills
+python3 /path/to/multiple-agents-flow/flow.py --repo /path/to/repo init
 ```
 
-這會建立三個專案內的 symlink（含 Claude 專用的 `maf-plan`），不改使用者全域設定；遇到同名 skill 或 symlink 父目錄會拒絕覆寫。
-其他專案的連結加入本機 Git exclude，避免把機器路徑提交出去；移動工具資料夾前需處理這些連結。
+全域安裝的 symlink 指向此工具資料夾；移動工具資料夾後需在使用者 skill 目錄移除失效連結，再執行 `install-skills`。
 以下為底層 CLI 細節，日常可直接使用 skill。
 
 ## 先知道的限制
@@ -118,6 +123,7 @@ python3 /path/to/multiple-agents-flow/flow.py --repo /path/to/repo install-skill
 git clone https://github.com/ian902792/multiple-agents-flow.git
 cd multiple-agents-flow
 python3 flow.py --help
+python3 flow.py install-skills
 python3 -m unittest discover -s tests -v
 ```
 
@@ -143,7 +149,7 @@ Claude 使用 `--restricted --safe-mode`，停用自動 CLAUDE.md／skills／plu
 
 ## 2. 在任何專案啟用
 
-以下將 `FLOW` 改成此工具的實際位置；`TARGET` 是要開發的 Git repository。
+全域 skill 已在上一節安裝，以下不用再次執行 `install-skills`。將 `FLOW` 改成此工具的實際位置；`TARGET` 是要開發的 Git repository。
 命令需從 shell 執行，`--repo` 放在子命令**前面**。目標 repo 必須已有第一個 commit。
 
 ```sh
@@ -230,13 +236,22 @@ Reviewer 每次是新 session；不得由 Coder 自己批准自己的變更。
 
 ## 4. 在 Herdr 長時間執行
 
-在 Herdr pane 內執行：
+Herdr 是**全域可選**整合，預設關閉。先在 Flow Studio 勾選「啟用 MAF 的 Herdr 整合」並儲存，或在一般 terminal 執行：
+
+```sh
+python3 "$FLOW" settings            # 印出 {"herdr_enabled": false} 或 true
+python3 "$FLOW" settings herdr on   # 印出 {"herdr_enabled": true}
+```
+
+**關閉時：**用 `work --once --run-id RUN_ID` 或一般持續 `work` 處理佇列，用 `progress`／`/maf status` 看狀態。MAF 不建立 Herdr workspace，也不更新 pane 標題；即使系統已安裝 Herdr 也不會碰它。
+
+**啟用時：**在 Herdr pane 內明確執行：
 
 ```sh
 python3 "$FLOW" --repo "$TARGET" herdr
 ```
 
-會建立新的背景 workspace／pane，保留目前焦點，啟動持續處理佇列的 supervisor。
+會建立新的背景 workspace／pane，保留目前焦點，啟動持續處理佇列的 supervisor。指令會印出 `workspace`、`pane`、`planner_pane` ID。
 啟動時會記住呼叫端的 `HERDR_PANE_ID`，每 5 秒自動更新**主任務 pane 的標題**：完成數、進行中的階段／任務、需要處理的數量。
 不需要再手動開 watcher，也不需要觀看子任務輸出。標題出現 `!N attention` 時，請主控讀取 `progress --json`，取得原因與下一步。
 這是本機狀態輪詢，不向主控輸入訊息、不喚醒模型；看板會更新，但不會自動觸發主任務的新一輪對話。
@@ -247,7 +262,7 @@ python3 "$FLOW" --repo "$TARGET" herdr
 - 不要停止 Herdr server，否則其中的程序也可能結束。
 - 在 supervisor pane 按 Ctrl-C 停止 worker；已保存任務與 worktree 保留。
 - 電腦重新啟動後，重新進入 Herdr、查看 `status`、處理模糊中斷，再執行 `herdr`。第一版不自動安裝 launchd。
-- 沒有 Herdr 也能手動執行 `work`；`herdr` 指令本身必須在 `HERDR_ENV=1` 的 pane 內執行。
+- 沒有 Herdr 也能手動執行 `work`；`herdr` 指令本身必須在 `HERDR_ENV=1` 的 pane 內執行，且全域開關必須已啟用。關閉開關可用 `python3 "$FLOW" settings herdr off`；新的 pane 回報會拒絕。
 
 ## 5. 進度摘要與 todo.md 勾選
 

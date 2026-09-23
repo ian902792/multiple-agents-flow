@@ -1,7 +1,11 @@
-"""Named, project-private role profiles for future work. Claude remains the main chat."""
+"""User-wide flow profiles and optional integrations. Claude remains the main chat."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 from copy import deepcopy
+import fcntl
+import os
+from pathlib import Path
 import re
 
 from . import core
@@ -21,7 +25,41 @@ def templates():
     }
 
 
-def validate(repo, name, flow):
+def home():
+    base = os.environ.get("XDG_CONFIG_HOME")
+    root = Path(base).expanduser() if base else Path.home() / ".config"
+    if not root.is_absolute():
+        raise core.FlowError("XDG_CONFIG_HOME must be an absolute path.")
+    return root / "multiple-agents-flow"
+
+
+@contextmanager
+def exclusive():
+    root = home()
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with (root / "lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def settings():
+    path = home() / "settings.json"
+    data = core.read_json(path) if path.exists() or path.is_symlink() else {"herdr_enabled": False}
+    if not isinstance(data, dict) or set(data) != {"herdr_enabled"} or type(data["herdr_enabled"]) is not bool:
+        raise core.FlowError("Invalid global settings.json; expected a boolean herdr_enabled.")
+    return data
+
+
+def set_herdr(enabled):
+    if type(enabled) is not bool:
+        raise core.FlowError("Herdr setting must be true or false.")
+    with exclusive():
+        settings()
+        core.atomic(home() / "settings.json", {"herdr_enabled": enabled})
+    return settings()
+
+
+def validate(name, flow):
     if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,39}", name) or name in core.MODES:
         raise core.FlowError("Flow name must be lowercase kebab-case and must not be a built-in mode.")
     if (not isinstance(flow, dict) or set(flow) != {"description", "manual_plan", "main", "roles"}
@@ -32,30 +70,27 @@ def validate(repo, name, flow):
             or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", flow["main"]["model"])
             or flow["main"]["effort"] not in ("low", "medium", "high", "xhigh", "max")):
         raise core.FlowError("Flow needs description, manual_plan, main Claude model/effort, and roles.")
-    config = core.config_for(repo)
-    config["roles"] = flow["roles"]
-    core.validate_config(repo, config)
+    core.validate_roles(flow["roles"])
     return deepcopy(flow)
 
 
-def catalog(repo):
-    path = core.root_for(repo) / "flows.json"
-    custom = core.read_json(path) if path.exists() else {}
+def catalog():
+    path = home() / "flows.json"
+    custom = core.read_json(path) if path.exists() or path.is_symlink() else {}
     if not isinstance(custom, dict):
         raise core.FlowError("Invalid flows.json; expected an object of named flows.")
     result = templates()
     for name, flow in custom.items():
-        result[name] = validate(repo, name, flow)
+        result[name] = validate(name, flow)
     return result
 
 
-def save(repo, name, flow):
-    validated = validate(repo, name, flow)
-    catalog(repo)  # Refuse to write over an invalid existing profile set.
-    path = core.root_for(repo) / "flows.json"
-    custom = core.read_json(path) if path.exists() else {}
-    if not isinstance(custom, dict):
-        raise core.FlowError("Invalid flows.json; inspect it before saving.")
-    custom[name] = validated
-    core.atomic(path, custom)
+def save(name, flow):
+    validated = validate(name, flow)
+    with exclusive():
+        catalog()  # Refuse to write over an invalid existing profile set.
+        path = home() / "flows.json"
+        custom = core.read_json(path) if path.exists() or path.is_symlink() else {}
+        custom[name] = validated
+        core.atomic(path, custom)
     return validated

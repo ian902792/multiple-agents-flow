@@ -2,6 +2,13 @@
 
 這份文件區分離線測試與真正的 provider / GitHub 驗證，避免把 mock 當成實際成功。
 
+## 2026-09-23：全域 flow 與 terminal 操作
+
+- 94 項 unittest 在允許 loopback 的環境全數通過；涵蓋全域 skill 安裝與衝突拒絕、跨專案 flow 可見而 mode 各自獨立、無 Git repository 時的全域 CLI、GUI token／Origin、Herdr 預設關閉與停用後拒絕 pane 回報。
+- 已在本機使用者目錄建立 `~/.agents/skills/maf`、`~/.claude/skills/maf`、`~/.claude/skills/maf-plan` 三個 symlink，未覆寫同名 skill。從非 Git 目錄執行 `settings` 回傳 `{"herdr_enabled": false}`。
+- 用瀏覽器在隔離的暫存全域設定目錄新增 `docs-review` flow、儲存 Herdr 開關；畫面提示 terminal 使用 `/maf mode docs-review`，且沒有 mode 切換按鈕。說明頁列出 32 筆 skill／CLI 指令；390px 手機寬度沒有整頁水平溢出。
+- 沒有在 Herdr pane 或真實模型上執行新整合；Herdr 命令與 pane metadata 以 mock 測試。下列較早紀錄描述當時的專案內安裝與 GUI 切換，已被目前設計取代。
+
 ## 2026-09-23：Claude-first flow 與本機畫面
 
 - 92 項 unittest 在允許 loopback 的環境全數通過；一般 sandbox 禁止 bind 時，UI HTTP 測試會跳過，其餘通過。HTTP 測試涵蓋 token／Origin 限制、flow 儲存與選取。

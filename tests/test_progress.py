@@ -12,7 +12,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from maf import cli, core, progress
+from maf import cli, core, flows, progress
 
 TODO = ("# Todo\r\n\n- [x] Old work <!-- maf:old-task -->\n"
         "- [ ] Improve docs <!-- maf:improve-docs -->\n- [ ] Unrelated item\n\tindented\n")
@@ -23,6 +23,11 @@ class ProgressTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        self.config_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.config_temp.cleanup)
+        env = patch.dict(os.environ, {"XDG_CONFIG_HOME": self.config_temp.name})
+        env.start()
+        self.addCleanup(env.stop)
         self.repo = Path(self.temp.name)
         subprocess.run(["git", "init", "-q", "-b", "main", str(self.repo)], check=True)
         core.git(self.repo, "config", "user.email", "test@example.invalid")
@@ -254,6 +259,10 @@ class ProgressTests(unittest.TestCase):
                 return json.dumps({"result": {"root_pane": {"pane_id": "w2:p2"}, "workspace": {"workspace_id": "w2"}}})
             return "{}"
         with patch.dict(os.environ, {"HERDR_ENV": "1", "HERDR_PANE_ID": "w1:p1"}), patch.object(core, "command", side_effect=command):
+            with self.assertRaisesRegex(core.FlowError, "integration is off"):
+                cli.launch_herdr(self.repo)
+            self.assertEqual(calls, [])
+            flows.set_herdr(True)
             result = cli.launch_herdr(self.repo)
         self.assertEqual(result["planner_pane"], "w1:p1")
         self.assertEqual(calls[0], ["herdr", "pane", "get", "w1:p1"])
@@ -295,6 +304,7 @@ class ProgressTests(unittest.TestCase):
 
     def test_herdr_pane_metadata_is_explicit_and_refreshed(self):
         core.submit(self.repo, self.task)
+        flows.set_herdr(True)
         original, calls = core.command, []
         def fake(argv, cwd, **kwargs):
             if argv[0] == "herdr":
@@ -316,6 +326,10 @@ class ProgressTests(unittest.TestCase):
         self.assertIn("0/1 verified", reports[0][7])
         self.assertIn("queued coding improve-docs", reports[0][7])
         self.assertFalse(any("input" in argv or "send" in argv or "kill" in argv for argv in calls))
+        flows.set_herdr(False)
+        with patch.object(core, "command") as command, self.assertRaisesRegex(core.FlowError, "integration is off"):
+            progress.report_pane(self.repo, "pane-1", "status")
+        command.assert_not_called()
 
     def test_duplicate_id_with_different_description(self):
         run = self.verified_run()
