@@ -57,7 +57,7 @@ python3 flow.py install-skills
 
 ### 同時交給多個 Pi
 
-如果有幾件**互不依賴**的小工作，可以在同一則 `/maf delegate` 中列出來，例如：「同時處理 1. 補 `docs/install.md` 安裝範例；2. 補 `docs/faq.md` 常見問題，各自用文件檢查驗收」。Claude 會先拆成不同任務、標記可並行，再一起排入；MAF 預設同時執行最多 **2 個 Pi delegate**。每個任務都有自己的 worktree、測試、審查與 commit 證據。編輯路徑重疊、使用通配路徑、需要人工核准，或不是同一來源 commit 的任務會等前一件完成。
+如果有幾件**互不依賴**的小工作，可以在同一則 `/maf delegate` 中列出來，例如：「同時處理 1. 補 `docs/install.md` 安裝範例；2. 補 `docs/faq.md` 常見問題；3. 補 `docs/troubleshooting.md` 疑難排解，各自驗收」。Claude 會先拆成不同任務、標記可並行，再一起排入；MAF 預設同時執行最多 **3 個 Pi delegate**。每個任務都有自己的 worktree、測試、審查與 commit 證據。編輯路徑重疊、使用通配路徑、需要人工核准，或不是同一來源 commit 的任務會等前一件完成。
 
 同時執行主要縮短等待時間；小範圍交給 Pi 也可減少主 Claude 對話的上下文負擔，但**並行本身不保證總 token 變少**。Claude 仍負責逐件檢查、整合，最後驗證整合後的 commit。[CLI 範例](docs/CLI.md#多個-pi-任務並行)說明如何指定 run ID 和調整並行上限。
 

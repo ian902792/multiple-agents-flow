@@ -76,7 +76,7 @@ supervisor runs them. Do not delegate planning, broad integration, or final
 sign-off to Pi. Mark a Pi task `"independent": true` only when it has its own
 clear acceptance criteria, exact non-overlapping editable file paths, and no
 dependency on another task or shared test resource. Queue all independent tasks
-from the same clean HEAD before starting the worker. MAF runs up to two at once
+from the same clean HEAD before starting the worker. MAF runs up to three at once
 by default; broad, sensitive, or approval-gated work remains serial. Do not
 claim that parallel execution alone reduces total tokens.
 

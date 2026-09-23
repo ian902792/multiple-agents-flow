@@ -777,9 +777,9 @@ def parallel_pi(run):
             and all(not any(char in path for char in "*?[") for path in run["task"]["paths"]))
 
 
-def work(repo, once=False, poll=30, run_id=None, agent_panes=False, pi_concurrency=2):
-    if type(pi_concurrency) is not int or not 1 <= pi_concurrency <= 8:
-        raise FlowError("Pi concurrency must be 1..8.")
+def work(repo, once=False, poll=30, run_id=None, agent_panes=False, pi_concurrency=3):
+    if type(pi_concurrency) is not int or not 1 <= pi_concurrency <= 3:
+        raise FlowError("Pi concurrency must be 1..3.")
     run_ids = [run_id] if isinstance(run_id, str) else run_id
     if run_ids is not None and len(run_ids) != len(set(run_ids)):
         raise FlowError("Each --run-id may be given only once.")

@@ -3,7 +3,7 @@
 Python 3.11+ stdlib. Local-only web UI edits user-wide flows and settings; no API subscription proxy.
 Herdr is opt-in and runs a persistent ordinary supervisor command in an explicitly created workspace.
 Native agent CLIs run as bounded subprocesses, with structured output captured to private logs.
-Independent Pi delegates can occupy up to two execution lanes by default; planner/coder/reviewer are independently configured roles.
+Independent Pi delegates can occupy up to three execution lanes; planner/coder/reviewer are independently configured roles.
 The economy preset uses Astra for optional planning and Pi/DeepSeek for coding and review, with one repair.
 The opus-sol preset uses Claude Opus 5.5 coding and Codex Sol review. Risk never overrides the reviewer role.
 Claude is the main developer. Only the manually invoked `/maf-plan` skill calls the read-only Codex planner.
@@ -84,7 +84,7 @@ delegates; with repeated `--run-id`, it drains those IDs once each. `work` polls
 `submit --mode NAME` overrides the mode for one task without changing the local default.
 `work --once --run-id ID` processes only that run; repeating `--run-id` names a bounded set without
 consuming other queued tasks. Interrupted stages are never implicitly replayed. `--pi-concurrency N`
-sets the Pi delegate limit from 1 to 8 (default 2). The skill uses explicit IDs after delegation.
+sets the Pi delegate limit from 1 to 3 (default 3). The skill uses explicit IDs after delegation.
 Selection changes still use the repository writer lock.
 `install-skills` registers one shared skill in the user's `~/.agents/skills/maf` and `~/.claude/skills/maf`,
 plus manual-only `~/.claude/skills/maf-plan`. Global commands work outside a Git repository; `mode` remains per repository.
@@ -100,7 +100,7 @@ the resulting commit. It never integrates the result into the source branch. `ve
 current HEAD, checks the changed paths against an exact base/merge-base, and starts at testing without a coder.
 Failed tests or review of external work stop for Claude to fix and require a new run at the new SHA. `handoff`
 returns compact evidence only after tests, independent approval and the worktree HEAD all match.
-The scheduler runs up to two `independent: true` Pi delegates at once by default. Parallel eligibility
+The scheduler runs up to three `independent: true` Pi delegates at once. Parallel eligibility
 requires narrow literal file paths, disjoint paths (case-insensitive comparison), the same source SHA,
 non-manual risk and no approval gate. An explicit marker is the caller's assertion that requirements and
 test resources are independent; the scheduler cannot infer semantic independence. Other runs remain serial.

@@ -48,7 +48,7 @@ def parser():
     p = commands.add_parser("work", help="Process queued work; waits consume no model tokens")
     p.add_argument("--once", action="store_true")
     p.add_argument("--run-id", action="append", help="Only process these runs; repeat for independent Pi tasks")
-    p.add_argument("--pi-concurrency", type=int, default=2, help="Maximum simultaneous independent Pi delegates (default: 2; range: 1..8)")
+    p.add_argument("--pi-concurrency", type=int, default=3, help="Maximum simultaneous independent Pi delegates (default: 3; range: 1..3)")
     p.add_argument("--poll", type=int, default=30)
     p.add_argument("--planner-pane", metavar="PANE_ID", help="Inside Herdr: update the main task pane while this worker runs")
     p.add_argument("--agent-panes", action="store_true", help="Inside Herdr: show each supervised agent's live output in a temporary pane")

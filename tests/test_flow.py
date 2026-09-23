@@ -251,29 +251,33 @@ class FlowTests(unittest.TestCase):
 
     def test_independent_pi_delegates_overlap_and_allow_new_submission(self):
         self.assertEqual(cli.parser().parse_args(["work", "--run-id", "a", "--run-id", "b"]).run_id, ["a", "b"])
+        self.assertEqual(cli.parser().parse_args(["work"]).pi_concurrency, 3)
+        with self.assertRaisesRegex(core.FlowError, "1..3"):
+            core.work(self.repo, once=True, pi_concurrency=4)
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")
         tasks = []
         for name, path in (("a", "docs/a.md"), ("b", "docs/b.md"),
-                           ("c", "docs/a.md"), ("d", "docs/d.md")):
+                           ("c", "docs/a.md"), ("d", "docs/d.md"), ("e", "docs/e.md")):
             task = {"id": f"parallel-{name}", "title": f"Write {name}", "instructions": f"Create {path}.",
                     "paths": [path], "tests": [[sys.executable, "-c",
                     f"from pathlib import Path; assert Path('{path}').read_text() == 'After\\n'"]],
                     "risk": "docs", "independent": True}
             tasks.append(core.submit(self.repo, task, kind="delegate"))
         entered, release = threading.Event(), threading.Event()
-        barrier = threading.Barrier(2, timeout=10)
+        barrier = threading.Barrier(3, timeout=10)
         errors = []
 
         def agent(role, prompt, cwd, log, timeout):
             if role["access"] == "edit":
-                if cwd.name.startswith(("parallel-a-", "parallel-b-")):
+                if cwd.name.startswith(("parallel-a-", "parallel-b-", "parallel-d-")):
                     barrier.wait()
                     entered.set()
                     if not release.wait(10):
                         raise AssertionError("parallel agents did not finish")
-                path = "docs/b.md" if cwd.name.startswith("parallel-b-") else (
-                    "docs/d.md" if cwd.name.startswith("parallel-d-") else "docs/a.md")
+                path = ("docs/b.md" if cwd.name.startswith("parallel-b-") else
+                        "docs/d.md" if cwd.name.startswith("parallel-d-") else
+                        "docs/e.md" if cwd.name.startswith("parallel-e-") else "docs/a.md")
                 (cwd / "docs").mkdir(exist_ok=True)
                 (cwd / path).write_text("After\n")
                 text = "Done"
@@ -284,7 +288,7 @@ class FlowTests(unittest.TestCase):
 
         def worker():
             try:
-                core.work(self.repo, once=True, poll=0.1, run_id=[run["id"] for run in tasks], pi_concurrency=2)
+                core.work(self.repo, once=True, poll=0.1, run_id=[run["id"] for run in tasks])
             except BaseException as exc:
                 errors.append(exc)
 
@@ -292,9 +296,9 @@ class FlowTests(unittest.TestCase):
             thread = threading.Thread(target=worker)
             thread.start()
             try:
-                self.assertTrue(entered.wait(10), "two Pi coders did not overlap")
-                time.sleep(0.25)  # Let the scheduler try to refill while both slots are occupied.
-                self.assertIn("2 running", progress.title_for(progress.rows(self.repo)))
+                self.assertTrue(entered.wait(10), "three Pi coders did not overlap")
+                time.sleep(0.25)  # Let the scheduler try to refill while all slots are occupied.
+                self.assertIn("3 running", progress.title_for(progress.rows(self.repo)))
                 for _ in range(20):
                     try:
                         with core.exclusive(self.repo):
@@ -307,7 +311,7 @@ class FlowTests(unittest.TestCase):
                 else:
                     self.fail("new work could not be submitted while Pi agents were active")
                 self.assertEqual(core.load(self.repo, tasks[2]["id"])["status"], "queued")
-                self.assertEqual(core.load(self.repo, tasks[3]["id"])["status"], "queued")
+                self.assertEqual(core.load(self.repo, tasks[4]["id"])["status"], "queued")
             finally:
                 release.set()
                 thread.join(15)
