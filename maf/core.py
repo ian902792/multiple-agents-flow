@@ -166,29 +166,33 @@ def available_modes(repo):
     return (*MODES, *sorted(flows.catalog()))
 
 
-def execution_config(repo, mode=None):
+def execution_config(repo, mode=None, main_runtime="claude"):
     """Resolve the selection for NEW work without changing repository policy."""
+    if main_runtime not in ("claude", "codex"):
+        raise FlowError("Main runtime must be claude or codex.")
     config = config_for(repo)
-    path = root_for(repo) / "mode.json"
+    path = root_for(repo) / ("mode.json" if main_runtime == "claude" else "mode-codex.json")
+    from . import flows
+    default = flows.settings()["default_flow" if main_runtime == "claude" else "codex_default_flow"]
     if mode is None:
-        from . import flows
-        mode = read_json(path) if path.exists() else flows.settings()["default_flow"]
+        mode = read_json(path) if path.exists() else default
     if mode == "default":
-        from . import flows
-        mode = flows.settings()["default_flow"]
+        mode = default
     if not isinstance(mode, str) or mode not in available_modes(repo):
         raise FlowError("Unknown mode; select one of: " + ", ".join(available_modes(repo)))
     if mode in PRESETS:
         config["roles"] = default_config(mode)["roles"]
     elif mode != "configured":
-        from . import flows
-        config["roles"] = flows.catalog()[mode]["roles"]
+        profile = flows.catalog()[mode]
+        if profile["main"]["runtime"] != main_runtime:
+            raise FlowError(f"Flow {mode!r} is for {profile['main']['runtime']} main chats, not {main_runtime}.")
+        config["roles"] = profile["roles"]
     return mode, validate_config(repo, config)
 
 
-def select_mode(repo, mode):
-    selected, config = execution_config(repo, mode)
-    path = root_for(repo) / "mode.json"
+def select_mode(repo, mode, main_runtime="claude"):
+    selected, config = execution_config(repo, mode, main_runtime)
+    path = root_for(repo) / ("mode.json" if main_runtime == "claude" else "mode-codex.json")
     if mode == "default":
         path.unlink(missing_ok=True)
     else:
@@ -399,10 +403,10 @@ def list_runs(repo):
 
 
 def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch", base_ref=None,
-           require_approval=False):
+           require_approval=False, main_runtime="claude"):
     repo = Path(repo).resolve()
     config_hash = digest(config_for(repo))
-    mode, config = execution_config(repo, mode)
+    mode, config = execution_config(repo, mode, main_runtime)
     validate_task(task)
     task = copy.deepcopy(task)  # A caller editing its JSON object cannot mutate the submitted snapshot.
     if kind not in ("batch", "delegate", "verify"):
@@ -422,8 +426,9 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch",
         raise FlowError("Delegate requires a Pi or Antigravity coder in the selected flow.")
     if kind != "delegate" and task.get("independent"):
         raise FlowError("Only lightweight delegate tasks can opt into parallel execution.")
-    if kind == "verify" and review_enabled(config) and config["roles"]["reviewer"]["runtime"] == "claude":
-        raise FlowError("Claude-authored work needs an independent non-Claude reviewer.")
+    if kind == "verify" and review_enabled(config):
+        if config["roles"]["reviewer"]["runtime"] == main_runtime:
+            raise FlowError("Independent reviewer must use a different runtime from the main chat.")
     if publish and not review_enabled(config):
         raise FlowError("Publishing requires independent review; enable it in the selected flow.")
     if auto_merge and (not publish or task["risk"] == "manual"):

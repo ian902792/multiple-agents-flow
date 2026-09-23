@@ -2,6 +2,13 @@
 
 這份文件區分離線測試與真正的 provider / GitHub 驗證，避免把 mock 當成實際成功。
 
+## 2026-09-24：Codex 主對話與 Pi 小任務
+
+- 106 項 unittest 全數通過，`git diff --check` 無問題。Claude 與 Codex 各自使用全域預設及專案 mode；內建 `codex-pi` 以 Codex 為主、Pi 為 coder，Claude Opus 5.5 審查預設關閉。
+- 在隔離的暫存 Git 專案中，真實 Pi 使用已確認的 OpenCode Go 訂閱完成封面產生器小任務。`handoff` 顯示 `tested`、精確來源／完成 SHA、測試退出碼 0，以及 `review: null`。這不是獨立審查通過的 `verified`。
+- Flow Studio 的真實桌面及 390px 手機瀏覽器檢查：切換 `codex-pi` 後顯示 Codex、`gpt-6-sol`、Pi，審查未勾選且 Claude 為可選 reviewer；兩種寬度均無整頁橫向溢出。
+- 使用者提供的六個本機 EPUB 在工作樹中的未追蹤測試目錄完成簡繁與臺灣用語轉換，並修復書名／作者／語言 metadata、加入封面；比對每個來源／輸出的 XHTML 節點、ZIP 完整性與 900×1350 PNG 封面。測試書籍與轉換腳本均未提交；未在 macOS Books 匯入驗證。
+
 ## 2026-09-23：設定頁排版與人／Agent 指令分工
 
 - 103 項 unittest 全數通過，`git diff --check` 無問題；此次只改設定頁樣式及說明文件，沒有發出模型請求。

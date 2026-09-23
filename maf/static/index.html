@@ -21,33 +21,33 @@ main{padding:36px min(5vw,64px) 72px;min-width:0;max-width:1120px;width:100%;mar
 .name-input,.description,.model-input,.effort-select{border:1px solid #cbd6e6;border-radius:7px;background:#fff;color:#172033;outline:none}
 .name-input:focus,.description:focus,.model-input:focus,.effort-select:focus{border-color:#2863d3;box-shadow:0 0 0 3px #dfeaff}
 .name-input{width:min(100%,430px);font-size:22px;font-weight:700;padding:9px 11px}.description{width:100%;min-height:64px;resize:vertical;padding:10px 12px;line-height:1.5}
-.fields{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:14px;align-items:end}.fields label{min-width:0}.model-input,.effort-select{width:100%;height:42px;padding:8px 11px;font-size:14px}
+.fields{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:14px;align-items:end}.fields.main-fields{grid-template-columns:minmax(150px,.7fr) minmax(0,1.4fr) minmax(110px,.5fr)}.fields label{min-width:0}.model-input,.effort-select{width:100%;height:42px;padding:8px 11px;font-size:14px}
 section{border-top:1px solid #e2e8f1;margin-top:26px;padding-top:24px}.role-row{display:grid;grid-template-columns:minmax(170px,1fr) minmax(220px,1.15fr) minmax(130px,.55fr);align-items:start;gap:14px;margin-top:16px}
 .role-name{font-weight:650}.role-route{font-size:12px;color:#728096;margin-top:4px}.check{display:flex;align-items:start;gap:11px;font-weight:650;margin-top:18px}.check input{width:17px;height:17px;accent-color:#2457c5;margin-top:3px}.check small{display:block;font-weight:400;color:#627087;line-height:1.5;margin-top:3px}
 .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:27px}.primary,.secondary{border-radius:7px;padding:10px 16px;font-weight:650;font-size:14px}.primary{background:#2457c5;border:1px solid #2457c5;color:white}.primary:hover{background:#1647b3}.secondary{background:white;border:1px solid #cbd6e6;color:#243755}.secondary:hover{background:#f5f8fd}
 .notice{min-height:22px;font-size:13px;color:#16613c;margin-top:12px}.notice.error{color:#a33f24}
 details{border-top:1px solid #e2e8f1;margin-top:24px;padding-top:18px}summary{cursor:pointer;color:#29456c;font-weight:650}details p{color:#627087;font-size:13px;line-height:1.5}
 @media(max-width:950px){.role-row{grid-template-columns:minmax(0,1fr) 120px;gap:10px}.role-row>div:first-child{grid-column:1/-1}.role-row>label:nth-child(2){grid-column:1}.role-row>label:nth-child(3){grid-column:2}}
-@media(max-width:760px){.top{padding:12px 18px}.app{display:block}aside{border-right:0;border-bottom:1px solid #dce4f0;padding:10px 16px}.side-title{display:none}.flow-list{display:flex;overflow-x:auto}.flow-item{width:auto;white-space:nowrap}.side-action{display:inline-block;width:auto;margin:0;border:0;padding:11px 14px}main{padding:25px 16px 48px}.heading{display:block}.status{display:inline-block;margin-top:14px}.panel{padding:22px 18px}.fields{grid-template-columns:1fr 120px}}
-@media(max-width:430px){.fields{grid-template-columns:1fr}.role-row{grid-template-columns:1fr}.role-row>label:nth-child(2),.role-row>label:nth-child(3){grid-column:1}}
+@media(max-width:760px){.top{padding:12px 18px}.app{display:block}aside{border-right:0;border-bottom:1px solid #dce4f0;padding:10px 16px}.side-title{display:none}.flow-list{display:flex;overflow-x:auto}.flow-item{width:auto;white-space:nowrap}.side-action{display:inline-block;width:auto;margin:0;border:0;padding:11px 14px}main{padding:25px 16px 48px}.heading{display:block}.status{display:inline-block;margin-top:14px}.panel{padding:22px 18px}.fields.main-fields{grid-template-columns:minmax(0,1fr) minmax(110px,.5fr)}.fields.main-fields label:first-child{grid-column:1/-1}}
+@media(max-width:430px){.fields.main-fields{grid-template-columns:minmax(0,1fr)}.role-row{grid-template-columns:1fr}.role-row>label:nth-child(2),.role-row>label:nth-child(3){grid-column:1}}
 </style>
 <header class="top"><div class="brand">Flow Studio</div><nav aria-label="頁面"><a href="/" aria-current="page">設定</a><a href="/guide">說明與理念 →</a></nav></header>
 <div class="app">
   <aside><p class="side-title">我的 Flows</p><nav class="flow-list" id="flow-list" aria-label="Flow 清單"></nav><button class="side-action" id="new-flow" type="button">＋ 新增 flow</button></aside>
   <main>
-    <div class="heading"><div><h1>設定你的工作流程</h1><p class="muted">儲存一次，所有 Git 專案都能使用。專案切換在 Claude 對話中進行。</p></div><div class="status" id="default-status"></div></div>
+    <div class="heading"><div><h1>設定你的工作流程</h1><p class="muted">儲存一次，所有 Git 專案都能使用。專案切換在主對話的 terminal 進行。</p></div><div class="status" id="default-status"></div></div>
     <div class="panel">
       <label class="field-label" for="flow-name">Flow 名稱</label><input class="name-input" id="flow-name" autocomplete="off" spellcheck="false" maxlength="40">
       <label class="field-label" for="description" style="margin-top:18px">適合什麼任務？</label><textarea class="description" id="description" maxlength="200" placeholder="例如：Claude 處理日常工作，明確小任務交給 Pi。"></textarea>
-      <section aria-labelledby="main-title"><h2 id="main-title">主 Claude 對話</h2><p class="helper">記錄你偏好的模型與 effort；目前 session 仍由 Claude 的 <code>/model</code>、<code>/effort</code> 切換。</p>
-        <div class="fields" style="margin-top:16px"><label><span class="field-label">Model</span><input class="model-input" id="main-model" list="models-claude" aria-label="Claude model" spellcheck="false"></label><label><span class="field-label">Effort</span><select class="effort-select" id="main-effort" aria-label="Claude effort"><option>low</option><option>medium</option><option>high</option><option>xhigh</option><option>max</option></select></label></div>
+      <section aria-labelledby="main-title"><h2 id="main-title">主對話</h2><p class="helper">記錄你使用的工具、偏好模型與 effort；目前 session 的模型仍需在 Claude 或 Codex 中切換。</p>
+        <div class="fields main-fields" style="margin-top:16px"><label><span class="field-label">工具</span><select class="effort-select" id="main-runtime" aria-label="主對話工具"><option value="claude">Claude</option><option value="codex">Codex</option></select></label><label><span class="field-label">Model</span><input class="model-input" id="main-model" aria-label="主對話 model" spellcheck="false"></label><label><span class="field-label">Effort</span><select class="effort-select" id="main-effort" aria-label="主對話 effort"></select></label></div>
       </section>
-      <section aria-labelledby="coder-title"><h2 id="coder-title">小任務 Agent</h2><p class="helper">Claude 主導開發；只有範圍明確的小工作才委派。</p>
+      <section aria-labelledby="coder-title"><h2 id="coder-title">小任務 Agent</h2><p class="helper">主對話負責開發與整合；只有範圍明確的小工作才委派。</p>
         <div class="role-row" data-role="coder"><div><label class="field-label" for="coder-runtime">工具</label><select class="effort-select" id="coder-runtime" aria-label="小任務 Agent"><option value="pi">Pi</option><option value="antigravity">Antigravity</option><option value="claude">Claude</option><option value="codex">Codex</option><option value="hermes">Hermes</option></select><div class="role-route"></div></div><label><span class="field-label">Model</span><input class="model-input" aria-label="小任務 model" spellcheck="false"></label><label><span class="field-label">Effort</span><select class="effort-select" aria-label="小任務 effort"></select></label></div>
       </section>
       <section aria-labelledby="review-title"><h2 id="review-title">獨立審查</h2>
         <label class="check"><input id="review-enabled" type="checkbox"><span>測試通過後交給另一個 Agent 審查<small>預設關閉。關閉時結果為 <code>tested</code>；開啟且通過審查才是 <code>verified</code>。發布與自動合併需要開啟。</small></span></label>
-        <div class="role-row" data-role="reviewer" hidden><div><label class="field-label" for="reviewer-runtime">審查 Agent</label><select class="effort-select" id="reviewer-runtime" aria-label="審查 Agent"><option value="codex">Codex</option><option value="pi">Pi</option><option value="claude">Claude（不可審自己的提交）</option></select><div class="role-route"></div></div><label><span class="field-label">Model</span><input class="model-input" aria-label="審查 model" spellcheck="false"></label><label><span class="field-label">Effort</span><select class="effort-select" aria-label="審查 effort"></select></label></div>
+        <div class="role-row" data-role="reviewer" hidden><div><label class="field-label" for="reviewer-runtime">審查 Agent</label><select class="effort-select" id="reviewer-runtime" aria-label="審查 Agent"><option value="codex">Codex</option><option value="pi">Pi</option><option value="claude">Claude</option></select><div class="role-route"></div></div><label><span class="field-label">Model</span><input class="model-input" aria-label="審查 model" spellcheck="false"></label><label><span class="field-label">Effort</span><select class="effort-select" aria-label="審查 effort"></select></label></div>
       </section>
       <details><summary>規畫、Herdr 與匯入匯出</summary>
         <label class="check"><input id="manual-plan" type="checkbox"><span>大型任務提醒我手動使用 /maf-plan<small>MAF 不會自行啟動規畫。</small></span></label>
@@ -56,10 +56,10 @@ details{border-top:1px solid #e2e8f1;margin-top:24px;padding-top:18px}summary{cu
         <button class="secondary" id="save-settings" type="button" style="margin-top:12px">儲存 Herdr 設定</button>
         <div class="actions"><button class="secondary" id="export-flow" type="button">匯出 JSON</button><button class="secondary" id="import-flow" type="button">匯入 JSON</button><input id="import-file" type="file" accept="application/json,.json" hidden></div>
       </details>
-      <div class="actions"><button class="primary" id="save-flow" type="button">儲存 flow</button><button class="secondary" id="set-default" type="button">儲存並設為全域預設</button></div>
+      <div class="actions"><button class="primary" id="save-flow" type="button">儲存 flow</button><button class="secondary" id="set-default" type="button">儲存並設為此工具的全域預設</button></div>
       <div class="notice" id="notice" role="status" aria-live="polite"></div>
     </div>
-    <p class="helper">新專案直接使用全域預設。要改單一專案，告訴 Claude「這個專案改用某個 flow」；需要手動控制時也可用 <code>/maf mode 名稱</code>。<a href="/guide">查看完整說明與範例</a></p>
+    <p class="helper">新專案直接使用全域預設。要改單一專案，告訴主 Agent「這個專案改用某個 flow」；Claude 可用 <code>/maf mode 名稱</code>，Codex 可用 <code>$maf mode 名稱</code>。<a href="/guide">查看完整說明與範例</a></p>
   </main>
 </div>
 <datalist id="models-claude"></datalist><datalist id="models-codex"></datalist><datalist id="models-pi"></datalist><datalist id="models-hermes"></datalist><datalist id="models-antigravity"></datalist>
@@ -69,6 +69,7 @@ const el=id=>document.getElementById(id);
 let snapshot=null,currentName="",draft=null;
 const suggestedModels={claude:["claude-opus-5-5","sonnet","haiku"],codex:["gpt-6-sol","gpt-6-astra","gpt-6-luna"],pi:["deepseek-v4.1-flash"],hermes:["deepseek-v4.1-flash"],antigravity:["gemini-3.8-flash-high","gemini-3.8-flash-medium"]};
 const coderRoutes={pi:["opencode-go","deepseek-v4.1-flash","medium"],antigravity:["google-account","gemini-3.8-flash-high","high"],claude:["claude-subscription","claude-opus-5-5","medium"],codex:["chatgpt","gpt-6-sol","medium"],hermes:["opencode-go","deepseek-v4.1-flash","medium"]};
+const mainDefaults={claude:["claude-opus-5-5","medium"],codex:["gpt-6-sol","high"]};
 async function api(path,body){
   const response=await fetch(path,{method:body?"POST":"GET",headers:{"X-MAF-Token":token,...(body?{"Content-Type":"application/json"}:{})},body:body?JSON.stringify(body):undefined});
   const value=await response.json();if(!response.ok)throw Error(value.error||"操作失敗");return value;
@@ -77,7 +78,7 @@ function message(value,error=false){el("notice").textContent=value;el("notice").
 function collect(){
   const flow=structuredClone(draft);
   flow.description=el("description").value;flow.manual_plan=el("manual-plan").checked;
-  flow.main.model=el("main-model").value.trim();flow.main.effort=el("main-effort").value;
+  flow.main.runtime=el("main-runtime").value;flow.main.model=el("main-model").value.trim();flow.main.effort=el("main-effort").value;
   for(const row of document.querySelectorAll(".role-row")){
     const role=flow.roles[row.dataset.role];
     if(row.dataset.role==="coder"||row.dataset.role==="reviewer"){
@@ -91,7 +92,7 @@ function collect(){
 }
 function drawModelLists(){
   const models=Object.fromEntries(Object.entries(suggestedModels).map(([runtime,values])=>[runtime,new Set(values)]));
-  for(const flow of [...Object.values(snapshot.flows),draft]){models.claude.add(flow.main.model);for(const role of Object.values(flow.roles))models[role.runtime]?.add(role.model)}
+  for(const flow of [...Object.values(snapshot.flows),draft]){models[flow.main.runtime]?.add(flow.main.model);for(const role of Object.values(flow.roles))models[role.runtime]?.add(role.model)}
   for(const [runtime,values] of Object.entries(models)){const list=el("models-"+runtime);list.replaceChildren();for(const value of values){const option=document.createElement("option");option.value=value;list.append(option)}}
 }
 function drawEfforts(select,runtime,value){
@@ -101,10 +102,10 @@ function drawEfforts(select,runtime,value){
 }
 function draw(){
   const list=el("flow-list");list.replaceChildren();
-  for(const name of Object.keys(snapshot.flows).sort()){const button=document.createElement("button");button.type="button";button.textContent=name+(name===snapshot.settings.default_flow?" · 預設":"");button.className="flow-item"+(name===currentName?" current":"");button.addEventListener("click",()=>{currentName=name;draft=structuredClone(snapshot.flows[name]);draw()});list.append(button)}
+  for(const name of Object.keys(snapshot.flows).sort()){const button=document.createElement("button");button.type="button";button.textContent=name+(name===snapshot.settings.default_flow?" · Claude 預設":name===snapshot.settings.codex_default_flow?" · Codex 預設":"");button.className="flow-item"+(name===currentName?" current":"");button.addEventListener("click",()=>{currentName=name;draft=structuredClone(snapshot.flows[name]);draw()});list.append(button)}
   el("flow-name").value=currentName;el("description").value=draft.description;el("manual-plan").checked=draft.manual_plan;
-  el("default-status").textContent="全域預設："+snapshot.settings.default_flow;
-  el("main-model").value=draft.main.model;el("main-effort").value=draft.main.effort;
+  el("default-status").textContent="Claude："+snapshot.settings.default_flow+" · Codex："+snapshot.settings.codex_default_flow;
+  el("main-runtime").value=draft.main.runtime;el("main-model").value=draft.main.model;el("main-model").setAttribute("list","models-"+draft.main.runtime);drawEfforts(el("main-effort"),draft.main.runtime,draft.main.effort);
   el("review-enabled").checked=draft.roles.reviewer.enabled===true;
   document.querySelector('[data-role="reviewer"]').hidden=!el("review-enabled").checked;
   drawModelLists();
@@ -119,11 +120,15 @@ function draw(){
 async function refresh(){snapshot=await api("/api/state");if(!draft||!snapshot.flows[currentName]){currentName=snapshot.settings.default_flow;draft=structuredClone(snapshot.flows[currentName])}draw()}
 async function persist(defaultFlow=false){
   const {name,flow}=collect();
-  try{snapshot=await api("/api/flow",{name,flow});if(defaultFlow)snapshot=await api("/api/default",{name});currentName=name;draft=structuredClone(flow);draw();message(defaultFlow?"已儲存，並設為所有新專案的預設。":"Flow 已儲存。")}
+  try{snapshot=await api("/api/flow",{name,flow});if(defaultFlow)snapshot=await api("/api/default",{name});currentName=name;draft=structuredClone(flow);draw();message(defaultFlow?"已儲存，並設為此主對話工具在新專案的預設。":"Flow 已儲存。")}
   catch(error){message(error.message,true)}
 }
 el("save-flow").addEventListener("click",()=>persist());
 el("set-default").addEventListener("click",()=>persist(true));
+el("main-runtime").addEventListener("change",()=>{
+  const runtime=el("main-runtime").value;draft=collect().flow;
+  [draft.main.model,draft.main.effort]=mainDefaults[runtime];draw();message("已切換主對話工具，儲存後生效。");
+});
 el("coder-runtime").addEventListener("change",()=>{
   const runtime=el("coder-runtime").value,previous=draft.roles.coder.runtime;draft=collect().flow;
   const [provider,model,effort]=coderRoutes[runtime];draft.roles.coder={runtime,provider,model,access:"edit",effort};

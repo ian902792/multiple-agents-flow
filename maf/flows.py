@@ -1,4 +1,4 @@
-"""User-wide flow profiles and optional integrations. Claude remains the main chat."""
+"""User-wide flow profiles and optional integrations."""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -20,13 +20,18 @@ def templates():
     antigravity = deepcopy(roles)
     antigravity["coder"] = {"runtime": "antigravity", "provider": "google-account",
                              "model": "gemini-3.8-flash-high", "access": "edit", "effort": "high"}
+    codex = deepcopy(roles)
+    codex["reviewer"] = {"runtime": "claude", "provider": "claude-subscription",
+                         "model": "claude-opus-5-5", "access": "read", "effort": "high", "enabled": False}
     return {
         "quick": {"description": "小任務：Claude 主對話開發；必要時交給 Pi。",
-                  "manual_plan": False, "main": {"model": "claude-opus-5-5", "effort": "medium"}, "roles": roles},
+                  "manual_plan": False, "main": {"runtime": "claude", "model": "claude-opus-5-5", "effort": "medium"}, "roles": roles},
         "planned": {"description": "中大型任務：手動 /maf-plan 規畫；Claude 實作，可交 Pi 處理明確小任務。",
-                    "manual_plan": True, "main": {"model": "claude-opus-5-5", "effort": "high"}, "roles": planned},
+                    "manual_plan": True, "main": {"runtime": "claude", "model": "claude-opus-5-5", "effort": "high"}, "roles": planned},
         "quick-antigravity": {"description": "小任務：Claude 主對話開發；明確小工作交 Antigravity Gemini Flash。",
-                              "manual_plan": False, "main": {"model": "claude-opus-5-5", "effort": "medium"}, "roles": antigravity},
+                              "manual_plan": False, "main": {"runtime": "claude", "model": "claude-opus-5-5", "effort": "medium"}, "roles": antigravity},
+        "codex-pi": {"description": "Codex 主對話開發；明確小任務交 Pi，獨立 Claude 審查可選。",
+                     "manual_plan": False, "main": {"runtime": "codex", "model": "gpt-6-sol", "effort": "high"}, "roles": codex},
     }
 
 
@@ -50,12 +55,18 @@ def exclusive():
 def settings():
     path = home() / "settings.json"
     data = core.read_json(path) if path.exists() or path.is_symlink() else {}
-    if (not isinstance(data, dict) or set(data) - {"herdr_enabled", "default_flow"}
+    known = catalog()
+    if (not isinstance(data, dict) or set(data) - {"herdr_enabled", "default_flow", "codex_default_flow"}
             or type(data.get("herdr_enabled", False)) is not bool
             or not isinstance(data.get("default_flow", "quick"), str)
-            or data.get("default_flow", "quick") not in catalog()):
-        raise core.FlowError("Invalid global settings.json; expected herdr_enabled and a saved default_flow.")
-    return {"herdr_enabled": data.get("herdr_enabled", False), "default_flow": data.get("default_flow", "quick")}
+            or data.get("default_flow", "quick") not in known
+            or known[data.get("default_flow", "quick")]["main"]["runtime"] != "claude"
+            or not isinstance(data.get("codex_default_flow", "codex-pi"), str)
+            or data.get("codex_default_flow", "codex-pi") not in known
+            or known[data.get("codex_default_flow", "codex-pi")]["main"]["runtime"] != "codex"):
+        raise core.FlowError("Invalid global settings.json; choose one saved default flow for each main runtime.")
+    return {"herdr_enabled": data.get("herdr_enabled", False), "default_flow": data.get("default_flow", "quick"),
+            "codex_default_flow": data.get("codex_default_flow", "codex-pi")}
 
 
 def set_herdr(enabled):
@@ -67,10 +78,12 @@ def set_herdr(enabled):
 
 
 def set_default(name):
-    if not isinstance(name, str) or name not in catalog():
+    known = catalog()
+    if not isinstance(name, str) or name not in known:
         raise core.FlowError("Choose a saved flow as the global default.")
+    key = "default_flow" if known[name]["main"]["runtime"] == "claude" else "codex_default_flow"
     with exclusive():
-        core.atomic(home() / "settings.json", {**settings(), "default_flow": name})
+        core.atomic(home() / "settings.json", {**settings(), key: name})
     return settings()
 
 
@@ -80,12 +93,15 @@ def validate(name, flow):
     if (not isinstance(flow, dict) or set(flow) != {"description", "manual_plan", "main", "roles"}
             or not isinstance(flow["description"], str) or len(flow["description"]) > 200
             or type(flow["manual_plan"]) is not bool or not isinstance(flow["roles"], dict)
-            or not isinstance(flow["main"], dict) or set(flow["main"]) != {"model", "effort"}
+            or not isinstance(flow["main"], dict) or set(flow["main"]) != {"runtime", "model", "effort"}
+            or flow["main"]["runtime"] not in ("claude", "codex")
             or not isinstance(flow["main"]["model"], str)
             or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", flow["main"]["model"])
             or flow["main"]["effort"] not in ("low", "medium", "high", "xhigh", "max")):
-        raise core.FlowError("Flow needs description, manual_plan, main Claude model/effort, and roles.")
+        raise core.FlowError("Flow needs description, manual_plan, main runtime/model/effort, and roles.")
     core.validate_roles(flow["roles"])
+    if flow["roles"]["reviewer"].get("enabled", False) and flow["roles"]["reviewer"]["runtime"] == flow["main"]["runtime"]:
+        raise core.FlowError("Independent reviewer must use a different runtime from the main chat.")
     return deepcopy(flow)
 
 

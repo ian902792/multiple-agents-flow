@@ -14,6 +14,8 @@ from . import agents, core, flows, github, progress, skills
 def parser():
     cli = argparse.ArgumentParser(description="Subscription-first multi-agent workflow (Python 3.11+, macOS/Linux).")
     cli.add_argument("--repo", type=Path, help="Target Git repository root (default: cwd)")
+    cli.add_argument("--main", choices=("claude", "codex"), default="claude",
+                     help="Main chat sending this request; use codex from Codex skill (default: claude)")
     commands = cli.add_subparsers(dest="action", required=True)
     commands.add_parser("install-skills", help="Register MAF skills once for this user in Claude and Codex")
     p = commands.add_parser("settings", help="Show or change user-wide optional integrations")
@@ -39,7 +41,7 @@ def parser():
     p.add_argument("--auto-merge", action="store_true", help="Authorize low-risk merge if all policy/GitHub gates pass")
     p.add_argument("--require-approval", action="store_true", help="Hold execution for one plan/scope approval")
     for name in ("delegate", "verify"):
-        p = commands.add_parser(name, help="Queue lightweight work or verify the current committed Claude work")
+        p = commands.add_parser(name, help="Queue lightweight work or verify the current main chat's commit")
         p.add_argument("task", type=Path)
         p.add_argument("--mode", help="Use this mode or named flow for this task only")
         p.add_argument("--require-approval", action="store_true", help="Hold execution for one plan/scope approval")
@@ -124,9 +126,9 @@ def plan(repo, config, goal_file):
     print(f"\nSaved: {directory / 'result.json'}\nReview the plan, then explicitly submit approved tasks.")
 
 
-def mode_info(repo):
-    mode, config = core.execution_config(repo)
-    result = {"mode": mode, "available": core.available_modes(repo), "roles": config["roles"],
+def mode_info(repo, main_runtime="claude"):
+    mode, config = core.execution_config(repo, main_runtime=main_runtime)
+    result = {"mode": mode, "main": main_runtime, "available": core.available_modes(repo), "roles": config["roles"],
               "scope": "New tasks only; existing run snapshots are unchanged.", "billing": []}
     result["flow"] = flows.catalog().get(mode)
     try:
@@ -163,7 +165,8 @@ def main(argv=None):
             ui.serve(args.port, not args.no_open)
             return
         elif args.action == "confirm-billing" and args.repo is None:
-            name = flows.settings()["default_flow"]
+            key = "default_flow" if args.main == "claude" else "codex_default_flow"
+            name = flows.settings()[key]
             roles = flows.catalog()[name]["roles"]
             core.confirm_billing(None, {"roles": roles})
             result = {"confirmed": True, "flow": name, "roles": roles,
@@ -175,7 +178,7 @@ def main(argv=None):
             return
         core.root_for(repo)
         if args.action == "mode" and not args.name:
-            result = mode_info(repo)
+            result = mode_info(repo, args.main)
         elif args.action == "status":
             result = core.load(repo, args.run_id) if args.run_id else [
                 {k: run.get(k) for k in ("id", "status", "stage", "repairs", "not_before", "pr_url", "feedback")}
@@ -218,10 +221,10 @@ def main(argv=None):
                 else:
                     config = core.config_for(repo)
                     if args.action in ("doctor", "confirm-billing", "plan"):
-                        _, config = core.execution_config(repo, args.mode if args.action == "plan" else None)
+                        _, config = core.execution_config(repo, args.mode if args.action == "plan" else None, args.main)
                     if args.action == "mode":
-                        core.select_mode(repo, args.name)
-                        result = mode_info(repo)
+                        core.select_mode(repo, args.name, args.main)
+                        result = mode_info(repo, args.main)
                     elif args.action == "doctor":
                         result = {name: agents.doctor_role(role) if name != "reviewer" or core.review_enabled(config) else []
                                   for name, role in config["roles"].items()}
@@ -242,10 +245,11 @@ def main(argv=None):
                         return
                     elif args.action == "submit":
                         result = core.submit(repo, core.read_json(args.task), args.publish, args.auto_merge, args.mode,
-                                             require_approval=args.require_approval)
+                                             require_approval=args.require_approval, main_runtime=args.main)
                     elif args.action in ("delegate", "verify"):
                         result = core.submit(repo, core.read_json(args.task), mode=args.mode, kind=args.action,
-                                             base_ref=getattr(args, "base", None), require_approval=args.require_approval)
+                                             base_ref=getattr(args, "base", None), require_approval=args.require_approval,
+                                             main_runtime=args.main)
                     elif args.action == "approve":
                         result = core.approve(repo, args.run_id)
                     elif args.action == "resume":

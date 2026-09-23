@@ -27,6 +27,7 @@ class LocalUITests(unittest.TestCase):
                         html = response.read().decode()
                     self.assertIn("Flow Studio", html)
                     self.assertIn('id="coder-runtime"', html)
+                    self.assertIn('id="main-runtime"', html)
                     self.assertIn('id="review-enabled"', html)
                     self.assertIn("claude-opus-5-5", html)
                     self.assertIn('id="set-default"', html)
@@ -53,6 +54,10 @@ class LocalUITests(unittest.TestCase):
                         self.assertTrue(json.load(response)["settings"]["herdr_enabled"])
                     with urlopen(Request(url + "/api/default", b'{"name": "my-flow"}', headers=headers)) as response:
                         self.assertEqual(json.load(response)["settings"]["default_flow"], "my-flow")
+                    with urlopen(Request(url + "/api/default", b'{"name": "codex-pi"}', headers=headers)) as response:
+                        saved = json.load(response)["settings"]
+                        self.assertEqual(saved["default_flow"], "my-flow")
+                        self.assertEqual(saved["codex_default_flow"], "codex-pi")
                     with self.assertRaises(HTTPError) as denied:
                         urlopen(Request(url + "/api/settings", b'{}', headers=dict(headers, Origin="https://evil.example")))
                     self.assertEqual(denied.exception.code, 403)

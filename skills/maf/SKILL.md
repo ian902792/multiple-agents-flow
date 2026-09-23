@@ -5,9 +5,10 @@ description: Operate multiple-agents-flow from the main coding chat. Use for glo
 
 # MAF
 
-Stay in the current conversation. Claude is the main developer for ordinary
-tasks. Never call the Codex planner automatically: only the human's explicit
-`/maf-plan` invocation may do that. Follow the user's language.
+Stay in the current conversation. Its agent is the main developer for ordinary
+tasks. Select a flow whose `main.runtime` matches that agent; do not silently
+switch the human to another chat. Never call the Codex planner automatically:
+only the human's explicit `/maf-plan` invocation may do that. Follow the user's language.
 
 ## Locate and dispatch
 
@@ -15,7 +16,10 @@ Resolve this SKILL.md's real path (follow symlinks). The tool root is
 `parents[2]` of that file; the entrypoint is its `flow.py`. Use the current
 project's Git root as target unless the user names another repository. Tool
 and target may differ. Verify paths and quote each shell argument. Invoke
-`python3 <tool>/flow.py --repo <target> ...` for machine-readable output.
+`python3 <tool>/flow.py --repo <target> --main claude ...` from Claude, or
+`python3 <tool>/flow.py --repo <target> --main codex ...` from Codex, for
+machine-readable output. The caller's runtime selects its own global default
+and project mode; never rewrite the other main agent's choice.
 Never ask the user to copy a shell function or hand-write task JSON.
 
 Claude uses `/maf <action>`; Codex CLI/IDE uses `/skills` to select `maf`, or
@@ -27,7 +31,7 @@ as a request, never as shell text. With no action, show mode and progress.
 | `setup [MODE]` | Check readiness; optional mode sets a project override. |
 | `mode [MODE\|default]` | Show or persist a project override; `default` restores the global flow. No inference. |
 | `delegate <requirements>` | Give one or more bounded tasks to the selected lightweight coder, in separate worktrees. |
-| `verify <requirement>` | Test Claude's current committed HEAD; independently review only when the selected flow enables it. |
+| `verify <requirement>` | Test the main agent's current committed HEAD; independently review only when the selected flow enables it. |
 | `handoff RUN_ID` | Read a completed run's concise exact-SHA evidence. |
 | `run <requirement>` | Explicit legacy batch run with a separate coder. |
 | `approve RUN_ID` | After the human accepts a frozen task plan, release its one-time execution gate. |
@@ -39,26 +43,29 @@ Modes: `economy` = Pi/DeepSeek Flash coding;
 `opus-sol` = pinned Claude Opus 5.5 coding with Codex GPT-6 Sol available for review;
 `hermes-coder` = Hermes coding with Pi available for review;
 `configured` = project `.maf.json` roles when present, built-in economy otherwise.
-`quick`, `planned`, `quick-antigravity`, and user-created names are user-wide role
+`quick`, `planned`, `quick-antigravity`, `codex-pi`, and user-created names are user-wide role
 profiles; use `flows` to inspect them. `quick-antigravity` uses the signed-in
 `agy` account with Gemini 3.8 Flash High for narrow coding tasks. Profiles select future
-MAF agents, not the current Claude session. Tests run as approved commands,
-without a tester model. Claude's `/model` and `/effort` control the main chat.
-The main Claude preference in built-in flows is `claude-opus-5-5`. Review is off
+MAF agents, not the current main session. `codex-pi` records Codex GPT-6 Sol as
+main, Pi for small tasks, and optional Claude Opus 5.5 review. Tests run as
+approved commands, without a tester model. Change the current session's model
+in its own CLI/app; saving a flow does not switch it. Review is off
 unless `roles.reviewer.enabled` is true; do not turn it on without the user's request.
 
 ## Setup and mode
 
-1. Read target instructions and `mode`. New Git repositories with an initial
-   commit use the global default flow immediately; do not create `.maf.json`
+1. Read target instructions and `mode` using this caller's `--main` value. New
+   Git repositories with an initial commit use that runtime's global default
+   flow immediately; do not create `.maf.json`
    unless project policy needs its own base branch, protected paths, or timeouts.
    Never overwrite an existing config. `ui` edits user-wide flows, the global
    default and the optional Herdr setting; it never starts an agent.
 2. Use `mode MODE` only when a project needs an override; `mode default`
-   restores global selection. `mode` alone reports effective roles and billing
-   readiness. Project selection lives in private Git state, affects new
-   submissions only, and preserves existing runs. Do not edit `.maf.json` to
-   switch modes. `submit --mode MODE` overrides just one task.
+   restores this main runtime's global selection. `mode` alone reports effective
+   roles and billing readiness. Claude and Codex project selections live in
+   separate private Git state, affect new submissions only, and preserve
+   existing runs. Do not edit `.maf.json` to switch modes. `submit --mode MODE`
+   overrides just one task.
 3. Run `doctor` for setup/readiness, not every status poll. It checks the
    selected mode without inference; it cannot prove model availability.
 4. If billing confirmation is missing, show exact active provider/model routes and
@@ -73,10 +80,10 @@ unless `roles.reviewer.enabled` is true; do not turn it on without the user's re
    is installed once for this user via `install-skills`; other Git projects need
    no MAF configuration. Never overwrite unrelated skills.
 
-## Claude-first work
+## Main-chat work
 
-For ordinary tasks, implement in this Claude conversation. Do not start a
-separate Claude coder. Use the selected Pi or Antigravity coder only for narrow
+For ordinary tasks, implement in this main conversation. Do not start a
+separate coder for the main agent's work. Use the selected Pi or Antigravity coder only for narrow
 edits or test-writing tasks with explicit paths and approved test argv. The
 lightweight coder must not execute shell tests; the
 supervisor runs them. Do not delegate planning, broad integration, or final
@@ -120,13 +127,14 @@ to another flow unless the user requests it.
   main branch yourself. A cherry-pick creates a new SHA, so run `verify` on
   that combined commit before calling it complete.
 - `verify <task-file> [--base ANCESTOR] [--mode NAME]` tests the current HEAD
-  and calls the selected independent non-Claude reviewer only when enabled. By default it
+  and calls the selected independent reviewer only when enabled. The reviewer
+  must use a different runtime from the selected flow's main agent. By default it
   compares with the merge-base of the configured base branch. For work on the
   base branch, pass an exact ancestor with `--base`. Run its ID through
   `work --once --run-id ID`; `handoff ID` gives the tested SHA and optional review.
-  On failure, Claude fixes the source branch, commits, and starts a new verify
+  On failure, the main agent fixes the source branch, commits, and starts a new verify
   run. Resolve any `awaiting_approval` gate before `work`. Never let a delegated coder
-  repair an external Claude commit.
+  repair an external main-agent commit.
 
 If the coder returns `MAF_NEEDS_HUMAN:` or the reviewer marks a security,
 permission or requirements finding as manual risk, stop and report the concrete
