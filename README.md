@@ -276,7 +276,8 @@ python3 "$FLOW" --repo "$TARGET" herdr
 
 會建立新的背景 workspace／pane，保留目前焦點，啟動持續處理佇列的 supervisor。指令會印出 `workspace`、`pane`、`planner_pane` ID。
 啟動時會記住呼叫端的 `HERDR_PANE_ID`，每 5 秒自動更新**主任務 pane 的標題**：完成數、進行中的階段／任務、需要處理的數量。
-不需要再手動開 watcher，也不需要觀看子任務輸出。標題出現 `!N attention` 時，請主控讀取 `progress --json`，取得原因與下一步。
+現在 coder、reviewer 每次執行時也會在 supervisor 旁邊開一個**暫時 pane**，顯示即時事件摘要與工具類型；完成後自動關閉該 pane。啟用整合後，從 Herdr 手動執行 `/maf-plan` 也會為 Codex planner 開暫時 pane。這些是觀看 pane；agent 仍由 MAF supervisor 執行、限時及解析結構化結果，不能靠 pane 文字宣稱成功。原始輸出留在 Git 私有的 MAF log，pane 不顯示 prompt 或全文。若建立／關閉 pane 失敗，supervisor 會警告，但不重送或中斷 agent。
+目前 MAF 只有一條依序執行線，因此同時最多顯示一個 MAF agent 的活動 pane；Claude 主對話可留在原 Herdr pane。標題出現 `!N attention` 時，請主控讀取 `progress --json`，取得原因與下一步。
 這是本機狀態輪詢，不向主控輸入訊息、不喚醒模型；看板會更新，但不會自動觸發主任務的新一輪對話。
 之後可從另一個 pane `submit` 與 `status`。第一版使用單一寫入鎖：agent 工作中 submit 可能要求等目前任務完成；不會同時改壞狀態。
 沒有任務、等待重置、等待 GitHub CI 都不會喚醒 Planner。
@@ -286,6 +287,7 @@ python3 "$FLOW" --repo "$TARGET" herdr
 - 在 supervisor pane 按 Ctrl-C 停止 worker；已保存任務與 worktree 保留。
 - 電腦重新啟動後，重新進入 Herdr、查看 `status`、處理模糊中斷，再執行 `herdr`。第一版不自動安裝 launchd。
 - 沒有 Herdr 也能手動執行 `work`；`herdr` 指令本身必須在 `HERDR_ENV=1` 的 pane 內執行，且全域開關必須已啟用。關閉開關可用 `python3 "$FLOW" settings herdr off`；新的 pane 回報會拒絕。
+- 不使用持續 supervisor 時，可在 Herdr 內明確執行 `work --once --run-id RUN_ID --agent-panes`；預設一般 `work` 不開額外 pane。
 
 ## 5. 進度摘要與 todo.md 勾選
 

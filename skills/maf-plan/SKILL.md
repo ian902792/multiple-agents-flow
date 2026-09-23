@@ -21,7 +21,9 @@ the main implementer after planning.
    --goal-file <private-file>`. The planned profile defaults to read-only Codex
    `gpt-6-astra` with high effort; a user-edited profile may deliberately
    select another model/effort. The CLI checks the exact subscription route
-   before inference. Do not add API billing or bypass flags.
+   before inference. Inside Herdr, when the user-wide integration is on, a
+   temporary read-only planner output pane opens and closes automatically.
+   Do not add API billing or bypass flags.
 4. Summarize the plan in the current Claude chat. Treat its proposed tasks as
    suggestions, not authorization. If implementation is not already authorized,
    show the concrete paths, tests, roles and risks and ask once before starting.

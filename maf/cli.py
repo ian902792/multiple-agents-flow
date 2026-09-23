@@ -50,6 +50,9 @@ def parser():
     p.add_argument("--run-id", help="Only process this run, without consuming other queued tasks")
     p.add_argument("--poll", type=int, default=30)
     p.add_argument("--planner-pane", metavar="PANE_ID", help="Inside Herdr: update the main task pane while this worker runs")
+    p.add_argument("--agent-panes", action="store_true", help="Inside Herdr: show each supervised agent's live output in a temporary pane")
+    p = commands.add_parser("live-view", help=argparse.SUPPRESS)
+    p.add_argument("file", type=Path)
     p = commands.add_parser("status", help="Print local run states, or one run's full evidence")
     p.add_argument("run_id", nargs="?")
     p = commands.add_parser("approve", help="Approve one frozen task scope, tests and repair budget before execution")
@@ -88,7 +91,8 @@ def launch_herdr(repo):
                                       "--label", "flow: " + repo.name, "--no-focus"], repo))
     pane = result["result"]["root_pane"]["pane_id"]
     launcher = Path(__file__).resolve().parent.parent / "flow.py"
-    argv = [sys.executable, "-u", str(launcher), "--repo", str(repo), "work", "--planner-pane", caller]
+    argv = [sys.executable, "-u", str(launcher), "--repo", str(repo), "work", "--planner-pane", caller,
+            "--agent-panes"]
     core.command(["herdr", "pane", "run", pane, shlex.join(argv)], repo)
     return {"pane": pane, "planner_pane": caller, "workspace": result["result"]["workspace"]["workspace_id"],
             "note": "Supervisor persists independently of planner chat. Do not stop the Herdr server. Ctrl-C pauses this worker."}
@@ -107,7 +111,11 @@ def plan(repo, config, goal_file):
               "Suggest small independent task JSON objects with exactly id,title,instructions,paths,tests,risk. "
               "tests must be nonempty argv arrays. risk defaults manual. No task is authorized by your output; a human will inspect it.\n"
               + goal)
-    result = agents.run_agent(role, prompt, repo, directory / "planner.jsonl", config["agent_timeout"])
+    live_log = directory / "planner.live"
+    show_pane = flows.settings()["herdr_enabled"] and os.environ.get("HERDR_ENV") == "1"
+    with progress.agent_pane(repo, "MAF planner", repo, live_log, show_pane) as pane:
+        result = agents.run_agent(role, prompt, repo, directory / "planner.jsonl", config["agent_timeout"],
+                                  **({"live_log": live_log} if pane else {}))
     core.atomic(directory / "result.json", result)
     if result["status"] != "ok":
         raise core.FlowError(f"Planner {result['status']}: {result.get('detail', '')}. Evidence: {directory}")
@@ -163,11 +171,16 @@ def main(argv=None):
                 for run in core.list_runs(repo)]
         elif args.action == "handoff":
             result = core.handoff(repo, core.load(repo, args.run_id))
+        elif args.action == "live-view":
+            progress.follow_live(repo, args.file)
+            return
         elif args.action == "work":
             if not 1 <= args.poll <= 3600:
                 raise core.FlowError("--poll must be 1..3600 seconds.")
+            if args.agent_panes:
+                progress.check_pane(repo, os.environ.get("HERDR_PANE_ID"))
             with progress.monitor(repo, args.planner_pane):
-                core.work(repo, args.once, args.poll, args.run_id)
+                core.work(repo, args.once, args.poll, args.run_id, args.agent_panes)
             return
         elif args.action == "progress":
             if not 1 <= args.poll <= 3600:

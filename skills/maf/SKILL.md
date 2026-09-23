@@ -151,6 +151,10 @@ SHA; submit a new verify run. Never auto-publish or merge a delegated run.
    `HERDR_ENV=1` and inherited `HERDR_PANE_ID`, append `--planner-pane <that-id>`
    for main-pane progress. Never guess pane IDs. If an existing worker
    owns the lock, inspect its status; do not start competing workers or resubmit.
+   If the human enabled Herdr and explicitly wants a visible agent pane for an
+   ad hoc run inside Herdr, add `--agent-panes`; the `herdr` supervisor launcher
+   enables these temporary observer panes automatically. They close after each
+   role, and their display is never verification evidence.
 7. Report meaningful progress in the main chat. Read `progress --json` at useful
    intervals or on request, not every few seconds through model turns. Herdr
    metadata polls locally without model calls; a worker does not automatically

@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -102,6 +103,8 @@ class ArgvSafety(unittest.TestCase):
 
     def test_claude(self):
         argv = self.check(CLAUDE)
+        self.assertEqual(argv[argv.index("--output-format") + 1], "stream-json")
+        self.assertIn("--verbose", argv)
         self.assertEqual(argv[argv.index("--tools") + 1], "Read,Glob,Grep,Edit,Write")
         self.assertEqual(argv[argv.index("--allowedTools") + 1], "Read,Glob,Grep,Edit,Write")
         self.assertIn("--restricted", argv)
@@ -158,6 +161,7 @@ class Parsers(unittest.TestCase):
                          "session_id": "s1", "usage": {"input_tokens": 1}})
         self.assertEqual(agents._parse_claude(ok)["text"], "done")
         self.assertEqual(agents._parse_claude(ok)["session_id"], "s1")
+        self.assertEqual(agents._parse_claude(json.dumps({"type": "system"}) + "\n" + ok)["text"], "done")
         quota = json.dumps({"type": "result", "subtype": "error_during_execution", "is_error": True,
                             "result": "Rate limit reached: out of extra usage", "session_id": "s2"})
         self.assertEqual(agents._parse_claude(quota)["status"], "quota")
@@ -321,6 +325,29 @@ class RunAgent(unittest.TestCase):
 
 
 class RealSubprocess(unittest.TestCase):
+    def test_agent_output_reaches_live_log_before_completion(self):
+        script = ("import json,time; "
+                  "print(json.dumps({'type':'thread.started','thread_id':'t'}), flush=True); "
+                  "time.sleep(.4); "
+                  "print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'done'}}), flush=True); "
+                  "print(json.dumps({'type':'turn.completed','usage':{}}), flush=True)")
+        with tempfile.TemporaryDirectory() as directory:
+            log, live = Path(directory) / "agent.log", Path(directory) / "agent.live"
+            result = []
+            with mock.patch.object(agents, "_auth_problems", return_value=[]), \
+                    mock.patch.object(agents, "_argv", return_value=[sys.executable, "-c", script]):
+                worker = threading.Thread(target=lambda: result.append(agents.run_agent(CODEX, "task", Path(directory), log, 5,
+                                                                                         live_log=live)))
+                worker.start()
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline and (not live.exists() or b"thread.started" not in live.read_bytes()):
+                    time.sleep(.01)
+                self.assertTrue(worker.is_alive())
+                worker.join(5)
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(result[0]["status"], "ok")
+            self.assertIn(b"turn.completed", live.read_bytes())
+
     def test_timeout_kills_own_process_group(self):
         rc, out, err, timed_out = agents._exec(["sh", "-c", "sleep 30 & echo $!; wait"], stdin="", timeout=0.3)
         self.assertTrue(timed_out)

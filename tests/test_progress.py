@@ -268,12 +268,46 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(calls[0], ["herdr", "pane", "get", "w1:p1"])
         launch = calls[-1]
         self.assertEqual(launch[:4], ["herdr", "pane", "run", "w2:p2"])
-        self.assertEqual(shlex.split(launch[-1])[-3:], ["work", "--planner-pane", "w1:p1"])
+        self.assertEqual(shlex.split(launch[-1])[-4:], ["work", "--planner-pane", "w1:p1", "--agent-panes"])
         self.assertIn("--no-focus", calls[-2])
         with patch.dict(os.environ, {"HERDR_ENV": "1", "HERDR_PANE_ID": ""}), patch.object(core, "command") as command:
             with self.assertRaises(core.FlowError):
                 cli.launch_herdr(self.repo)
         command.assert_not_called()
+
+    def test_agent_pane_shows_live_log_and_closes_only_its_own_pane(self):
+        flows.set_herdr(True)
+        calls = []
+        def command(argv, *_args, **_kwargs):
+            calls.append(argv)
+            if argv[:3] == ["herdr", "pane", "split"]:
+                return json.dumps({"result": {"pane": {"pane_id": "w1:p2"}}})
+            return "{}"
+        live = core.run_path(self.repo, "sample-run").parent / "coder.live"
+        with patch.dict(os.environ, {"HERDR_ENV": "1", "HERDR_PANE_ID": "w1:p1"}), \
+                patch.object(core, "command", side_effect=command):
+            with progress.agent_pane(self.repo, "MAF coder", self.repo, live, True) as pane:
+                self.assertEqual(pane, "w1:p2")
+                self.assertTrue(live.exists())
+        self.assertEqual(calls[0], ["herdr", "pane", "get", "w1:p1"])
+        self.assertEqual(calls[1][:5], ["herdr", "pane", "split", "w1:p1", "--direction"])
+        self.assertIn("--no-focus", calls[1])
+        self.assertEqual(calls[2][:4], ["herdr", "pane", "rename", "w1:p2"])
+        self.assertEqual(calls[3][:4], ["herdr", "pane", "run", "w1:p2"])
+        self.assertEqual(shlex.split(calls[3][-1])[-2:], ["live-view", str(live)])
+        self.assertEqual(calls[4], ["herdr", "pane", "close", "w1:p2"])
+        self.assertFalse(any(argv[-1] == "w1:p1" for argv in calls if argv[:3] == ["herdr", "pane", "close"]))
+
+    def test_live_event_shows_status_without_agent_content(self):
+        event = json.dumps({"type": "item.started", "item": {"type": "command_execution", "name": "Read",
+                                                         "text": "private prompt"}, "status": "running"}).encode()
+        self.assertEqual(progress.live_event(event), "item.started command_execution Read running")
+        self.assertEqual(progress.live_event(b"secret stderr text\n"), "unstructured output")
+        self.assertEqual(progress.live_event(b'{"type":"result","subtype":"success","result":"private"}'),
+                         "result success")
+        self.assertEqual(progress.live_event(b'{"type":"assistant","message":{"content":['
+                                             b'{"type":"tool_use","name":"Read","input":{"secret":"private"}}]}}'),
+                         "assistant Read")
 
     def test_main_pane_monitor_runs_during_work_and_stops_on_failure(self):
         started, finished = threading.Event(), threading.Event()

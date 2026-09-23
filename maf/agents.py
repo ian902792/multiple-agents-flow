@@ -84,7 +84,8 @@ def _argv(role: dict, timeout: int) -> list[str]:
                 "-c", 'model_reasoning_effort="' + effort + '"', "-"]
     if rt == "claude":
         tools = "Read,Glob,Grep" + (",Edit,Write" if edit else "")
-        return ["claude", "-p", "--output-format", "json", "--model", model, "--effort", effort, "--restricted", "--safe-mode",
+        return ["claude", "-p", "--output-format", "stream-json", "--verbose", "--model", model, "--effort", effort,
+                "--restricted", "--safe-mode",
                 "--tools", tools, "--allowedTools", tools, "--permission-mode", "acceptEdits",
                 "--permission-prompts", "none", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}']
     if rt == "pi":
@@ -97,13 +98,18 @@ def _argv(role: dict, timeout: int) -> list[str]:
                                    "--safe-mode", "--reasoning", effort, "--max-turns", "30", "--run-budget", str(int(timeout))]
 
 
-def _pump(stream, buf: bytearray):
+def _pump(stream, buf: bytearray, on_output=None):
     """Copy a pipe into buf, keeping only the last _OUTPUT_LIMIT bytes."""
     try:
         while chunk := stream.read1(65536):
             buf += chunk
             if len(buf) > _OUTPUT_LIMIT:
                 del buf[:len(buf) - _OUTPUT_LIMIT]
+            if on_output:
+                try:
+                    on_output(chunk)
+                except OSError:
+                    on_output = None  # The supervisor still drains and verifies the complete agent turn.
     except (OSError, ValueError):
         pass
     finally:
@@ -136,13 +142,13 @@ def _killpg(proc):
         proc.wait()
 
 
-def _exec(argv, *, stdin: str, timeout: float, cwd=None, on_start=None):
+def _exec(argv, *, stdin: str, timeout: float, cwd=None, on_start=None, on_output=None):
     """Run argv in its own process group. The group is killed on timeout, KeyboardInterrupt or any other
     exception; an escaped grandchild holding the pipes cannot hang the return. -> (rc, out, err, timed_out)."""
     proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             cwd=cwd, env=clean_env(), start_new_session=True)
     out, err, timed_out = bytearray(), bytearray(), False
-    threads = [threading.Thread(target=_pump, args=(proc.stdout, out), daemon=True),
+    threads = [threading.Thread(target=_pump, args=(proc.stdout, out, on_output), daemon=True),
                threading.Thread(target=_pump, args=(proc.stderr, err), daemon=True),
                threading.Thread(target=_feed, args=(proc.stdin, stdin), daemon=True)]
     try:
@@ -329,7 +335,7 @@ def _append_log(log: Path, text: str):
         f.write(text)
 
 
-def run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int) -> dict:
+def run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int, *, live_log: Path | None = None) -> dict:
     """Run one fresh agent session. Prompt goes over stdin; argv is fixed per role."""
     validate_role(role)
     problems = _auth_problems(role)
@@ -340,8 +346,23 @@ def run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int) -> di
     # Live checkpoint before invocation: argv + pid only (prompt goes over stdin, never logged here).
     _append_log(log, f"== checkpoint ==\n{json.dumps({'argv': argv, 'started': time.time(), 'timeout': timeout})}\n")
     try:
-        rc, out, err, timed_out = _exec(argv, stdin=prompt, timeout=timeout, cwd=str(cwd),
-                                        on_start=lambda pid: _append_log(log, f"pid={pid}\n"))
+        if live_log is None:
+            rc, out, err, timed_out = _exec(argv, stdin=prompt, timeout=timeout, cwd=str(cwd),
+                                            on_start=lambda pid: _append_log(log, f"pid={pid}\n"))
+        else:
+            lock = threading.Lock()
+            with open(os.open(live_log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), "ab", buffering=0) as live:
+                def mirror(chunk):
+                    with lock:
+                        remaining = memoryview(chunk)
+                        while remaining:
+                            written = live.write(remaining)
+                            if not written:
+                                raise OSError("Live log write made no progress")
+                            remaining = remaining[written:]
+                rc, out, err, timed_out = _exec(argv, stdin=prompt, timeout=timeout, cwd=str(cwd),
+                                                on_start=lambda pid: _append_log(log, f"pid={pid}\n"),
+                                                on_output=mirror)
     except OSError as e:
         _append_log(log, f"== exit ==\nfailed to start: {e}\n")
         return _result("error", detail=f"failed to start {argv[0]}: {e}")

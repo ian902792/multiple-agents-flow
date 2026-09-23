@@ -122,9 +122,16 @@ next steps and per-attempt native usage; no prompt or transcript. It cannot be c
 Deadlines overdue by more than 15 seconds request inspection, not an inferred exit or permission to retry.
 Permission/auth stops, quota resets, exhausted repairs and publication recovery have distinct guidance.
 `herdr` validates the inherited HERDR_PANE_ID before creating its workspace and passes it to
-`work --planner-pane ID`. A local monitor thread reuses progress.show every five seconds while the worker
+`work --planner-pane ID --agent-panes`. A local monitor thread reuses progress.show every five seconds while the worker
 holds the writer lock. It refreshes the main pane's metadata without injecting prompts or invoking models.
-The observer stops with the worker; no additional per-agent panes or streaming transcripts are needed.
+For each active coder/reviewer (and an explicitly invoked planner inside Herdr), MAF splits a no-focus pane
+from its own Herdr pane, labels it, and runs the private `live-view` observer. The adapter tees native
+stdout into a private live event file while retaining its bounded parser and final evidence log.
+The observer prints sanitized event names/tool types, not prompts or full transcripts. Only the pane ID
+returned by that split is closed after the role finishes; pane failures warn without replaying the agent.
+Agents still run as supervisor-owned subprocesses; Herdr's agent lifecycle display is not verification.
+The worker remains serial, so one MAF agent observer is active at a time. A manually invoked `work` needs
+`--agent-panes` to opt in; plain `work` keeps its previous terminal behavior.
 Successful test logs stay in local evidence; review prompts carry only argv, exit_code and log path.
 
 Checklist: a task opts in when the tracked, regular root `todo.md` has exactly one unchecked line

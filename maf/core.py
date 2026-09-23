@@ -558,14 +558,18 @@ def needs_repair(repo, run, feedback):
     save(repo, run)
 
 
-def invoke(repo, run, role_name, prompt):
+def invoke(repo, run, role_name, prompt, agent_panes=False):
     role = run["config"]["roles"][role_name]
     log = run_path(repo, run["id"]).parent / f"{role_name}-{len(run['agents'])}.jsonl"
     run["status"] = "running"
     run["activity"] = {"label": f"{role_name}: {role['runtime']}/{role['model']}", "started_at": time.time(),
                        "timeout": run["config"]["agent_timeout"] + 60, "log": str(log)}
     save(repo, run)  # A crash after here is ambiguous, not permission to resend.
-    result = agents.run_agent(role, prompt, Path(run["worktree"]), log, run["config"]["agent_timeout"])
+    from .progress import agent_pane
+    live_log = log.with_suffix(".live")
+    with agent_pane(repo, f"MAF {role_name} {run['id']}", Path(run["worktree"]), live_log, agent_panes) as pane:
+        result = agents.run_agent(role, prompt, Path(run["worktree"]), log, run["config"]["agent_timeout"],
+                                  **({"live_log": live_log} if pane else {}))
     run["agents"].append({"role": role_name, "runtime": role["runtime"], "model": role["model"],
                           "provider": role["provider"],
                           "usage_scope": "model_calls" if role["runtime"] == "pi" else "provider",
@@ -581,7 +585,7 @@ def invoke(repo, run, role_name, prompt):
     return result["text"]
 
 
-def execute(repo, run):
+def execute(repo, run, agent_panes=False):
     """One task, at most max_repairs additional passes. No unbounded model loop."""
     if (not isinstance(run.get("mode"), str)
             or run["mode"] not in MODES and not re.fullmatch(r"[a-z][a-z0-9-]{0,39}", run["mode"])):
@@ -607,7 +611,7 @@ def execute(repo, run):
             head_before = git(run["worktree"], "rev-parse", "HEAD")
             if head_before != run["owned_head"]:
                 raise FlowError("Commit history changed outside the supervisor; inspect before a new task.")
-            text = invoke(repo, run, "coder", prompt)
+            text = invoke(repo, run, "coder", prompt, agent_panes)
             if git(run["worktree"], "rev-parse", "HEAD") != head_before:
                 raise FlowError("Coder changed commit history. Only the supervisor may commit; inspect manually.")
             if text is None:
@@ -656,7 +660,7 @@ def execute(repo, run):
                       + "\nTEST EVIDENCE: " + json.dumps(
                           [{k: result[k] for k in ("argv", "exit_code", "log")} for result in run["tests"]], ensure_ascii=False)
                       + "\nDIFF:\n" + diff)
-            text = invoke(repo, run, "reviewer", prompt)
+            text = invoke(repo, run, "reviewer", prompt, agent_panes)
             if text is None:
                 return
             review = review_result(text, run["tested_sha"])
@@ -675,11 +679,11 @@ def execute(repo, run):
             save(repo, run)
 
 
-def process(repo, run):
+def process(repo, run, agent_panes=False):
     from .github import ChecksPending
     try:
         if run["status"] == "queued":
-            execute(repo, run)
+            execute(repo, run, agent_panes)
         if run["status"] == "verified" and run["publish"]:
             from .github import publish
             publish(repo, run)
@@ -746,7 +750,7 @@ def resume(repo, run_id, acknowledge=False, after=None):
     return run
 
 
-def work(repo, once=False, poll=30, run_id=None):
+def work(repo, once=False, poll=30, run_id=None, agent_panes=False):
     while True:
         with exclusive(repo):
             candidates = [load(repo, run_id)] if run_id else list_runs(repo)
@@ -756,7 +760,7 @@ def work(repo, once=False, poll=30, run_id=None):
                     save(repo, run)
                 if run["status"] == "queued" or (run["status"] == "pr" and run["auto_merge"] and run.get("next_check", 0) <= time.time()):
                     print(f"[{run['id']}] {run['stage']}", flush=True)
-                    process(repo, run)
+                    process(repo, run, agent_panes)
                     print(f"[{run['id']}] {run['status']}: {run.get('feedback', '')[:500]}", flush=True)
                     break
             else:

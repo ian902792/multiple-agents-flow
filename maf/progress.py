@@ -7,6 +7,7 @@ import math
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -397,6 +398,90 @@ def report_pane(repo, pane, title, poll=5):
         raise core.FlowError("Herdr integration is off; pane reporting stopped.")
     core.command(["herdr", "pane", "report-metadata", pane, "--source", "maf-progress",
                   "--title", title, "--ttl-ms", str(ttl_for(poll))], repo, timeout=15)
+
+
+def live_event(raw):
+    """Display only event names and tool types; raw private logs remain the verification source."""
+    try:
+        event = json.loads(raw)
+    except ValueError:
+        return "unstructured output"
+    if not isinstance(event, dict):
+        return "event"
+    item = event.get("item") if isinstance(event.get("item"), dict) else {}
+    message = event.get("message") if isinstance(event.get("message"), dict) else {}
+    blocks = message.get("content") if isinstance(message.get("content"), list) else []
+    tool_names = [block.get("name") for block in blocks[:3]
+                  if isinstance(block, dict) and block.get("type") == "tool_use"]
+    parts = [event.get("type"), item.get("type"), item.get("name"),
+             event.get("toolName"), *tool_names, event.get("status"), event.get("subtype")]
+    return " ".join(part for part in parts if isinstance(part, str) and PANE_ID.fullmatch(part)) or "event"
+
+
+def follow_live(repo, path):
+    """Follow a private agent event stream until the owned Herdr pane closes."""
+    root = core.root_for(repo)
+    path = Path(path)
+    if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(root):
+        raise core.FlowError("Live log must be a regular file in this repository's private MAF state.")
+    print("MAF agent events (full private log is kept for diagnosis)", flush=True)
+    pending, too_large = bytearray(), False
+    try:
+        with path.open("rb") as stream:
+            while True:
+                chunk = stream.readline(4096)
+                if not chunk:
+                    time.sleep(.2)
+                    continue
+                if len(pending) + len(chunk) > 65536:
+                    too_large = True
+                if not too_large:
+                    pending.extend(chunk)
+                if chunk.endswith(b"\n"):
+                    label = "large event omitted" if too_large else live_event(bytes(pending))
+                    print(f"{time.strftime('%H:%M:%S')} {label}", flush=True)
+                    pending.clear()
+                    too_large = False
+    except KeyboardInterrupt:
+        return
+
+
+@contextlib.contextmanager
+def agent_pane(repo, label, cwd, live_log, enabled):
+    """Display a supervised agent's live output; never delegate execution or verification to the pane."""
+    if not enabled:
+        yield None
+        return
+    parent, pane = os.environ.get("HERDR_PANE_ID"), None
+    try:
+        check_pane(repo, parent)
+        live_log.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        live_log.touch(mode=0o600, exist_ok=True)
+        created = json.loads(core.command(["herdr", "pane", "split", parent, "--direction", "right",
+                                           "--cwd", str(cwd), "--no-focus"], repo, timeout=15))
+        pane = created["result"]["pane"]["pane_id"]
+        if not isinstance(pane, str) or not PANE_ID.fullmatch(pane) or pane == parent:
+            raise core.FlowError("Herdr returned an invalid child pane id.")
+        core.command(["herdr", "pane", "rename", pane, clean(label, 80)], repo, timeout=15)
+        launcher = Path(__file__).resolve().parent.parent / "flow.py"
+        viewer = [sys.executable, "-u", str(launcher), "--repo", str(repo), "live-view", str(live_log)]
+        core.command(["herdr", "pane", "run", pane, shlex.join(viewer)], repo, timeout=15)
+    except CAUGHT as exc:
+        warn(f"agent pane unavailable: {exc}; agent continues in the supervisor.")
+        if isinstance(pane, str) and PANE_ID.fullmatch(pane) and pane != parent:
+            try:
+                core.command(["herdr", "pane", "close", pane], repo, timeout=15)
+            except CAUGHT as close_exc:
+                warn(f"agent pane {pane} could not be closed: {close_exc}")
+        pane = None
+    try:
+        yield pane
+    finally:
+        if pane:
+            try:
+                core.command(["herdr", "pane", "close", pane], repo, timeout=15)
+            except CAUGHT as exc:
+                warn(f"agent pane {pane} could not be closed: {exc}")
 
 
 def show(repo, watch=False, poll=5, pane=None, stop=None):
