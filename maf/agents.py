@@ -60,8 +60,9 @@ def validate_role(role) -> None:
     if profile is not None and (role["runtime"] != "hermes" or not isinstance(profile, str)
                                 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", profile)):
         raise ValueError("profile is only valid for hermes and must be a safe name")
-    if role.get("effort", "medium") not in ("low", "medium", "high"):
-        raise ValueError("effort must be low, medium or high")
+    efforts = ("low", "medium", "high", "xhigh", "max") if role["runtime"] in ("codex", "claude") else ("low", "medium", "high")
+    if role.get("effort", "medium") not in efforts:
+        raise ValueError(f"{role['runtime']} effort must be one of: {', '.join(efforts)}")
     if role["runtime"] == "hermes" and role["access"] == "read":
         # Verified in hermes-agent toolsets.py/model_tools.py/tools_config.py: every selection surface
         # (-t, platform_toolsets, agent.disabled_toolsets, `hermes tools disable`) works on toolset names;

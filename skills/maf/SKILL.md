@@ -15,7 +15,7 @@ Resolve this SKILL.md's real path (follow symlinks). The tool root is
 `parents[2]` of that file; the entrypoint is its `flow.py`. Use the current
 project's Git root as target unless the user names another repository. Tool
 and target may differ. Verify paths and quote each shell argument. Invoke
-`rtk proxy python3 <tool>/flow.py --repo <target> ...` for machine-readable output.
+`python3 <tool>/flow.py --repo <target> ...` for machine-readable output.
 Never ask the user to copy a shell function or hand-write task JSON.
 
 Claude uses `/maf <action>`; Codex CLI/IDE uses `/skills` to select `maf`, or
@@ -36,7 +36,7 @@ explain setup if `.maf.json` does not exist.
 | `install <repository>` | Run `install-skills` against that Git root to register this skill there. |
 
 Modes: `economy` = Pi/DeepSeek Flash coding + fresh Pi review;
-`opus-sol` = Claude Opus 5 coding + Codex Sol review;
+`opus-sol` = pinned Claude Opus 5.5 coding + Codex GPT-6 Sol review;
 `hermes-coder` = Hermes coding + Pi review;
 `configured` = `.maf.json` roles. `quick`, `planned`, and user-created names
 are private role profiles; use `flows` to inspect them. Profiles select future

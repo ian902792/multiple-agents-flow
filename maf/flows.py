@@ -9,15 +9,15 @@ from . import core
 
 def templates():
     roles = core.default_config("economy")["roles"]
-    roles["reviewer"] = {"runtime": "codex", "provider": "chatgpt", "model": "gpt-5.6-sol",
+    roles["reviewer"] = {"runtime": "codex", "provider": "chatgpt", "model": "gpt-6-sol",
                          "access": "read", "effort": "medium"}
     planned = deepcopy(roles)
     planned["reviewer"]["effort"] = "high"
     return {
-        "quick": {"description": "Claude develops; Codex reviews. Pi is available for small delegated work.",
-                  "manual_plan": False, "main": {"model": "claude-opus-5", "effort": "medium"}, "roles": roles},
-        "planned": {"description": "Run /maf-plan manually; Claude develops and delegates scoped work to Pi.",
-                    "manual_plan": True, "main": {"model": "claude-opus-5", "effort": "high"}, "roles": planned},
+        "quick": {"description": "小任務：Claude 主對話開發；必要時交給 Pi；Codex 獨立審查。",
+                  "manual_plan": False, "main": {"model": "opus", "effort": "medium"}, "roles": roles},
+        "planned": {"description": "中大型任務：手動 /maf-plan 規畫；Claude 實作，可交 Pi 處理明確小任務。",
+                    "manual_plan": True, "main": {"model": "opus", "effort": "high"}, "roles": planned},
     }
 
 
@@ -30,7 +30,7 @@ def validate(repo, name, flow):
             or not isinstance(flow["main"], dict) or set(flow["main"]) != {"model", "effort"}
             or not isinstance(flow["main"]["model"], str)
             or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", flow["main"]["model"])
-            or flow["main"]["effort"] not in ("low", "medium", "high")):
+            or flow["main"]["effort"] not in ("low", "medium", "high", "xhigh", "max")):
         raise core.FlowError("Flow needs description, manual_plan, main Claude model/effort, and roles.")
     config = core.config_for(repo)
     config["roles"] = flow["roles"]

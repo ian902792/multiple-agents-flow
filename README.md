@@ -5,10 +5,36 @@ Herdr 可用來分專案 workspace；Python 負責 worktree、狀態、測試證
 
 這也是可自行擴充的開源工具：可以儲存命名 flow、調整各 MAF agent 的 model／effort、匯入匯出 flow JSON。授權為 [MIT](LICENSE)。
 
+## 最短安裝流程
+
+先準備 Python 3.11+、Git、Claude Code；預設的 `quick`／`planned` flow 也需要已登入的 Codex CLI 與 Pi CLI，因為 `doctor` 會檢查所有角色。目標專案須是已有第一個 commit 的 Git repository。以下指令在終端機執行，將 `TARGET` 改成自己的專案路徑：
+
+```sh
+git clone https://github.com/ian902792/multiple-agents-flow.git
+cd multiple-agents-flow
+FLOW="$PWD/flow.py"
+TARGET="/path/to/your-git-project"
+
+python3 "$FLOW" --repo "$TARGET" init
+python3 "$FLOW" --repo "$TARGET" install-skills
+python3 "$FLOW" --repo "$TARGET" mode quick
+python3 "$FLOW" --repo "$TARGET" doctor
+python3 "$FLOW" --repo "$TARGET" ui
+```
+
+`init` 建立目標專案的 `.maf.json`；`install-skills` 只在該專案註冊 `/maf`、`/maf-plan` 等 skill，不修改全域設定。`ui` 開啟只監聽本機的 Flow Studio；沒有 Herdr 也能用。若 `doctor` 顯示 billing 未確認，先核對供應商控制台中的登入、訂閱模型與額外用量設定，然後執行：
+
+```sh
+python3 "$FLOW" --repo "$TARGET" confirm-billing --no-overage
+python3 "$FLOW" --repo "$TARGET" doctor
+```
+
+在目標專案重新開啟 Claude 對話，輸入 `/maf status`。日常小任務用 `/maf mode quick`，在 Claude 完成並提交後用 `/maf verify 需求`；大型任務用 `/maf mode planned`，**需要時由你手動**輸入 `/maf-plan 需求`。Claude 可以透過 `/maf delegate 需求` 把明確的小任務交給 Pi。這些 skill 會準備 task JSON；使用者不用手寫。下方有更多 CLI 範例與限制。
+
 ## 建議使用方式：在主 agent 呼叫 skill
 
 本專案的 `.claude/skills/maf`、`.agents/skills/maf` 都指向同一份 [MAF skill](skills/maf/SKILL.md)；Claude 的 [maf-plan skill](skills/maf-plan/SKILL.md) 設為只接受手動呼叫。
-在本專案開啟 Claude Code 或 Codex；若既有對話尚未顯示 skill，重新開啟專案對話。
+在已安裝 skill 的目標專案開啟 Claude Code 或 Codex；若既有對話尚未顯示 skill，重新開啟專案對話。
 
 | 操作 | Claude Code | Codex CLI／IDE |
 |---|---|---|
@@ -34,18 +60,22 @@ Claude 的 `/maf` 與 Codex 的 `/skills`／`$maf` 使用方式依據
 ## 本機 Flow Studio
 
 ```sh
-rtk proxy python3 flow.py ui
+python3 "$FLOW" --repo "$TARGET" ui
 ```
 
-它只監聽 `127.0.0.1`，提供命名 flow、planner／Pi／reviewer 的 model 與 effort 編輯、快速切換及近期任務狀態。`quick` 是 Claude 開發、Codex Sol 審查；`planned` 提醒手動 `/maf-plan`，並提高 reviewer effort。兩者都能在需要時把明確小任務交給 Pi；規畫絕不因為選到 `planned` 自動啟動。
-Flow 存在該專案 Git 的私有 `maf/flows.json`，不會進入 commit；畫面可匯入匯出 JSON，在其他 workspace 重用。切換 profile 不改 `.maf.json`、Claude 設定或供應商帳號。變更模型後，使用前須重新確認該精確訂閱路由。
+它只監聽 `127.0.0.1`，提供命名 flow、planner／Pi／reviewer 的 model 與 effort 編輯、快速切換及近期任務狀態。畫面內有安裝步驟、原理和操作範例。`quick` 是 Claude 開發、Codex Sol 審查；`planned` 提醒手動 `/maf-plan`，並提高 reviewer effort。兩者都能在需要時把明確小任務交給 Pi；規畫絕不因為選到 `planned` 自動啟動。
+Flow 存在該專案 Git 的私有 `maf/flows.json`，不會進入 commit；畫面可匯入匯出 JSON，在其他 workspace 重用。切換 profile 不改 `.maf.json`、Claude 設定或供應商帳號。變更 MAF agent 模型後，使用前須重新確認該精確訂閱路由。
+
+Model 欄位可直接挑常用選項，並會把本專案已儲存 flow 的模型加入建議清單；新模型只需在一個 flow 輸入並儲存一次。主 Claude 偏好可用 `opus`，由 Claude Code 依供應商更新到最新 Opus；自動執行的 Claude 角色使用固定 ID，例如 `claude-opus-5-5`。Codex 使用明確的 `gpt-6-sol` 等 ID；日後推出新版本時可直接輸入新 ID，無須改程式。建議清單不是可用性檢查，仍須用自己的訂閱／CLI 確認。Claude／Codex 可選 `xhigh`、`max` effort；Pi 保留 `low`／`medium`／`high`。參考 [Claude Code 模型設定](https://code.claude.com/docs/en/model-config)與 [Codex 模型](https://learn.chatgpt.com/docs/models)。
+
+主 Claude 的偏好僅顯示和產生複製指令，不會改目前對話。直接貼 `/model opus` 或 `/effort high` 會儲存為 Claude 之後 session 的預設；若 Herdr 中不同 pane 想各自用不同設定，在 Claude Code 2.1.257+ 開啟 `/model`／`/effort` 選單，選好按 `s` 只套用本 session；新 pane 也可用 `claude --model opus --effort medium` 啟動。
 
 CLI 也能操作：`flows` 列出 profile、`flow-save my-flow.json` 匯入、`mode quick`／`mode planned` 選擇。
 
 | 模式 | Coder | 獨立 Reviewer |
 |---|---|---|
 | `economy` | Pi / DeepSeek V4.1 Flash | Pi / DeepSeek V4.1 Flash，新 session |
-| `opus-sol` | Claude Opus 5，medium | Codex GPT-5.6 Sol，medium |
+| `opus-sol` | Claude Opus 5.5（固定 ID），medium | Codex GPT-6 Sol，medium |
 | `hermes-coder` | Hermes coder / DeepSeek | Pi / DeepSeek |
 | `configured` | `.maf.json` 的 coder | `.maf.json` 的 reviewer |
 | `quick`／`planned`／自訂名稱 | Pi 小任務；Claude 留在主對話 | 預設 Codex Sol，可在 GUI 調整 |
@@ -63,7 +93,7 @@ Herdr 內執行時會回報主任務 pane；其他環境依主 agent 的命令 s
 想從尚未安裝 skill 的另一個專案直接開始，也可只執行一次：
 
 ```sh
-rtk proxy python3 /path/to/multiple-agents-flow/flow.py --repo /path/to/repo install-skills
+python3 /path/to/multiple-agents-flow/flow.py --repo /path/to/repo install-skills
 ```
 
 這會建立三個專案內的 symlink（含 Claude 專用的 `maf-plan`），不改使用者全域設定；遇到同名 skill 或 symlink 父目錄會拒絕覆寫。
@@ -82,10 +112,10 @@ rtk proxy python3 /path/to/multiple-agents-flow/flow.py --repo /path/to/repo ins
 
 ## 1. 安裝／準備
 
-先用自己的 GitHub 帳號取得本專案；分享 private repo 前需由擁有者加入 collaborator。
+若 repository 尚未公開，clone 前須先取得存取權。
 
 ```sh
-git clone git@github.com:ian902792/multiple-agents-flow.git
+git clone https://github.com/ian902792/multiple-agents-flow.git
 cd multiple-agents-flow
 python3 flow.py --help
 python3 -m unittest discover -s tests -v
@@ -322,7 +352,7 @@ python3 "$FLOW" --repo "$TARGET" submit task.json --publish --auto-merge
 
 ## 8. 更換工具與模型
 
-編輯 `.maf.json` 的 `roles`，不要改程式碼：
+只換模型／effort 時，直接在 Flow Studio 複製並儲存命名 flow。若要更換 agent runtime／provider，才編輯 `.maf.json` 的 `roles`，並使用 `mode configured`：
 
 ```json
 "reviewer": {
@@ -336,7 +366,7 @@ python3 "$FLOW" --repo "$TARGET" submit task.json --publish --auto-merge
 
 `runtime` 是 agent CLI，`provider` 是訂閱路線，`model` 是模型，Hermes 另有 `profile`。
 自訂角色使用 `mode configured`；內建模式會套用自己的角色組合，但仍保留 `.maf.json` 的 timeout、修正上限與政策。
-`effort` 可選 low／medium／high；預設 Planner 為 high，Pi Coder／Reviewer 為 medium。模型 ID 不含 provider 前綴或冒號推理設定，避免繞過已核准路線。
+Pi／Hermes 的 `effort` 可選 low／medium／high；Claude／Codex 另可選 xhigh／max。預設 Planner 為 high，Pi Coder／Reviewer 為 medium。模型 ID 不含 provider 前綴或冒號推理設定，避免繞過已核准路線。
 Planner／Reviewer 必須 `read`，Coder 必須 `edit`；不接受任意 shell command、額外 CLI 參數或 endpoint 覆寫。
 保留固定訂閱路線，不把「自由切換」做成意外付費的後門。模型必須是該帳號實際可用的名稱；doctor 不發推論，所以不能證明模型可用。
 模型／CLI 的行為可能隨更新改變，換版本後先跑測試與小任務，不在執行中的 run 偷換設定。
@@ -376,7 +406,6 @@ python3 -m unittest discover -s tests -v
 ```
 
 架構／實作契約：[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。實際驗證範圍：[docs/VALIDATION.md](docs/VALIDATION.md)。
-本工具產出的每日操作速查可見 [PR #1](https://github.com/ian902792/multiple-agents-flow/pull/1)，目前因 private repo 分支保護方案限制保留為 draft，需人工確認。
 
 設計參考 [bestony/herdr-dispatch](https://github.com/bestony/herdr-dispatch) 的 task/worktree/驗收分離；本實作未複製其程式。
 介面查證：[Codex 非互動模式](https://learn.chatgpt.com/docs/non-interactive-mode)、[Claude 程式化使用](https://code.claude.com/docs/en/headless)、[Hermes CLI](https://hermes-agent.nousresearch.com/docs/reference/cli-commands)、[OpenCode Go](https://opencode.ai/docs/go/)。

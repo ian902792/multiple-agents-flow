@@ -17,7 +17,7 @@ the main implementer after planning.
    objective, existing constraints, relevant paths, and acceptance criteria.
    Read only the relevant files. Do not include secrets or conversation
    transcripts. Write this goal to a private temporary file outside Git.
-3. Run `rtk proxy python3 <tool>/flow.py --repo <project> plan --mode planned
+3. Run `python3 <tool>/flow.py --repo <project> plan --mode planned
    --goal-file <private-file>`. The planned profile defaults to read-only Codex
    `gpt-6-astra` with high effort; a user-edited profile may deliberately
    select another model/effort. The CLI checks the exact subscription route

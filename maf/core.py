@@ -112,9 +112,9 @@ def default_config(preset="economy"):
         "reviewer": {"runtime": "pi", "provider": "opencode-go", "model": "deepseek-v4.1-flash", "access": "read", "effort": "medium"},
     }
     if preset == "opus-sol":
-        roles["coder"] = {"runtime": "claude", "provider": "claude-subscription", "model": "claude-opus-5",
+        roles["coder"] = {"runtime": "claude", "provider": "claude-subscription", "model": "claude-opus-5-5",
                           "access": "edit", "effort": "medium"}
-        roles["reviewer"] = {"runtime": "codex", "provider": "chatgpt", "model": "gpt-5.6-sol",
+        roles["reviewer"] = {"runtime": "codex", "provider": "chatgpt", "model": "gpt-6-sol",
                              "access": "read", "effort": "medium"}
     elif preset == "hermes-coder":
         roles["coder"] = {"runtime": "hermes", "provider": "opencode-go", "model": "deepseek-v4.1-flash",

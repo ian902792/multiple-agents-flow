@@ -110,7 +110,7 @@ class FlowTests(unittest.TestCase):
             core.execute(self.repo, old)
             core.execute(self.repo, new)
         self.assertEqual([a["runtime"] for a in old["agents"]], ["pi", "pi"])
-        self.assertEqual([a["model"] for a in new["agents"]], ["claude-opus-5", "gpt-5.6-sol"])
+        self.assertEqual([a["model"] for a in new["agents"]], ["claude-opus-5-5", "gpt-6-sol"])
         self.assertEqual(new["mode"], "opus-sol")
         core.verified(self.repo, old)
         core.verified(self.repo, new)
@@ -133,6 +133,15 @@ class FlowTests(unittest.TestCase):
             core.billing_check(self.repo, core.execution_config(self.repo)[1])
         with self.assertRaises(core.FlowError):
             flows.save(self.repo, "bad", dict(flow, roles={"coder": {}}))
+
+    def test_current_model_suggestions_allow_deeper_codex_effort_but_not_pi(self):
+        flow = flows.templates()["quick"]
+        flow["main"]["effort"] = "max"
+        flow["roles"]["reviewer"]["effort"] = "xhigh"
+        flows.save(self.repo, "deep-review", flow)
+        flow["roles"]["coder"]["effort"] = "xhigh"
+        with self.assertRaises(ValueError):
+            flows.save(self.repo, "invalid-pi-effort", flow)
 
     def test_claude_commit_verify_and_pi_delegate_bind_exact_sha(self):
         core.git(self.repo, "add", ".maf.json")
