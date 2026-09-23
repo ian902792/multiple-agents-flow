@@ -5,8 +5,10 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shlex
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -30,9 +32,9 @@ class ProgressTests(unittest.TestCase):
         self.todo = self.repo / "todo.md"
         self.todo.write_bytes(TODO.encode())
         self.commit("Initial")
-        core.init(self.repo, "mixed")
+        core.init(self.repo, "economy")
         self.config = core.config_for(self.repo)
-        core.atomic(self.repo / ".maf-local.json", {"subscription_only_confirmed": True, "config_hash": core.digest(self.config)})
+        core.confirm_billing(self.repo, self.config)
         self.task = {"id": "improve-docs", "title": "Improve docs", "instructions": "Add usage paragraph.",
                      "paths": ["README.md"], "tests": [[sys.executable, "-c", "from pathlib import Path; assert 'After' in Path('README.md').read_text()"]],
                      "risk": "docs"}
@@ -204,6 +206,92 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(sleeper.calls, 3)
         with self.assertRaises(SystemExit):
             self.output(["progress", "--watch", "--poll", "0"])
+
+    def test_main_task_snapshot_reports_deadlines_blockers_and_usage_without_transcripts(self):
+        run = core.submit(self.repo, self.task)
+        run.update(status="running", activity={"label": "coder: pi/deepseek-v4.1-flash", "started_at": 100,
+                                               "timeout": 120, "log": "/tmp/agent.log"})
+        core.save(self.repo, run)
+        before = core.run_path(self.repo, run["id"]).read_bytes()
+        with patch.object(progress.time, "time", return_value=180), patch.object(core.agents, "run_agent") as agent:
+            snapshot = json.loads(self.output(["progress", "--json"]))[0]
+        self.assertEqual(snapshot["elapsed"], "1m/2m")
+        self.assertFalse(snapshot["attention"])
+        self.assertNotIn("instructions", snapshot)
+        agent.assert_not_called()
+        with patch.object(progress.time, "time", return_value=240):
+            row = progress.rows(self.repo)[0]
+        self.assertTrue(row["attention"])
+        self.assertIn("Deadline exceeded", row["next"])
+        self.assertIn("attention", progress.title_for([row]))
+        self.assertEqual(core.run_path(self.repo, run["id"]).read_bytes(), before)
+        run.update(status="needs_human", agents=[{"role": "coder", "runtime": "pi", "model": "deepseek-v4.1-flash",
+                                                "status": "blocked", "usage": {"input": 10, "output": 2}}])
+        core.save(self.repo, run)
+        row = json.loads(self.output(["progress", "--json"]))[0]
+        self.assertIn("login/permissions", row["next"])
+        self.assertIn("--acknowledge-stopped", row["next"])
+        self.assertEqual(row["agents"][0]["usage"], {"input": 10, "output": 2})
+        run["repairs"] = run["config"]["max_repairs"] + 1
+        self.assertIn("Repair budget exhausted", progress.row_for(self.repo, run)["next"])
+        run.update(status="waiting_quota", not_before=None)
+        self.assertTrue(progress.row_for(self.repo, run)["attention"])
+        run["not_before"] = 4070880000
+        self.assertFalse(progress.row_for(self.repo, run)["attention"])
+        for flag in ("--sync", "--watch", "--planner-pane=x"):
+            with self.assertRaises(SystemExit):
+                self.output(["progress", "--json", flag])
+        run["config_hash"] = "changed"
+        row = progress.row_for(self.repo, run)
+        self.assertTrue(row["attention"])
+        self.assertIn("Do not resume/publish", row["next"])
+
+    def test_herdr_launch_reports_to_inherited_main_pane(self):
+        calls = []
+        def command(argv, *_args, **_kwargs):
+            calls.append(argv)
+            if argv[:3] == ["herdr", "workspace", "create"]:
+                return json.dumps({"result": {"root_pane": {"pane_id": "w2:p2"}, "workspace": {"workspace_id": "w2"}}})
+            return "{}"
+        with patch.dict(os.environ, {"HERDR_ENV": "1", "HERDR_PANE_ID": "w1:p1"}), patch.object(core, "command", side_effect=command):
+            result = cli.launch_herdr(self.repo)
+        self.assertEqual(result["planner_pane"], "w1:p1")
+        self.assertEqual(calls[0], ["herdr", "pane", "get", "w1:p1"])
+        launch = calls[-1]
+        self.assertEqual(launch[:4], ["herdr", "pane", "run", "w2:p2"])
+        self.assertEqual(shlex.split(launch[-1])[-3:], ["work", "--planner-pane", "w1:p1"])
+        self.assertIn("--no-focus", calls[-2])
+        with patch.dict(os.environ, {"HERDR_ENV": "1", "HERDR_PANE_ID": ""}), patch.object(core, "command") as command:
+            with self.assertRaises(core.FlowError):
+                cli.launch_herdr(self.repo)
+        command.assert_not_called()
+
+    def test_main_pane_monitor_runs_during_work_and_stops_on_failure(self):
+        started, finished = threading.Event(), threading.Event()
+        def watcher(*_args, **kwargs):
+            started.set()
+            kwargs["stop"].wait(3)
+            if kwargs["stop"].is_set():
+                finished.set()
+        with patch.object(progress, "check_pane"), patch.object(progress, "show", side_effect=watcher):
+            with self.assertRaisesRegex(RuntimeError, "worker failed"):
+                with progress.monitor(self.repo, "w1:p1"):
+                    self.assertTrue(started.wait(1))
+                    raise RuntimeError("worker failed")
+        self.assertTrue(finished.wait(1))
+
+    def test_monitor_reports_final_snapshot_when_stopped(self):
+        run = core.submit(self.repo, self.task)
+        stop = threading.Event()
+        def finish(_poll):
+            run["status"] = "needs_human"
+            core.save(self.repo, run)
+            stop.set()
+        with patch.object(stop, "wait", side_effect=finish), patch.object(progress, "check_pane"), \
+                patch.object(progress, "report_pane") as report, contextlib.redirect_stdout(io.StringIO()):
+            progress.show(self.repo, watch=True, pane="w1:p1", stop=stop)
+        self.assertEqual(report.call_count, 2)
+        self.assertIn("needs_human", report.call_args.args[2])
 
     def test_herdr_pane_metadata_is_explicit_and_refreshed(self):
         core.submit(self.repo, self.task)

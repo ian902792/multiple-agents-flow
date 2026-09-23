@@ -207,6 +207,29 @@ class Parsers(unittest.TestCase):
                 self.assertEqual(agents._parse_pi(jl(*events))["status"], "error")
         self.assertEqual(agents._parse_pi(jl(message, settled, {"type": "agent_start"}, message, settled))["status"], "ok")
 
+    def test_pi_usage_sums_model_calls_not_agent_end_or_reasoning_twice(self):
+        first = {"role": "assistant", "stopReason": "toolUse", "content": [],
+                 "usage": {"input": 100, "cacheRead": 500, "cacheWrite": 0, "output": 20,
+                           "reasoning": 10, "totalTokens": 620, "cost": {"total": 0.1}}}
+        last = dict(first, stopReason="stop", content=[{"type": "text", "text": "done"}],
+                    usage={"input": 30, "cacheRead": 700, "cacheWrite": 0, "output": 40,
+                           "reasoning": 25, "totalTokens": 770, "cost": {"total": 0.2}})
+        events = [{"type": "message_end", "message": first}, {"type": "message_end", "message": last},
+                  {"type": "agent_end", "messages": [first, last]}, {"type": "agent_settled"}]
+        result = agents._parse_pi(jl(*events))
+        usage = result["usage"]
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual({k: v for k, v in usage.items() if k != "cost"},
+                         {"input": 130, "cacheRead": 1200, "cacheWrite": 0, "output": 60,
+                          "reasoning": 35, "totalTokens": 1390})
+        self.assertAlmostEqual(usage["cost"]["total"], 0.3)
+        for missing in (None, {}, {"input": -1, "output": 2}, {"input": True, "output": 2}):
+            events[0]["message"] = dict(first, usage=missing)
+            self.assertIsNone(agents._parse_pi(jl(*events))["usage"])
+        events[0]["message"] = first
+        with mock.patch.object(agents, "_OUTPUT_LIMIT", 10):
+            self.assertIsNone(agents._parse_pi(jl(*events))["usage"])
+
     def test_hermes(self):
         ok = jl({"type": "system", "subtype": "init", "model": "glm-5.3", "session_id": "h1"},
                 {"type": "text", "text": "partial"},
@@ -290,6 +313,11 @@ class RunAgent(unittest.TestCase):
         res = self.run_with(CODEX, (-9, "", "", True))[0]
         self.assertEqual(res["status"], "error")
         self.assertIn("timeout", res["detail"])
+        partial = jl({"type": "message_end", "message": {"role": "assistant", "stopReason": "toolUse",
+                      "usage": {"input": 9, "output": 4}}})
+        res = self.run_with(PI, (-9, partial, "", True))[0]
+        self.assertEqual(res["usage"], {"input": 9, "output": 4})
+        self.assertEqual(res["status"], "error")
 
 
 class RealSubprocess(unittest.TestCase):

@@ -101,19 +101,28 @@ def exclusive(repo):
         yield
 
 
-def default_config(preset="mixed"):
+PRESETS = ("economy", "opus-sol", "hermes-coder")
+MODES = ("configured", *PRESETS)
+
+
+def default_config(preset="economy"):
     roles = {
         "planner": {"runtime": "codex", "provider": "chatgpt", "model": "gpt-6-astra", "access": "read", "effort": "high"},
-        "coder": {"runtime": "claude", "provider": "claude-subscription", "model": "claude-opus-5", "access": "edit", "effort": "high"},
+        "coder": {"runtime": "pi", "provider": "opencode-go", "model": "deepseek-v4.1-flash", "access": "edit", "effort": "medium"},
         "reviewer": {"runtime": "pi", "provider": "opencode-go", "model": "deepseek-v4.1-flash", "access": "read", "effort": "medium"},
     }
-    if preset == "hermes-coder":
+    if preset == "opus-sol":
+        roles["coder"] = {"runtime": "claude", "provider": "claude-subscription", "model": "claude-opus-5",
+                          "access": "edit", "effort": "medium"}
+        roles["reviewer"] = {"runtime": "codex", "provider": "chatgpt", "model": "gpt-5.6-sol",
+                             "access": "read", "effort": "medium"}
+    elif preset == "hermes-coder":
         roles["coder"] = {"runtime": "hermes", "provider": "opencode-go", "model": "deepseek-v4.1-flash",
                           "profile": "coder", "access": "edit"}
-    elif preset != "mixed":
-        raise FlowError("Supported presets: mixed, hermes-coder. Full Hermes needs native read-only tools first.")
+    elif preset != "economy":
+        raise FlowError("Supported presets: " + ", ".join(PRESETS))
     return {"version": 1, "roles": roles, "agent_timeout": 1200, "test_timeout": 300,
-            "max_repairs": 2, "base_branch": "main",
+            "max_repairs": 1, "base_branch": "main",
             "auto_paths": {"docs": ["README.md", "docs/usage/*.md"],
                            "style": [], "tests": []}, "protected_paths": []}
 
@@ -121,6 +130,25 @@ def default_config(preset="mixed"):
 def config_for(repo):
     config = read_json(Path(repo) / ".maf.json")
     return validate_config(repo, config)
+
+
+def execution_config(repo, mode=None):
+    """Resolve the selection for NEW work without changing repository policy."""
+    config = config_for(repo)
+    path = root_for(repo) / "mode.json"
+    if mode is None:
+        mode = read_json(path) if path.exists() else "configured"
+    if not isinstance(mode, str) or mode not in MODES:
+        raise FlowError("Unknown mode; select one of: " + ", ".join(MODES))
+    if mode != "configured":
+        config["roles"] = default_config(mode)["roles"]
+    return mode, validate_config(repo, config)
+
+
+def select_mode(repo, mode):
+    selected, config = execution_config(repo, mode)
+    atomic(root_for(repo) / "mode.json", selected)
+    return config
 
 
 def validate_config(repo, config):
@@ -182,8 +210,20 @@ def validate_task(task):
 
 def billing_check(repo, config):
     local = read_json(Path(repo) / ".maf-local.json")
-    if not isinstance(local, dict) or local.get("subscription_only_confirmed") is not True or local.get("config_hash") != digest(config):
+    if (not isinstance(local, dict) or local.get("subscription_only_confirmed") is not True
+            or not isinstance(local.get("config_hashes"), list) or digest(config) not in local["config_hashes"]):
         raise FlowError("Confirm subscription-only billing for this configuration with confirm-billing.")
+
+
+def confirm_billing(repo, config):
+    """Called only after a human attests to this exact execution configuration."""
+    path = Path(repo) / ".maf-local.json"
+    local = read_json(path) if path.exists() else {}
+    hashes = local.get("config_hashes", []) if isinstance(local, dict) and local.get("subscription_only_confirmed") is True else []
+    if not isinstance(hashes, list) or any(not isinstance(h, str) or not re.fullmatch(r"[0-9a-f]{64}", h) for h in hashes):
+        raise FlowError("Invalid billing confirmation list; inspect .maf-local.json.")
+    atomic(path, {"subscription_only_confirmed": True, "config_hashes": sorted(set(hashes + [digest(config)])),
+                  "confirmed_at": time.time()})
 
 
 def init(repo, preset):
@@ -237,9 +277,10 @@ def list_runs(repo):
     return runs
 
 
-def submit(repo, task, publish=False, auto_merge=False):
+def submit(repo, task, publish=False, auto_merge=False, mode=None):
     repo = Path(repo).resolve()
-    config = config_for(repo)
+    config_hash = digest(config_for(repo))
+    mode, config = execution_config(repo, mode)
     validate_task(task)
     git(repo, "diff", "--exit-code")
     git(repo, "diff", "--cached", "--exit-code")
@@ -259,7 +300,7 @@ def submit(repo, task, publish=False, auto_merge=False):
             stream.write("\n/.maf-worktrees/\n")
     branch = "maf/" + run_id
     run = {"id": run_id, "repo": str(repo), "worktree": str(worktree), "branch": branch,
-           "base_sha": base, "owned_head": base, "config": config, "config_hash": digest(config), "task": task,
+           "base_sha": base, "owned_head": base, "config": config, "config_hash": config_hash, "mode": mode, "task": task,
            "status": "creating", "stage": "coding", "repairs": 0, "created_at": time.time(),
            "publish": bool(publish), "auto_merge": bool(auto_merge), "feedback": "", "agents": []}
     if checklist:
@@ -345,6 +386,9 @@ def run_tests(run, directory):
     results = []
     for index, argv in enumerate(run["task"]["tests"]):
         path = directory / f"test-{run['repairs']}-{index}.log"
+        run["activity"] = {"label": f"test {index + 1}/{len(run['task']['tests'])}: {argv[0]}",
+                           "started_at": time.time(), "timeout": run["config"]["test_timeout"], "log": str(path)}
+        save(run["repo"], run)
         with path.open("w") as output:
             os.chmod(path, 0o600)
             proc = subprocess.Popen(argv, cwd=run["worktree"], env=agents.clean_env(),
@@ -359,7 +403,8 @@ def run_tests(run, directory):
                 terminate(proc)
                 raise
         tail = path.read_text(errors="replace")[-6000:]
-        results.append({"argv": argv, "exit_code": code, "log": str(path), "tail": tail})
+        results.append({"argv": argv, "exit_code": code, "log": str(path), "tail": tail,
+                        "duration_seconds": round(time.time() - run["activity"]["started_at"], 2)})
         if code:
             break
     return results
@@ -396,15 +441,16 @@ def needs_repair(repo, run, feedback):
 
 def invoke(repo, run, role_name, prompt):
     role = run["config"]["roles"][role_name]
-    problems = agents.doctor_role(role)
-    if problems:
-        raise FlowError("; ".join(problems))
-    run["status"] = "running"
-    run["running_since"] = time.time()
-    save(repo, run)  # A crash after here is ambiguous, not permission to resend.
     log = run_path(repo, run["id"]).parent / f"{role_name}-{len(run['agents'])}.jsonl"
+    run["status"] = "running"
+    run["activity"] = {"label": f"{role_name}: {role['runtime']}/{role['model']}", "started_at": time.time(),
+                       "timeout": run["config"]["agent_timeout"] + 60, "log": str(log)}
+    save(repo, run)  # A crash after here is ambiguous, not permission to resend.
     result = agents.run_agent(role, prompt, Path(run["worktree"]), log, run["config"]["agent_timeout"])
     run["agents"].append({"role": role_name, "runtime": role["runtime"], "model": role["model"],
+                          "provider": role["provider"],
+                          "usage_scope": "model_calls" if role["runtime"] == "pi" else "provider",
+                          "duration_seconds": round(time.time() - run["activity"]["started_at"], 2),
                           "session_id": result.get("session_id"), "usage": result.get("usage"),
                           "status": result["status"], "log": str(log)})
     if result["status"] != "ok":
@@ -418,6 +464,8 @@ def invoke(repo, run, role_name, prompt):
 
 def execute(repo, run):
     """One task, at most max_repairs additional passes. No unbounded model loop."""
+    if run.get("mode") not in MODES:
+        raise FlowError("Run has no explicit supported mode. Inspect it and submit a new task; do not replay old role routing.")
     billing_check(repo, run["config"])
     unchanged(repo, run)
     directory = run_path(repo, run["id"]).parent
@@ -456,7 +504,7 @@ def execute(repo, run):
             if head != git(run["worktree"], "rev-parse", "HEAD") or git(run["worktree"], "status", "--porcelain"):
                 raise FlowError("Verification changed tracked files/HEAD or left untracked files; inspect manually.")
             if any(result["exit_code"] for result in run["tests"]):
-                needs_repair(repo, run, json.dumps(run["tests"], ensure_ascii=False))
+                needs_repair(repo, run, json.dumps([result for result in run["tests"] if result["exit_code"]], ensure_ascii=False))
                 continue
             run["tested_sha"] = head
             run["stage"] = "reviewing"
@@ -475,7 +523,8 @@ def execute(repo, run):
                       "risk (low|manual), summary (string), findings (array of actionable strings). "
                       "An approve decision requires empty findings. Financial/auth/policy changes are manual.\n"
                       + "HEAD: " + run["tested_sha"] + "\nTASK: " + json.dumps(run["task"], ensure_ascii=False)
-                      + "\nTEST EVIDENCE: " + json.dumps(run["tests"], ensure_ascii=False)
+                      + "\nTEST EVIDENCE: " + json.dumps(
+                          [{k: result[k] for k in ("argv", "exit_code", "log")} for result in run["tests"]], ensure_ascii=False)
                       + "\nDIFF:\n" + diff)
             text = invoke(repo, run, "reviewer", prompt)
             if text is None:
@@ -558,10 +607,10 @@ def resume(repo, run_id, acknowledge=False, after=None):
     return run
 
 
-def work(repo, once=False, poll=30):
+def work(repo, once=False, poll=30, run_id=None):
     while True:
         with exclusive(repo):
-            candidates = list_runs(repo)
+            candidates = [load(repo, run_id)] if run_id else list_runs(repo)
             for run in candidates:
                 if run["status"] == "waiting_quota" and run.get("not_before") is not None and run["not_before"] <= time.time():
                     run["status"] = "queued"

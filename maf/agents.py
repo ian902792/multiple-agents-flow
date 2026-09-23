@@ -6,6 +6,7 @@ status in ok | quota | blocked | error. Exit code 0 is never trusted on its own.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -282,7 +283,21 @@ def _parse_pi(out):
     if not msgs:
         return None
     index, m = msgs[-1]
-    usage = m.get("usage")
+    # message_end is per model call, not per agent session. Never add reasoning
+    # to output or cached reads to a total that already includes them.
+    usages = [message.get("usage") for _, message in msgs]
+    usage = None
+    if len(out.encode()) < _OUTPUT_LIMIT and all(isinstance(u, dict) and u for u in usages):
+        keys = set.intersection(*(set(u) for u in usages))
+        counts = keys & {"input", "output", "cacheRead", "cacheWrite", "reasoning", "totalTokens"}
+        if {"input", "output"} <= counts and all(type(u[k]) is int and u[k] >= 0 for u in usages for k in counts):
+            usage = {k: sum(u[k] for u in usages) for k in sorted(counts)}
+            costs = [u.get("cost") for u in usages]
+            if all(isinstance(c, dict) and c for c in costs):
+                cost_keys = set.intersection(*(set(c) for c in costs)) & {"input", "output", "cacheRead", "cacheWrite", "total"}
+                if cost_keys and all(type(c[k]) in (int, float) and math.isfinite(c[k]) and c[k] >= 0
+                                     for c in costs for k in cost_keys):
+                    usage["cost"] = {k: sum(c[k] for c in costs) for k in sorted(cost_keys)}
     if m.get("stopReason") == "error":
         return _classify(m.get("errorMessage") or "assistant error", sid, usage)
     if (m.get("stopReason") != "stop" or ev[-1].get("type") != "agent_settled"
@@ -318,6 +333,7 @@ def run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int) -> di
     validate_role(role)
     problems = _auth_problems(role)
     if problems:
+        _append_log(log, "== blocked before inference ==\n" + "; ".join(problems) + "\n")
         return _result("blocked", detail="; ".join(problems))
     argv = _argv(role, timeout)
     # Live checkpoint before invocation: argv + pid only (prompt goes over stdin, never logged here).
@@ -329,9 +345,10 @@ def run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int) -> di
         _append_log(log, f"== exit ==\nfailed to start: {e}\n")
         return _result("error", detail=f"failed to start {argv[0]}: {e}")
     _append_log(log, f"== exit ==\n{rc} timed_out={timed_out}\n== stdout ==\n{out}\n== stderr ==\n{err}\n")
-    if timed_out:
-        return _result("error", detail=f"timeout after {timeout}s; process group killed")
     res = _PARSERS[role["runtime"]](out) or _classify(err.strip()[-300:] or f"exit {rc}: no result event")
+    if timed_out:
+        return _result("error", session_id=res["session_id"], usage=res["usage"],
+                       detail=f"timeout after {timeout}s; process group killed")
     if rc != 0 and res["status"] == "ok":
         res = _result("error", "", res["session_id"], res["usage"], f"exit {rc} despite success event")
     return res

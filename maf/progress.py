@@ -1,7 +1,9 @@
 """Read-only progress views and the opt-in todo.md checklist projection. Zero model calls."""
 from __future__ import annotations
 
+import contextlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -11,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 
 from . import core
@@ -207,12 +210,51 @@ def sync_all(repo):
             sync(repo, run)
 
 
+def diagnostics(run):
+    """Observed deadlines and actionable stops; silence never proves a dead agent."""
+    status, stage = run.get("status"), run.get("stage")
+    activity = run.get("activity") or {}
+    result = {"activity": clean(activity.get("label", "-")), "elapsed": "-",
+              "log": clean(activity.get("log", ""), 1000), "attention": False, "next": ""}
+    resume = f"resume {clean(run['id'], 80)} --acknowledge-stopped"
+    if status == "running":
+        if not activity:
+            result.update(attention=True, next="Missing execution checkpoint. Inspect worker; never assume it stopped.")
+        else:
+            started, limit = float(activity["started_at"]), float(activity["timeout"])
+            if not math.isfinite(started) or not math.isfinite(limit) or started <= 0 or limit <= 0:
+                raise ValueError("Invalid execution checkpoint")
+            elapsed = max(0, time.time() - started)
+            result["elapsed"] = f"{int(elapsed // 60)}m/{math.ceil(limit / 60)}m"
+            if elapsed > limit + 15:  # Allow bounded process-group cleanup after the deadline.
+                result.update(attention=True, next="Deadline exceeded; inspect supervisor/log and confirm all processes stopped before " + resume)
+    elif status == "waiting_quota":
+        if run.get("not_before") is not None:
+            reset = time.strftime("%Y-%m-%d %H:%M:%S %z", time.localtime(run["not_before"]))
+            result["next"] = f"Wait until confirmed reset {reset}; worker will retry."
+        else:
+            result.update(attention=True, next="Confirm quota reset and stopped process, then " + resume + " [--after TIME_WITH_ZONE].")
+    elif status in ("needs_human", "creating"):
+        result["attention"] = True
+        if stage in DONE:
+            result["next"] = "Inspect feedback; reconcile with publish/merge. Do not replay agents."
+        elif run.get("repairs", 0) > run["config"]["max_repairs"]:
+            result["next"] = "Repair budget exhausted. Ask planner to diagnose the failure and submit a new scoped task."
+        else:
+            attempts = run.get("agents") or []
+            blocked = attempts and attempts[-1].get("status") == "blocked"
+            prefix = "Resolve runtime login/permissions; run doctor. " if blocked else "Inspect feedback/log; resolve the cause. "
+            result["next"] = prefix + "Confirm previous processes stopped before " + resume
+    return result
+
+
 def row_for(repo, run):
     """Evidence-only row: verified means the gate passes right now on the run worktree; merged means GitHub confirmed."""
     if run.get("status") == "corrupt":
         return {"task": "?", "run": clean(run.get("id", "?"), 80), "stage": "corrupt", "status": "corrupt",
                 "tested": "-", "reviewed": "-", "verified": "no", "merged": "no", "checklist": "-",
-                "created": 0, "note": clean(run.get("feedback", ""))}
+                "created": 0, "note": clean(run.get("feedback", "")), "activity": "-", "elapsed": "-",
+                "attention": True, "next": "Inspect the corrupt state file; do not retry or delete evidence.", "log": "", "agents": []}
     task = run.get("task") if isinstance(run.get("task"), dict) else {}
     tested, reviewed = str(run.get("tested_sha") or ""), str(run.get("reviewed_sha") or "")
     status = clean(run.get("status", "?"), 40)
@@ -228,12 +270,20 @@ def row_for(repo, run):
     note = clean(task.get("title", ""), 80)
     if status in ("needs_human", "waiting_quota") and run.get("feedback"):
         note += " | " + clean(run["feedback"])
-    return {"task": clean(task.get("id", "?"), 40), "run": clean(run.get("id", "?"), 80),
+    row = {"task": clean(task.get("id", "?"), 40), "run": clean(run.get("id", "?"), 80),
+            "mode": clean(run.get("mode", "unknown"), 40),
             "stage": clean(run.get("stage", "?"), 40), "status": status,
             "tested": tested[:7] or "-", "reviewed": reviewed[:7] or "-",
             "verified": "yes" if completed(run) and verified_now(repo, run) else "no",
             "merged": "yes" if run.get("status") == "merged" else "no", "checklist": checklist,
-            "created": float(run.get("created_at") or 0), "note": note}
+            "created": float(run.get("created_at") or 0), "note": note,
+            "agents": [{k: attempt.get(k) for k in ("role", "runtime", "provider", "model", "status", "duration_seconds", "usage_scope", "usage")}
+                       for attempt in run.get("agents", [])], **diagnostics(run)}
+    if run["config_hash"] != core.digest(core.read_json(Path(repo) / ".maf.json")):
+        row.update(attention=True, next="Configuration changed since submission. Do not resume/publish this run; inspect the old worker and submit a new task.")
+    elif completed(run) and row["verified"] == "no":
+        row.update(attention=True, next="Saved completion no longer verifies. Inspect tests, review and worktree HEAD before publication.")
+    return row
 
 
 def rows(repo):
@@ -272,6 +322,7 @@ def render(rows, compact=False):
                       f"  verified {row['verified']}  merged {row['merged']}  list {row['checklist']}"]
             if row["note"]:
                 lines.append("  " + row["note"])
+            lines.extend(detail_lines(row))
     else:
         widths = {column: max([len(column)] + [len(row[column]) for row in rows]) for column in COLUMNS}
         lines = ["  ".join(column.upper().ljust(widths[column]) for column in COLUMNS).rstrip()]
@@ -279,6 +330,7 @@ def render(rows, compact=False):
             lines.append("  ".join(row[column].ljust(widths[column]) for column in COLUMNS).rstrip())
             if row["note"]:
                 lines.append("    " + row["note"])
+            lines.extend(detail_lines(row))
     counts = counts_for(rows)
     lines.append(f"{len(rows)} run(s)" + ("; " + ", ".join(f"{n} {s}" for s, n in sorted(counts.items())) if counts else ""))
     lines.append("verified = tests + independent review at HEAD; not merged, not released." if compact else
@@ -289,15 +341,30 @@ def render(rows, compact=False):
     return "\n".join(lines)
 
 
+def detail_lines(row):
+    lines = []
+    if row["status"] == "running":
+        lines.append(f"  {row['activity']} | elapsed/limit {row['elapsed']}")
+    if row["next"]:
+        lines.append(f"  {'ATTENTION' if row['attention'] else 'NEXT'}: {row['next']}")
+    if row["attention"] and row["log"]:
+        lines.append("  log: " + row["log"])
+    return lines
+
+
 def title_for(rows):
     """Pane title: verified/total, the active (running, else queued) stage and task, then attention counts."""
     verified = sum(row["verified"] == "yes" for row in rows)
     parts = [f"maf {verified}/{len(rows)} verified"]
-    active = next((row for status in ("running", "queued") for row in rows if row["status"] == status), None)
+    attention = sum(row["attention"] for row in rows)
+    if attention:
+        parts.append(f"!{attention} attention")
+    active = next((row for status in ("running", "queued", "waiting_quota") for row in rows if row["status"] == status), None)
     if active:
         parts.append(f"{active['status']} {active['stage']} {active['task']}")
-    counts = counts_for(rows)
-    parts += [f"{counts[s]} {s}" for s in ("needs_human", "waiting_quota", "corrupt") if counts.get(s)]
+    elif attention:
+        blocked = next(row for row in rows if row["attention"])
+        parts.append(f"{blocked['status']} {blocked['stage']} {blocked['task']}")
     return clean(" | ".join(parts), 80)
 
 
@@ -320,7 +387,7 @@ def report_pane(repo, pane, title, poll=5):
                   "--title", title, "--ttl-ms", str(ttl_for(poll))], repo, timeout=15)
 
 
-def show(repo, watch=False, poll=5, pane=None):
+def show(repo, watch=False, poll=5, pane=None, stop=None):
     """Print the summary; with watch, reprint only on change. Pane metadata refreshes every poll to renew its TTL."""
     if pane:
         check_pane(repo, pane)
@@ -345,8 +412,35 @@ def show(repo, watch=False, poll=5, pane=None):
                     if pane and str(exc) != herdr_error:
                         warn(f"progress: pane metadata not refreshed: {exc}")
                         herdr_error = str(exc)
-            if not watch:
+            if not watch or (stop is not None and stop.is_set()):
                 return
-            sleep(poll)
+            if stop is None:
+                sleep(poll)
+            else:
+                stop.wait(poll)
     except KeyboardInterrupt:
         print("\nprogress: watch stopped.", file=sys.stderr, flush=True)
+
+
+@contextlib.contextmanager
+def monitor(repo, pane):
+    """Keep the calling Herdr pane informed while the worker holds the writer lock."""
+    if not pane:
+        yield
+        return
+    check_pane(repo, pane)
+    stop = threading.Event()
+    def watch():
+        try:
+            show(repo, watch=True, pane=pane, stop=stop)
+        except CAUGHT as exc:
+            warn(f"progress: main pane monitor stopped: {exc}; use progress --json.")
+    thread = threading.Thread(target=watch, daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=35)
+        if thread.is_alive():
+            warn("progress: monitor did not stop in time; pane metadata will expire. Use progress --json.")

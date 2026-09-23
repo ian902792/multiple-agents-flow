@@ -4,6 +4,9 @@ Python 3.11+ stdlib. No server, web UI, API subscription proxy, or automatic ins
 Herdr runs a persistent ordinary supervisor command in an explicitly created workspace.
 Native agent CLIs run as bounded subprocesses, with structured output captured to private logs.
 One implementation lane initially; planner/coder/reviewer are independently configured roles.
+The economy preset uses Astra for optional planning and Pi/DeepSeek for coding and review, with one repair.
+The opus-sol preset uses Claude Opus 5 coding and Codex Sol review. Risk never overrides the reviewer role.
+The main-chat skill reuses the host's planning and does not invoke an extra planner.
 
 ## Files and ownership
 
@@ -12,6 +15,8 @@ One implementation lane initially; planner/coder/reviewer are independently conf
 - `maf/github.py`: publication and conservative exact-SHA merge policy.
 - `maf/progress.py`: read-only terminal summary, optional Herdr pane metadata, todo.md checklist projection.
 - `maf/cli.py`: CLI and Herdr launcher.
+- `maf/skills.py`: project-only Claude/Codex discovery links; refuses conflicting skills and redirected parents.
+- `skills/maf/SKILL.md`: shared main-chat workflow, referenced by both hosts using relative symlinks.
 - `tests/`: stdlib unittest, fake subprocesses and temporary Git repositories, no model charges.
 - `README.md`: Traditional Chinese quickstart, walkthrough, safety and recovery.
 
@@ -22,6 +27,9 @@ One implementation lane initially; planner/coder/reviewer are independently conf
 Return keys: `status` (`ok`, `quota`, `blocked`, `error`), `text` (final response only),
 `session_id` (string or null), `usage` (provider-reported dict or null), `detail` (brief).
 No implicit latest-session resume. Reviewer is a new session every time.
+Pi usage sums assistant message_end usage across all model calls, excluding agent_end copies. Missing or
+truncated counts remain unknown; cache and reasoning counters are not added again to output/total.
+Timeout results retain only usage already emitted, not an estimate of unreported usage.
 `role` fields: `runtime`, `model`, `provider`, optional `profile`, `access` (`read`/`edit`).
 Optional `effort`: low/medium/high. Model IDs are configurable but cannot contain provider prefixes.
 Allowed subscription routes: Codex ChatGPT login; Claude first-party subscription login;
@@ -44,7 +52,15 @@ Bounded subprocess timeouts terminate their own process group; do not kill unrel
 
 Tracked `.maf.json` holds roles and policy. Untracked `.maf-local.json` holds a human's
 confirmation that provider extra usage / Go Use balance are disabled. This is attestation,
-not a remotely enforceable spending cap. No model invocation until it exists.
+not a remotely enforceable spending cap. `config_hashes` remembers each explicitly confirmed effective
+configuration. A former singular `config_hash` is not accepted or migrated into approval.
+No model invocation until the exact execution configuration is confirmed.
+`maf/mode.json` under the common Git directory stores the local default mode, initially `configured`.
+Named modes replace only roles; policy/timeouts stay in `.maf.json`. Submit snapshots the effective config
+and selected mode, with `config_hash` separately binding the base `.maf.json`. Changing selection never
+rewrites a run or invalidates its verification; changing base configuration still invalidates existing runs.
+Runs without an explicit supported mode cannot replay models under the new routing rules; inspect and
+submit a new task instead. Existing evidence remains readable, with no migration or silent role substitution.
 Private state under the repository's common Git directory `maf/runs/<id>`; atomic JSON and flock.
 Worktrees under the target repository `.maf-worktrees/`, excluded through Git info/exclude;
 never under `.git`, because native agent safety modes correctly deny edits there.
@@ -52,11 +68,19 @@ Task JSON: `id`, `title`, `instructions`, `paths` (explicit relative path/glob a
 `tests` (nonempty arrays of argv arrays), `risk` (`manual`, `docs`, `style`, `tests`).
 Task/config snapshots pin each run. Worktrees and branches are unique; never overwrite/reuse unrelated ones.
 
-Commands: `init`, `doctor`, `confirm-billing`, `plan`, `submit`, `work`, `status`, `progress`, `resume`,
+Commands: `install-skills`, `init`, `mode`, `doctor`, `confirm-billing`, `plan`, `submit`, `work`, `status`, `progress`, `resume`,
 `publish`, `merge`, `herdr` (launch work in new no-focus Herdr workspace).
 `submit` only queues. `work --once` executes one runnable task; `work` polls local state.
+`submit --mode NAME` overrides the mode for one task without changing the local default.
+`work --once --run-id ID` processes only that run, never another queued task and never implicitly replays
+an interrupted stage. The skill uses this form after submit/resume. Selection changes still use the writer lock.
+`install-skills` registers one shared skill in `.agents/skills/maf` and `.claude/skills/maf` in a Git repository,
+never user-wide configuration. External-repo registration paths are locally excluded from Git.
 Execution: queued -> coding -> testing -> reviewing -> verified -> PR / needs-human / merged.
-Every agent stage records a running checkpoint BEFORE invocation. An interrupted/ambiguous stage
+Every agent stage records a running checkpoint BEFORE invocation, with an activity label,
+start time, timeout (including up to 60 seconds for auth), and diagnostic log path.
+Each test command records its own activity checkpoint. Agent attempts also record provider and elapsed time.
+Authentication is checked once by the adapter, not again by the supervisor. An interrupted/ambiguous stage
 requires explicit recovery acknowledgement; never blindly resend. Quota waits remain pinned
 to the same role; default requires user-supplied reset time before automatic retry.
 Bounded repair rounds, separate reviewer, exact tested SHA, clean tree required after verification.
@@ -76,6 +100,15 @@ Titles include verified/total and active stage/task. A disappearing pane disable
 TTY widths below 100 use multiple lines wrapped to terminal width, including 38 columns; pipes retain the table.
 No input is sent and no agent
 lifecycle is touched; Herdr failures are warnings only.
+`progress --json` is a standalone read-only snapshot with activity, minute-level elapsed/limit, attention,
+next steps and per-attempt native usage; no prompt or transcript. It cannot be combined with sync/watch/pane.
+Deadlines overdue by more than 15 seconds request inspection, not an inferred exit or permission to retry.
+Permission/auth stops, quota resets, exhausted repairs and publication recovery have distinct guidance.
+`herdr` validates the inherited HERDR_PANE_ID before creating its workspace and passes it to
+`work --planner-pane ID`. A local monitor thread reuses progress.show every five seconds while the worker
+holds the writer lock. It refreshes the main pane's metadata without injecting prompts or invoking models.
+The observer stops with the worker; no additional per-agent panes or streaming transcripts are needed.
+Successful test logs stay in local evidence; review prompts carry only argv, exit_code and log path.
 
 Checklist: a task opts in when the tracked, regular root `todo.md` has exactly one unchecked line
 `- [ ] text <!-- maf:task-id -->`. `submit` snapshots that full line before any agent runs (`run.checklist`);

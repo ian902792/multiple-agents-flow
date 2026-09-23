@@ -9,9 +9,9 @@
       "effort": "high"
     },
     "coder": {
-      "runtime": "codex",
-      "provider": "chatgpt",
-      "model": "gpt-6-astra",
+      "runtime": "pi",
+      "provider": "opencode-go",
+      "model": "deepseek-v4.1-flash",
       "access": "edit",
       "effort": "medium"
     },
@@ -25,7 +25,7 @@
   },
   "agent_timeout": 1200,
   "test_timeout": 300,
-  "max_repairs": 2,
+  "max_repairs": 1,
   "base_branch": "main",
   "auto_paths": {
     "docs": [

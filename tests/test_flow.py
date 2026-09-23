@@ -1,4 +1,6 @@
 import copy
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -8,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from maf import core, github
+from maf import cli, core, github, skills
 
 
 class FlowTests(unittest.TestCase):
@@ -23,9 +25,9 @@ class FlowTests(unittest.TestCase):
         (self.repo / ".gitignore").write_text("__pycache__/\n.maf-local.json\n")
         core.git(self.repo, "add", ".")
         core.git(self.repo, "commit", "-qm", "Initial")
-        core.init(self.repo, "mixed")
+        core.init(self.repo, "economy")
         self.config = core.config_for(self.repo)
-        core.atomic(self.repo / ".maf-local.json", {"subscription_only_confirmed": True, "config_hash": core.digest(self.config)})
+        core.confirm_billing(self.repo, self.config)
         self.task = {"id": "improve-docs", "title": "Improve docs", "instructions": "Add usage paragraph.",
                      "paths": ["README.md"], "tests": [[sys.executable, "-c", "from pathlib import Path; assert 'After' in Path('README.md').read_text()"]],
                      "risk": "docs"}
@@ -54,6 +56,135 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(github.risk_reasons(run), [])
         self.assertEqual((self.repo / "README.md").read_text(), "Before\n")
         self.assertEqual([a["role"] for a in run["agents"]], ["coder", "reviewer"])
+
+    def test_pi_default_and_manual_review_use_separate_sessions(self):
+        self.assertEqual(self.config["roles"]["coder"]["runtime"], "pi")
+        self.assertEqual(self.config["max_repairs"], 1)
+        self.task["risk"] = "manual"
+        self.task["tests"][0][-1] += "; print('NOISY_TEST_OUTPUT')"
+        run = core.submit(self.repo, self.task)
+        snapshots, prompts = [], []
+        def agent(role, prompt, cwd, log, timeout):
+            saved = core.load(self.repo, run["id"])
+            snapshots.append(saved)
+            prompts.append(prompt)
+            self.assertEqual(saved["status"], "running")
+            self.assertEqual(saved["activity"]["log"], str(log))
+            self.assertIn(role["model"], saved["activity"]["label"])
+            return self.fake_agent(role, prompt, cwd, log, timeout)
+        with patch.object(core.agents, "run_agent", side_effect=agent), patch.object(core.agents, "doctor_role") as doctor:
+            core.execute(self.repo, run)
+        doctor.assert_not_called()  # run_agent owns the single preflight auth check.
+        self.assertEqual([a["runtime"] for a in run["agents"]], ["pi", "pi"])
+        self.assertEqual([s["stage"] for s in snapshots], ["coding", "reviewing"])
+        self.assertNotIn('"tail"', prompts[1])
+        self.assertEqual(run["tested_sha"], run["reviewed_sha"])
+        self.assertTrue(all(a["duration_seconds"] >= 0 for a in run["agents"]))
+        self.assertIn("NOISY_TEST_OUTPUT", run["tests"][0]["tail"])
+
+    def test_permission_stop_is_recorded_and_never_retried_automatically(self):
+        run = core.submit(self.repo, self.task)
+        with patch.object(core.agents, "run_agent", return_value={"status": "blocked", "detail": "Permission denied"}) as agent:
+            core.process(self.repo, run)
+            core.work(self.repo, once=True)
+        self.assertEqual(agent.call_count, 1)
+        self.assertEqual(run["status"], "needs_human")
+        self.assertEqual(run["agents"][-1]["status"], "blocked")
+        self.assertEqual(core.load(self.repo, run["id"])["feedback"], "Permission denied")
+
+    def test_mode_switch_preserves_runs_policy_and_confirmed_configurations(self):
+        original = (self.repo / ".maf.json").read_bytes()
+        old = core.submit(self.repo, self.task)
+        selected = core.select_mode(self.repo, "opus-sol")
+        self.assertEqual(selected["auto_paths"], self.config["auto_paths"])
+        self.assertEqual((self.repo / ".maf.json").read_bytes(), original)
+        self.task["risk"] = "manual"
+        new = core.submit(self.repo, self.task)
+        with patch.object(core.agents, "run_agent") as agent, self.assertRaises(core.FlowError):
+            core.execute(self.repo, new)
+        agent.assert_not_called()
+        core.confirm_billing(self.repo, selected)
+        core.billing_check(self.repo, self.config)  # Confirming one mode does not revoke another.
+        core.select_mode(self.repo, "economy")
+        with patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
+            core.execute(self.repo, old)
+            core.execute(self.repo, new)
+        self.assertEqual([a["runtime"] for a in old["agents"]], ["pi", "pi"])
+        self.assertEqual([a["model"] for a in new["agents"]], ["claude-opus-5", "gpt-5.6-sol"])
+        self.assertEqual(new["mode"], "opus-sol")
+        core.verified(self.repo, old)
+        core.verified(self.repo, new)
+        self.config["test_timeout"] += 1
+        core.atomic(self.repo / ".maf.json", self.config)
+        with self.assertRaises(core.FlowError):
+            core.verified(self.repo, new)
+        with self.assertRaises(core.FlowError):
+            core.billing_check(self.repo, core.execution_config(self.repo, "opus-sol")[1])
+
+    def test_cli_mode_override_and_worker_target_do_not_consume_other_tasks(self):
+        def call(*args):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                cli.main(["--repo", str(self.repo), *args])
+            return out.getvalue()
+        result = json.loads(call("mode", "opus-sol"))
+        self.assertEqual(result["mode"], "opus-sol")
+        self.assertTrue(result["billing"])
+        call("confirm-billing", "--no-overage")
+        other = core.submit(self.repo, self.task)
+        task_file = self.repo / "task.json"
+        core.atomic(task_file, self.task)
+        run = json.loads(call("submit", str(task_file), "--mode", "economy"))
+        self.assertEqual(run["mode"], "economy")
+        with core.exclusive(self.repo):
+            self.assertEqual(json.loads(call("mode"))["mode"], "opus-sol")
+        with patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
+            call("work", "--once", "--run-id", run["id"])
+        self.assertEqual(core.load(self.repo, run["id"])["status"], "verified")
+        self.assertEqual(core.load(self.repo, other["id"])["status"], "queued")
+
+    def test_unknown_modes_and_obsolete_billing_evidence_fail_closed(self):
+        for value in ("unknown", {}, None):
+            core.atomic(core.root_for(self.repo) / "mode.json", value)
+            with self.subTest(value=value), self.assertRaises(core.FlowError):
+                core.submit(self.repo, self.task)
+        core.select_mode(self.repo, "configured")
+        core.atomic(self.repo / ".maf-local.json", {"subscription_only_confirmed": True,
+                                                   "config_hash": core.digest(self.config)})
+        with self.assertRaises(core.FlowError):
+            core.billing_check(self.repo, self.config)
+
+    def test_runs_without_explicit_routing_cannot_replay_models(self):
+        run = core.submit(self.repo, self.task)
+        del run["mode"]
+        with patch.object(core.agents, "run_agent") as agent, self.assertRaisesRegex(core.FlowError, "role routing"):
+            core.execute(self.repo, run)
+        agent.assert_not_called()
+
+    def test_project_skill_registration_is_shared_idempotent_and_excluded(self):
+        result = skills.install(self.repo)
+        self.assertEqual(skills.install(self.repo), result)
+        paths = [Path(p) for p in result["skills"]]
+        self.assertEqual(paths[0].resolve(), paths[1].resolve())
+        for path in paths:
+            self.assertTrue((path / "SKILL.md").is_file())
+            self.assertFalse(Path(os.readlink(path)).is_absolute())
+            self.assertEqual((path / "SKILL.md").resolve().parents[2] / "flow.py",
+                             Path(__file__).resolve().parents[1] / "flow.py")
+            core.git(self.repo, "check-ignore", str(path))
+
+    def test_skill_registration_refuses_conflicts_and_redirected_parents(self):
+        folder = self.repo / ".claude" / "skills" / "maf"
+        folder.mkdir(parents=True)
+        with self.assertRaises(core.FlowError):
+            skills.install(self.repo)
+        self.assertFalse((self.repo / ".agents").exists())
+        folder.rmdir()
+        redirected = self.repo / ".agents"
+        redirected.symlink_to(self.repo / ".claude", target_is_directory=True)
+        with self.assertRaises(core.FlowError):
+            skills.install(self.repo)
+        self.assertFalse(folder.exists())
 
     def test_invalid_tasks(self):
         for field, value in [("id", "../escape"), ("paths", ["../a"]), ("paths", ["/tmp/a"]),
@@ -216,7 +347,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(run["status"], "needs_human")
 
     def test_all_shipped_presets_validate(self):
-        for preset in ("mixed", "hermes-coder"):
+        for preset in core.PRESETS:
             core.validate_config(self.repo, core.default_config(preset))
         with self.assertRaises(core.FlowError):
             core.default_config("hermes")

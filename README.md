@@ -3,8 +3,61 @@
 在 Herdr 裡使用不同 agent 完成程式開發：**規畫 → 實作 → 程式測試 → 獨立審查 → PR**。
 模型處理需要判斷的工作；Python 處理排程、狀態、驗收與 GitHub。
 
-預設組合：Codex / GPT-6 Astra 規畫、Claude Code / Opus 5 實作、Pi / DeepSeek V4.1 Flash 審查。
-這是 CLI 工具，不是另一個 agent 平台或 Dashboard。Python 3.11+，零第三方 Python 依賴，macOS/Linux。
+預設組合：Codex / GPT-6 Astra 按需規畫、Pi / DeepSeek V4.1 Flash 實作與獨立審查。
+也可選 Claude Opus 5 實作、Codex Sol 審查。`risk` 控制合併政策，不暗中更換模型。
+提供 Claude／Codex 共用 skill，底層使用 Python 3.11+ CLI，零第三方 Python 依賴，macOS/Linux。
+
+## 建議使用方式：在主 agent 呼叫 skill
+
+本專案的 `.claude/skills/maf`、`.agents/skills/maf` 都指向同一份 [MAF skill](skills/maf/SKILL.md)。
+在本專案開啟 Claude Code 或 Codex；若既有對話尚未顯示 skill，重新開啟專案對話。
+
+| 操作 | Claude Code | Codex CLI／IDE |
+|---|---|---|
+| 初次設定 | `/maf setup opus-sol` | `$maf setup opus-sol` |
+| 切換省額度組合 | `/maf mode economy` | `$maf mode economy` |
+| 切換 Opus＋Sol | `/maf mode opus-sol` | `$maf mode opus-sol` |
+| 開發需求 | `/maf run 修正登入表單的空白驗證` | `$maf run 修正登入表單的空白驗證` |
+| 查進度與阻塞 | `/maf status` | `$maf status` |
+| 處理後恢復 | `/maf resume RUN_ID` | `$maf resume RUN_ID` |
+| 在另一個 repo 註冊 | `/maf install /path/to/repo` | `$maf install /path/to/repo` |
+
+Codex 也可以輸入 **`/skills` → 選取 `maf`**，再輸入上述動作；不把 `/maf` 宣稱為 Codex 原生指令。
+Claude 的 `/maf` 與 Codex 的 `/skills`／`$maf` 使用方式依據
+[Claude 官方文件](https://code.claude.com/docs/en/skills)與
+[Codex 官方文件](https://learn.chatgpt.com/docs/build-skills)。其他介面使用該介面的 skill 選擇器。
+
+`run` 讓主 agent 整理任務及驗收指令、自動產生 task JSON、啟動指定任務、回報驗收與阻塞；
+不必複製 function 或手寫 JSON。現有授權足夠就執行；欠缺信任／驗收指令授權或訂閱費用確認時才補問。
+主任務直接負責規畫，不再額外呼叫 Planner；獨立 Coder、程式測試、獨立 Reviewer 由 supervisor 執行。
+Skill 不會改變**目前對話**的模型；你可在 Claude Opus 或 Codex Astra/Sol 的主對話中使用同一份 skill。
+
+| 模式 | Coder | 獨立 Reviewer |
+|---|---|---|
+| `economy` | Pi / DeepSeek V4.1 Flash | Pi / DeepSeek V4.1 Flash，新 session |
+| `opus-sol` | Claude Opus 5，medium | Codex GPT-5.6 Sol，medium |
+| `hermes-coder` | Hermes coder / DeepSeek | Pi / DeepSeek |
+| `configured` | `.maf.json` 的 coder | `.maf.json` 的 reviewer |
+
+模式只影響**之後提交**的任務，存在 Git 私有狀態，不需要改設定檔再 commit；既有任務保留模型快照。
+每種有效設定第一次使用須有人的訂閱確認，之後切回已確認的組合不重問。
+設定或合併政策實際改變仍會使舊 run／確認失效。舊版單一 `config_hash` billing 紀錄不會被自動當作新版批准。
+沒有明確 mode 快照的舊任務可查看證據，但不可重跑模型；需重新建立任務，避免沿用已移除的隱含角色規則。
+只切換模式不呼叫模型；單次任務可用 `submit --mode opus-sol`，不改下次的預設。
+
+Herdr 內執行時會回報主任務 pane；其他環境依主 agent 的命令 session 回報進度。
+權限、登入、額度或模糊中斷會停在具體原因，`resume` 先診斷及確認程序停止，不能直接略過。
+主對話閒置時不會自動被 worker 喚醒；可用 `status` 取得最新摘要。
+
+想從尚未安裝 skill 的另一個專案直接開始，也可只執行一次：
+
+```sh
+rtk proxy python3 /path/to/multiple-agents-flow/flow.py --repo /path/to/repo install-skills
+```
+
+這會建立兩個專案內的 symlink，不改使用者全域設定；遇到同名 skill 或 symlink 父目錄會拒絕覆寫。
+其他專案的連結加入本機 Git exclude，避免把機器路徑提交出去；移動工具資料夾前需處理這些連結。
+以下為底層 CLI 細節，日常可直接使用 skill。
 
 ## 先知道的限制
 
@@ -28,7 +81,8 @@ python3 -m unittest discover -s tests -v
 ```
 
 工具不會自動安裝或替你登入。先備妥 `git`、Python 3.11+、所選 agent CLI；使用 Herdr / PR 時再需要 `herdr` / `gh`。
-Mixed 配置需要 `codex login`（ChatGPT）、`claude auth login`（Claude 訂閱）及 Pi 中的 OpenCode Go 登入。
+Economy 配置需要 `codex login`（ChatGPT）及 Pi 中的 OpenCode Go 登入。
+若自行選用 Claude 角色，再使用 `claude auth login`（Claude 訂閱）。
 OpenCode Go 可經 Pi 使用，不需要另外安裝 OpenCode CLI。
 
 目前 Pi 0.85.1 必須收到最後 assistant 的 `stop`，以及其後本輪最終 `agent_settled` 才算完成；
@@ -103,7 +157,7 @@ python3 "$FLOW" --repo "$TARGET" plan --goal-file /absolute/path/goal.md
 python3 "$FLOW" --repo "$TARGET" submit /absolute/path/task.json
 
 # 執行一個已排隊任務；會印出 run id
-python3 "$FLOW" --repo "$TARGET" work --once
+python3 "$FLOW" --repo "$TARGET" work --once --run-id RUN_ID
 
 # 查看結果
 python3 "$FLOW" --repo "$TARGET" status
@@ -112,7 +166,7 @@ python3 "$FLOW" --repo "$TARGET" status RUN_ID
 
 提交時須位於設定的主分支，已追蹤檔案不可有未提交變更。
 任務以 **HEAD 的已提交內容**建立獨立 worktree；主資料夾的未追蹤檔案不會被帶入。
-每個階段保存狀態；測試失敗或審查要求修改時，最多再修正兩轮（可設 0–5）。
+每個階段保存狀態；測試失敗或審查要求修改時，預設最多再修正一輪（可設 0–5），仍失敗就交回主控診斷。
 Reviewer 每次是新 session；不得由 Coder 自己批准自己的變更。
 
 ## 4. 在 Herdr 長時間執行
@@ -124,6 +178,9 @@ python3 "$FLOW" --repo "$TARGET" herdr
 ```
 
 會建立新的背景 workspace／pane，保留目前焦點，啟動持續處理佇列的 supervisor。
+啟動時會記住呼叫端的 `HERDR_PANE_ID`，每 5 秒自動更新**主任務 pane 的標題**：完成數、進行中的階段／任務、需要處理的數量。
+不需要再手動開 watcher，也不需要觀看子任務輸出。標題出現 `!N attention` 時，請主控讀取 `progress --json`，取得原因與下一步。
+這是本機狀態輪詢，不向主控輸入訊息、不喚醒模型；看板會更新，但不會自動觸發主任務的新一輪對話。
 之後可從另一個 pane `submit` 與 `status`。第一版使用單一寫入鎖：agent 工作中 submit 可能要求等目前任務完成；不會同時改壞狀態。
 沒有任務、等待重置、等待 GitHub CI 都不會喚醒 Planner。
 
@@ -139,11 +196,16 @@ python3 "$FLOW" --repo "$TARGET" herdr
 
 ```sh
 python3 "$FLOW" --repo "$TARGET" progress            # 一次性摘要
+python3 "$FLOW" --repo "$TARGET" progress --json     # 給主控的快照：進度、阻塞、下一步、各次用量
 python3 "$FLOW" --repo "$TARGET" progress --watch    # 只在內容改變時重印；Ctrl-C 結束
 python3 "$FLOW" --repo "$TARGET" progress --watch --poll 10 --planner-pane PANE_ID
 ```
 
 每個 run 顯示 stage／status、測試與審查對應的 commit、`verified` 與 `merged` 兩個獨立欄位，以及 checklist 同步結果。
+執行中另顯示角色／模型（測試時為第幾個命令）、耗時與時限。Agent 時限含最多 60 秒登入檢查；
+超過時限及 15 秒清理緩衝仍是 running，會提示檢查 supervisor，**不假設程序已死、不自動重送**。
+權限／登入拒絕、未知額度重置時間、修復次數耗盡與發布受阻，會顯示各自的處理提示和診斷 log 路徑。
+`--json` 只做一次唯讀查詢，不和 watch／sync／pane 回報混用；包含每次 agent 的角色、模型、狀態、耗時、原生 usage，不包含任務全文或 transcript。
 已完成審查的候選 run 會重新檢查證據與 worktree；僅兩個保存的 SHA 相同不算 verified。TTY 小於 100 欄時換成多行並依寬度折行（含 38 欄 pane），非 TTY 保留完整表格。
 損壞的狀態檔顯示為 `corrupt`；任務標題與 feedback 中的控制字元會被替換，不會注入終端。
 `--planner-pane` 只能在 Herdr 內（`HERDR_ENV=1`）使用，須明確給目前存活的 pane id；工具用 `herdr pane get` 核對，
@@ -244,12 +306,14 @@ python3 "$FLOW" --repo "$TARGET" submit task.json --publish --auto-merge
 ```
 
 `runtime` 是 agent CLI，`provider` 是訂閱路線，`model` 是模型，Hermes 另有 `profile`。
-`effort` 可選 low／medium／high；預設 Planner、Coder 為 high，Reviewer 為 medium。模型 ID 不含 provider 前綴或冒號推理設定，避免繞過已核准路線。
+自訂角色使用 `mode configured`；內建模式會套用自己的角色組合，但仍保留 `.maf.json` 的 timeout、修正上限與政策。
+`effort` 可選 low／medium／high；預設 Planner 為 high，Pi Coder／Reviewer 為 medium。模型 ID 不含 provider 前綴或冒號推理設定，避免繞過已核准路線。
 Planner／Reviewer 必須 `read`，Coder 必須 `edit`；不接受任意 shell command、額外 CLI 參數或 endpoint 覆寫。
 保留固定訂閱路線，不把「自由切換」做成意外付費的後門。模型必須是該帳號實際可用的名稱；doctor 不發推論，所以不能證明模型可用。
 模型／CLI 的行為可能隨更新改變，換版本後先跑測試與小任務，不在執行中的 run 偷換設定。
 
 `init --preset hermes-coder` 可把實作角色換成 Hermes coder profile，仍用 Codex 規畫、Pi 唯讀審查。
+所有任務都使用所選模式的 Reviewer，且是全新唯讀 session。GitHub 保護路徑與合併門檻仍獨立判斷，不信任任務的低風險標籤。
 完整 Hermes default/coder/tester 組合暫不提供：目前 Hermes 原生 file 工具組包含寫入，不能滿足本工作流的唯讀角色要求。
 Hermes adapter 使用 safe mode，停用 profile 的額外 hooks／MCP／skills，profile 僅供帳號與隔離目錄選擇，模型由本工具明確指定。
 實際支援與限制見 [實測紀錄](docs/VALIDATION.md)。不要將 profile 名稱誤認成獨立額度。
@@ -264,6 +328,12 @@ Hermes adapter 使用 safe mode，停用 profile 的額外 hooks／MCP／skills�
 第一版每次 agent invocation 是新 session，保存 session id 作追蹤但不自動續接；交接使用短任務與有限失敗摘要。
 這犧牲部分 session 快取，換取不混用對話與可重現的獨立審查。長 session 的精確恢復等實際量測後再做。
 不會每分鐘用模型「巡邏」。供應商回傳 usage 時會保存；沒有就記 unknown，不換算成虛假的訂閱剩餘百分比。
+Pi usage 加總本次執行的所有 assistant `message_end`，包含工具循環與已回報的失敗／重試；不重算 `agent_end` 的重複訊息。
+輸出被截斷或任一次呼叫缺少必要用量時記 unknown；逾時只能保留已收到的用量，未回報部分未知。
+input／cacheRead／cacheWrite／output 分開保留，reasoning 不再加進 output 或 total；`cost` 是 provider 估算，不能當訂閱帳單。
+新 Pi 紀錄的 `usage_scope` 是 `model_calls`；舊 run 沒有這個標記，用量不會被自動重寫，不能把舊最後一輪數字與新加總直接比較。
+通過的測試只交接命令、exit code 與 log 路徑，避免每次 review 都帶完整成功 log；需要時 Reviewer 可自行讀 log。
+已在主任務完成規畫就直接 submit；一個可獨立驗收的功能交給一個 Coder，避免逐檔派工及重複規畫。
 
 ## 狀態、分享與開發
 

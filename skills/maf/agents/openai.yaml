@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAF"
+  short_description: "Set modes, run tasks, and inspect MAF progress"
+  default_prompt: "Use $maf to show my current mode and task progress."

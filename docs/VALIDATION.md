@@ -2,6 +2,22 @@
 
 這份文件區分離線測試與真正的 provider / GitHub 驗證，避免把 mock 當成實際成功。
 
+## 2026-09-20：主 agent skill 與模式切換
+
+- 88 項離線 unittest 通過，新增模式切換保留任務／政策、Opus 5＋Sol 的 manual 任務路由、各設定獨立確認、單次模式覆寫、指定 run 不誤跑其他佇列，以及舊角色路由不隱含重播。
+- Claude、Codex 專案內連結已建立，共用 `skills/maf/SKILL.md`；安裝重入、既有 skill 衝突及 symlink 父目錄拒絕有測試。
+- Codex 原生 app-server `skills/list` 實際回傳 `maf`、`scope: repo`、`enabled: true`，未開啟 model turn。skill-creator 的 `quick_validate.py` 使用本機既有 Hermes Python 環境驗證通過，未新增套件。
+- 使用方式已依 Claude／Codex 官方文件核對；實際發起模型工作的 `/maf run`／`$maf run` 尚未 live smoke，不宣稱已驗證宿主 UI 或真實模型審查結果。
+- 移除 manual 任務隱含的 Planner 審查路由；風險分類不再更改選定的 Reviewer。
+
+## 2026-09-20：用量與主任務進度
+
+- 82 項工作樹離線 unittest 通過，包含 Pi 多次呼叫用量加總、缺失用量、逾時、權限停止不重試，以及 manual 任務使用獨立強模型審查。
+- 主任務 JSON 快照、階段時限、處理提示、設定失效、Herdr 呼叫端 pane 傳遞與監看器結束前的最終回報皆有回歸測試。
+- 真實本機的 `progress`／`progress --json` 已讀取既有狀態；新 Pi parser 已唯讀重算既有 log，沒有重寫歷史用量。
+- 本次未發出模型請求；Herdr 呼叫以 mock 驗證，尚未在 Herdr pane 實測新的自動回報流程。
+- 新角色設定使原有 billing 確認失效；啟動新的模型任務前，須依現有規則重新核對並執行 `confirm-billing --no-overage`。
+
 ## 已完成
 
 - 使用者指定的本機資料夾與 private GitHub repository 已建立並確認 visibility。
