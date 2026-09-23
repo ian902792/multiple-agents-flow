@@ -7,26 +7,36 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
-from maf import cli, core, github, skills
+from maf import cli, core, flows, github, progress, skills
 
 
 class FlowTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        self.config_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.config_temp.cleanup)
+        env = patch.dict(os.environ, {"XDG_CONFIG_HOME": self.config_temp.name})
+        env.start()
+        self.addCleanup(env.stop)
         self.repo = Path(self.temp.name)
         subprocess.run(["git", "init", "-q", "-b", "main", str(self.repo)], check=True)
         core.git(self.repo, "config", "user.email", "test@example.invalid")
         core.git(self.repo, "config", "user.name", "Flow Test")
         (self.repo / "README.md").write_text("Before\n")
-        (self.repo / ".gitignore").write_text("__pycache__/\n.maf-local.json\n")
+        (self.repo / ".gitignore").write_text("__pycache__/\n")
         core.git(self.repo, "add", ".")
         core.git(self.repo, "commit", "-qm", "Initial")
         core.init(self.repo, "economy")
+        core.select_mode(self.repo, "configured")
         self.config = core.config_for(self.repo)
+        self.config["roles"]["reviewer"]["enabled"] = True
+        core.atomic(self.repo / ".maf.json", self.config)
         core.confirm_billing(self.repo, self.config)
         self.task = {"id": "improve-docs", "title": "Improve docs", "instructions": "Add usage paragraph.",
                      "paths": ["README.md"], "tests": [[sys.executable, "-c", "from pathlib import Path; assert 'After' in Path('README.md').read_text()"]],
@@ -56,6 +66,35 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(github.risk_reasons(run), [])
         self.assertEqual((self.repo / "README.md").read_text(), "Before\n")
         self.assertEqual([a["role"] for a in run["agents"]], ["coder", "reviewer"])
+        tampered = copy.deepcopy(run)
+        tampered["review"] = {}
+        with self.assertRaises(core.FlowError):
+            core.verified(self.repo, tampered)
+
+    def test_unchecked_review_stops_after_tests_and_cannot_publish(self):
+        config = copy.deepcopy(self.config)
+        config["roles"]["reviewer"]["enabled"] = False
+        core.atomic(self.repo / ".maf.json", config)
+        core.confirm_billing(self.repo, config)
+        changed_reviewer = copy.deepcopy(config)
+        changed_reviewer["roles"]["reviewer"]["model"] = "deepseek-v4.1-flash-next"
+        core.billing_check(self.repo, changed_reviewer)
+        changed_reviewer["roles"]["reviewer"]["enabled"] = True
+        with self.assertRaises(core.FlowError):
+            core.billing_check(self.repo, changed_reviewer)
+        run = core.submit(self.repo, self.task)
+        with patch.object(core.agents, "doctor_role", return_value=[]), patch.object(core.agents, "run_agent", side_effect=self.fake_agent) as agent:
+            core.execute(self.repo, run)
+        self.assertEqual(agent.call_count, 1)
+        self.assertEqual(run["status"], "tested")
+        self.assertNotIn("reviewed_sha", run)
+        self.assertIsNone(core.handoff(self.repo, run)["review"])
+        self.assertEqual(progress.row_for(self.repo, run)["complete"], "yes")
+        self.assertEqual(progress.row_for(self.repo, run)["verified"], "no")
+        with self.assertRaises(core.FlowError):
+            core.verified(self.repo, run)
+        with self.assertRaisesRegex(core.FlowError, "requires independent review"):
+            core.submit(self.repo, self.task, publish=True)
 
     def test_pi_default_and_manual_review_use_separate_sessions(self):
         self.assertEqual(self.config["roles"]["coder"]["runtime"], "pi")
@@ -63,6 +102,8 @@ class FlowTests(unittest.TestCase):
         self.task["risk"] = "manual"
         self.task["tests"][0][-1] += "; print('NOISY_TEST_OUTPUT')"
         run = core.submit(self.repo, self.task)
+        self.assertEqual(run["status"], "awaiting_approval")
+        run = core.approve(self.repo, run["id"])
         snapshots, prompts = [], []
         def agent(role, prompt, cwd, log, timeout):
             saved = core.load(self.repo, run["id"])
@@ -104,22 +145,264 @@ class FlowTests(unittest.TestCase):
             core.execute(self.repo, new)
         agent.assert_not_called()
         core.confirm_billing(self.repo, selected)
+        new = core.approve(self.repo, new["id"])
         core.billing_check(self.repo, self.config)  # Confirming one mode does not revoke another.
         core.select_mode(self.repo, "economy")
         with patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
             core.execute(self.repo, old)
             core.execute(self.repo, new)
         self.assertEqual([a["runtime"] for a in old["agents"]], ["pi", "pi"])
-        self.assertEqual([a["model"] for a in new["agents"]], ["claude-opus-5", "gpt-5.6-sol"])
+        self.assertEqual([a["model"] for a in new["agents"]], ["claude-opus-5-5"])
         self.assertEqual(new["mode"], "opus-sol")
         core.verified(self.repo, old)
-        core.verified(self.repo, new)
+        core.tested(self.repo, new)
         self.config["test_timeout"] += 1
         core.atomic(self.repo / ".maf.json", self.config)
         with self.assertRaises(core.FlowError):
-            core.verified(self.repo, new)
+            core.tested(self.repo, new)
+        core.billing_check(self.repo, core.execution_config(self.repo, "opus-sol")[1])
+
+    def test_sensitive_task_waits_for_one_scope_approval(self):
+        task = dict(self.task, paths=["AGENTS.md"])
+        run = core.submit(self.repo, task)
+        self.assertEqual(run["status"], "awaiting_approval")
+        self.assertTrue(run["approval"]["reasons"])
+        with patch.object(core.agents, "run_agent") as agent:
+            core.work(self.repo, once=True, run_id=run["id"])
+            with self.assertRaisesRegex(core.FlowError, "awaits approval"):
+                core.execute(self.repo, run)
+        agent.assert_not_called()
+        run = core.approve(self.repo, run["id"])
+        self.assertEqual(run["status"], "queued")
         with self.assertRaises(core.FlowError):
-            core.billing_check(self.repo, core.execution_config(self.repo, "opus-sol")[1])
+            core.approve(self.repo, run["id"])
+        (Path(run["worktree"]) / "AGENTS.md").write_text("Unapproved edit")
+        with patch.object(core.agents, "run_agent") as agent, self.assertRaisesRegex(core.FlowError, "Worktree changed"):
+            core.execute(self.repo, run)
+        agent.assert_not_called()
+        (Path(run["worktree"]) / "AGENTS.md").unlink()
+        run["task"]["tests"] = [["true"]]
+        with patch.object(core.agents, "run_agent") as agent, self.assertRaisesRegex(core.FlowError, "scope"):
+            core.execute(self.repo, run)
+        agent.assert_not_called()
+
+        shell_task = dict(self.task, id="shell-check", tests=[["bash", "-c", "true"]])
+        self.assertEqual(core.submit(self.repo, shell_task)["status"], "awaiting_approval")
+
+    def test_escalations_stop_without_an_automatic_repair(self):
+        run = core.submit(self.repo, self.task)
+        with patch.object(core.agents, "run_agent", return_value={"status": "ok", "text": "MAF_NEEDS_HUMAN: unclear permission change", "usage": None, "detail": ""}) as agent:
+            core.execute(self.repo, run)
+        self.assertEqual(agent.call_count, 1)
+        self.assertEqual((run["status"], run["stage"]), ("needs_human", "replan"))
+        with self.assertRaisesRegex(core.FlowError, "new approved task"):
+            core.resume(self.repo, run["id"], True)
+
+        next_run = core.submit(self.repo, dict(self.task, id="review-risk"))
+        def security_review(role, prompt, cwd, log, timeout):
+            if role["access"] == "edit":
+                return self.fake_agent(role, prompt, cwd, log, timeout)
+            return {"status": "ok", "text": json.dumps({"decision": "changes_requested",
+                    "head_sha": core.git(cwd, "rev-parse", "HEAD"), "risk": "manual",
+                    "summary": "Security concern", "findings": ["Permission scope unclear"]}),
+                    "usage": None, "detail": ""}
+        with patch.object(core.agents, "run_agent", side_effect=security_review) as agent:
+            core.execute(self.repo, next_run)
+        self.assertEqual(agent.call_count, 2)
+        self.assertEqual((next_run["status"], next_run["stage"]), ("needs_human", "replan"))
+        self.assertEqual(next_run["repairs"], 0)
+
+    def test_named_flow_selects_models_without_changing_project_policy(self):
+        before = (self.repo / ".maf.json").read_bytes()
+        flow = flows.templates()["quick"]
+        flow["roles"]["coder"]["effort"] = "high"
+        flows.save("my-flow", flow)
+        core.select_mode(self.repo, "my-flow")
+        self.assertEqual(core.execution_config(self.repo)[1]["roles"]["coder"]["effort"], "high")
+        self.assertEqual((self.repo / ".maf.json").read_bytes(), before)
+        with self.assertRaises(core.FlowError):
+            core.billing_check(self.repo, core.execution_config(self.repo)[1])
+        with self.assertRaises(core.FlowError):
+            flows.save("bad", dict(flow, roles={"coder": {}}))
+        with tempfile.TemporaryDirectory() as other_dir:
+            other = Path(other_dir)
+            subprocess.run(["git", "init", "-q", "-b", "main", str(other)], check=True)
+            core.init(other, "economy")
+            core.select_mode(other, "my-flow")
+            self.assertEqual(core.execution_config(other)[0], "my-flow")
+            self.assertEqual(core.execution_config(self.repo)[0], "my-flow")
+            core.select_mode(other, "quick")
+            self.assertEqual(core.execution_config(self.repo)[0], "my-flow")
+
+    def test_global_commands_work_without_a_git_repository(self):
+        missing_repo = Path(self.config_temp.name) / "not-a-repo"
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.main(["--repo", str(missing_repo), "settings"])
+            cli.main(["--repo", str(missing_repo), "settings", "herdr", "on"])
+            cli.main(["--repo", str(missing_repo), "settings", "default-flow", "quick-antigravity"])
+            cli.main(["--repo", str(missing_repo), "flows"])
+            cli.main(["confirm-billing", "--no-overage"])
+        lines = out.getvalue()
+        self.assertIn('"herdr_enabled": false', lines)
+        self.assertIn('"herdr_enabled": true', lines)
+        self.assertIn('"quick"', lines)
+        self.assertIn('"quick-antigravity"', lines)
+
+    def test_new_repository_uses_global_flow_without_init(self):
+        with tempfile.TemporaryDirectory() as directory:
+            other = Path(directory)
+            subprocess.run(["git", "init", "-q", "-b", "main", str(other)], check=True)
+            core.git(other, "config", "user.email", "test@example.invalid")
+            core.git(other, "config", "user.name", "Flow Test")
+            (other / "README.md").write_text("Before\n")
+            core.git(other, "add", "README.md")
+            core.git(other, "commit", "-qm", "Initial")
+            self.assertFalse((other / ".maf.json").exists())
+            self.assertEqual(core.execution_config(other)[0], "quick")
+            flows.set_default("quick-antigravity")
+            mode, config = core.execution_config(other)
+            self.assertEqual((mode, config["roles"]["coder"]["model"]),
+                             ("quick-antigravity", "gemini-3.8-flash-high"))
+            with self.assertRaises(core.FlowError):
+                core.billing_check(other, config)
+            core.confirm_billing(other, config)
+            core.billing_check(self.repo, config)
+            run = core.submit(other, dict(self.task, independent=True), kind="delegate")
+            self.assertEqual(run["config"]["roles"]["coder"]["runtime"], "antigravity")
+            self.assertTrue(core.parallel_lightweight(run))
+            self.assertFalse((other / ".maf.json").exists())
+            core.select_mode(other, "planned")
+            self.assertEqual(core.execution_config(other)[0], "planned")
+            core.select_mode(other, "default")
+            self.assertEqual(core.execution_config(other)[0], "quick-antigravity")
+
+    def test_current_model_suggestions_allow_deeper_codex_effort_but_not_pi(self):
+        flow = flows.templates()["quick"]
+        flow["main"]["effort"] = "max"
+        flow["roles"]["reviewer"]["effort"] = "xhigh"
+        flows.save("deep-review", flow)
+        flow["roles"]["coder"]["effort"] = "xhigh"
+        with self.assertRaises(ValueError):
+            flows.save("invalid-pi-effort", flow)
+
+    def test_claude_commit_verify_and_pi_delegate_bind_exact_sha(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        core.git(self.repo, "switch", "-c", "feature")
+        flow = flows.templates()["quick"]
+        flow["roles"]["reviewer"]["enabled"] = True
+        flows.save("quick", flow)
+        core.select_mode(self.repo, "quick")
+        core.confirm_billing(self.repo, core.execution_config(self.repo)[1])
+        (self.repo / "README.md").write_text("After from Claude\n")
+        core.git(self.repo, "add", "README.md")
+        core.git(self.repo, "commit", "-qm", "Claude implementation")
+        source = core.git(self.repo, "rev-parse", "HEAD")
+        review = core.submit(self.repo, self.task, kind="verify")
+        with patch.object(core.agents, "run_agent", side_effect=self.fake_agent) as agent:
+            core.execute(self.repo, review)
+        self.assertEqual(agent.call_count, 1)
+        self.assertEqual([a["role"] for a in review["agents"]], ["reviewer"])
+        self.assertEqual(core.handoff(self.repo, review)["head_sha"], source)
+        self.assertEqual(review["tested_sha"], review["reviewed_sha"])
+        delegate = core.submit(self.repo, dict(self.task, id="small-fix"), kind="delegate")
+        with patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
+            core.execute(self.repo, delegate)
+        self.assertEqual([a["runtime"] for a in delegate["agents"]], ["pi", "codex"])
+        self.assertEqual(delegate["source_sha"], source)
+        self.assertNotEqual(core.handoff(self.repo, delegate)["head_sha"], source)
+        self.assertEqual(core.git(self.repo, "rev-parse", "HEAD"), source)
+
+    def test_independent_pi_delegates_overlap_and_allow_new_submission(self):
+        self.assertEqual(cli.parser().parse_args(["work", "--run-id", "a", "--run-id", "b"]).run_id, ["a", "b"])
+        self.assertEqual(cli.parser().parse_args(["work"]).delegate_concurrency, 3)
+        with self.assertRaisesRegex(core.FlowError, "1..3"):
+            core.work(self.repo, once=True, delegate_concurrency=4)
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        tasks = []
+        for name, path in (("a", "docs/a.md"), ("b", "docs/b.md"),
+                           ("c", "docs/a.md"), ("d", "docs/d.md"), ("e", "docs/e.md")):
+            task = {"id": f"parallel-{name}", "title": f"Write {name}", "instructions": f"Create {path}.",
+                    "paths": [path], "tests": [[sys.executable, "-c",
+                    f"from pathlib import Path; assert Path('{path}').read_text() == 'After\\n'"]],
+                    "risk": "docs", "independent": True}
+            tasks.append(core.submit(self.repo, task, kind="delegate"))
+        entered, release = threading.Event(), threading.Event()
+        barrier = threading.Barrier(3, timeout=10)
+        errors = []
+
+        def agent(role, prompt, cwd, log, timeout):
+            if role["access"] == "edit":
+                if cwd.name.startswith(("parallel-a-", "parallel-b-", "parallel-d-")):
+                    barrier.wait()
+                    entered.set()
+                    if not release.wait(10):
+                        raise AssertionError("parallel agents did not finish")
+                path = ("docs/b.md" if cwd.name.startswith("parallel-b-") else
+                        "docs/d.md" if cwd.name.startswith("parallel-d-") else
+                        "docs/e.md" if cwd.name.startswith("parallel-e-") else "docs/a.md")
+                (cwd / "docs").mkdir(exist_ok=True)
+                (cwd / path).write_text("After\n")
+                text = "Done"
+            else:
+                text = json.dumps({"decision": "approve", "head_sha": core.git(cwd, "rev-parse", "HEAD"),
+                                   "risk": "low", "summary": "Reviewed", "findings": []})
+            return {"status": "ok", "text": text, "session_id": "fake", "usage": None, "detail": ""}
+
+        def worker():
+            try:
+                core.work(self.repo, once=True, poll=0.1, run_id=[run["id"] for run in tasks])
+            except BaseException as exc:
+                errors.append(exc)
+
+        with patch.object(core.agents, "run_agent", side_effect=agent):
+            thread = threading.Thread(target=worker)
+            thread.start()
+            try:
+                self.assertTrue(entered.wait(10), "three Pi coders did not overlap")
+                time.sleep(0.25)  # Let the scheduler try to refill while all slots are occupied.
+                self.assertIn("3 running", progress.title_for(progress.rows(self.repo)))
+                for _ in range(20):
+                    try:
+                        with core.exclusive(self.repo):
+                            later = core.submit(self.repo, dict(tasks[1]["task"], id="parallel-later"), kind="delegate")
+                        break
+                    except core.FlowError as exc:
+                        if "Another flow command" not in str(exc):
+                            raise
+                        time.sleep(0.02)
+                else:
+                    self.fail("new work could not be submitted while Pi agents were active")
+                self.assertEqual(core.load(self.repo, tasks[2]["id"])["status"], "queued")
+                self.assertEqual(core.load(self.repo, tasks[4]["id"])["status"], "queued")
+            finally:
+                release.set()
+                thread.join(15)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        for run in tasks:
+            completed = core.load(self.repo, run["id"])
+            self.assertEqual(completed["status"], "verified")
+            self.assertEqual(core.handoff(self.repo, completed)["head_sha"], completed["tested_sha"])
+        self.assertEqual(later["status"], "queued")
+
+    def test_failed_external_verify_never_starts_a_coder(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        core.git(self.repo, "switch", "-c", "feature")
+        (self.repo / "README.md").write_text("Still wrong\n")
+        core.git(self.repo, "add", "README.md")
+        core.git(self.repo, "commit", "-qm", "Claude implementation")
+        run = core.submit(self.repo, self.task, kind="verify")
+        with patch.object(core.agents, "run_agent") as agent:
+            core.execute(self.repo, run)
+        agent.assert_not_called()
+        self.assertEqual(run["status"], "needs_human")
+        self.assertEqual(run["stage"], "external_fix")
+        with self.assertRaisesRegex(core.FlowError, "new verify"):
+            core.resume(self.repo, run["id"], True)
 
     def test_cli_mode_override_and_worker_target_do_not_consume_other_tasks(self):
         def call(*args):
@@ -131,6 +414,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(result["mode"], "opus-sol")
         self.assertTrue(result["billing"])
         call("confirm-billing", "--no-overage")
+        core.confirm_billing(self.repo, core.execution_config(self.repo, "economy")[1])
         other = core.submit(self.repo, self.task)
         task_file = self.repo / "task.json"
         core.atomic(task_file, self.task)
@@ -140,7 +424,7 @@ class FlowTests(unittest.TestCase):
             self.assertEqual(json.loads(call("mode"))["mode"], "opus-sol")
         with patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
             call("work", "--once", "--run-id", run["id"])
-        self.assertEqual(core.load(self.repo, run["id"])["status"], "verified")
+        self.assertEqual(core.load(self.repo, run["id"])["status"], "tested")
         self.assertEqual(core.load(self.repo, other["id"])["status"], "queued")
 
     def test_unknown_modes_and_obsolete_billing_evidence_fail_closed(self):
@@ -149,8 +433,7 @@ class FlowTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(core.FlowError):
                 core.submit(self.repo, self.task)
         core.select_mode(self.repo, "configured")
-        core.atomic(self.repo / ".maf-local.json", {"subscription_only_confirmed": True,
-                                                   "config_hash": core.digest(self.config)})
+        core.atomic(flows.home() / "billing.json", {"config_hash": core.digest(self.config)})
         with self.assertRaises(core.FlowError):
             core.billing_check(self.repo, self.config)
 
@@ -161,9 +444,10 @@ class FlowTests(unittest.TestCase):
             core.execute(self.repo, run)
         agent.assert_not_called()
 
-    def test_project_skill_registration_is_shared_idempotent_and_excluded(self):
-        result = skills.install(self.repo)
-        self.assertEqual(skills.install(self.repo), result)
+    def test_global_skill_registration_is_shared_and_idempotent(self):
+        home = Path(self.config_temp.name) / "home"
+        result = skills.install(home)
+        self.assertEqual(skills.install(home), result)
         paths = [Path(p) for p in result["skills"]]
         self.assertEqual(paths[0].resolve(), paths[1].resolve())
         for path in paths:
@@ -171,31 +455,36 @@ class FlowTests(unittest.TestCase):
             self.assertFalse(Path(os.readlink(path)).is_absolute())
             self.assertEqual((path / "SKILL.md").resolve().parents[2] / "flow.py",
                              Path(__file__).resolve().parents[1] / "flow.py")
-            core.git(self.repo, "check-ignore", str(path))
+        self.assertEqual(paths, [home / ".agents/skills/maf", home / ".claude/skills/maf"])
+        self.assertTrue((home / ".claude/skills/maf-plan/SKILL.md").is_file())
 
     def test_skill_registration_refuses_conflicts_and_redirected_parents(self):
-        folder = self.repo / ".claude" / "skills" / "maf"
+        home = Path(self.config_temp.name) / "home"
+        folder = home / ".claude" / "skills" / "maf"
         folder.mkdir(parents=True)
         with self.assertRaises(core.FlowError):
-            skills.install(self.repo)
-        self.assertFalse((self.repo / ".agents").exists())
+            skills.install(home)
+        self.assertFalse((home / ".agents").exists())
         folder.rmdir()
-        redirected = self.repo / ".agents"
-        redirected.symlink_to(self.repo / ".claude", target_is_directory=True)
+        redirected = home / ".agents"
+        redirected.symlink_to(home / ".claude", target_is_directory=True)
         with self.assertRaises(core.FlowError):
-            skills.install(self.repo)
+            skills.install(home)
         self.assertFalse(folder.exists())
 
     def test_invalid_tasks(self):
         for field, value in [("id", "../escape"), ("paths", ["../a"]), ("paths", ["/tmp/a"]),
-                             ("paths", [".git/config"]), ("tests", []), ("tests", ["pytest"]), ("risk", "safe")]:
+                             ("paths", [".git/config"]), ("tests", []), ("tests", ["pytest"]),
+                             ("risk", "safe"), ("independent", "yes")]:
             with self.subTest(field=field, value=value):
                 task = dict(self.task, **{field: value})
                 with self.assertRaises(core.FlowError):
                     core.validate_task(task)
+        with self.assertRaisesRegex(core.FlowError, "Only lightweight delegate"):
+            core.submit(self.repo, dict(self.task, independent=True))
 
     def test_no_implicit_billing_approval(self):
-        (self.repo / ".maf-local.json").unlink()
+        (flows.home() / "billing.json").unlink()
         run = core.submit(self.repo, self.task)
         with self.assertRaises(core.FlowError), patch.object(core.agents, "run_agent") as agent:
             core.execute(self.repo, run)
@@ -262,15 +551,17 @@ class FlowTests(unittest.TestCase):
         core.atomic(self.repo / ".maf.json", self.config)
         with self.assertRaises(core.FlowError):
             core.verified(self.repo, run)
-        with self.assertRaises(core.FlowError):
-            core.billing_check(self.repo, self.config)
+        core.billing_check(self.repo, self.config)
 
     def test_repair_budget_is_bounded(self):
         self.task["tests"] = [[sys.executable, "-c", "raise SystemExit(1)"]]
+        self.task["risk"] = "manual"
         run = core.submit(self.repo, self.task)
+        run = core.approve(self.repo, run["id"])
         with patch.object(core.agents, "doctor_role", return_value=[]), patch.object(core.agents, "run_agent", side_effect=self.fake_agent) as agent:
             core.process(self.repo, run)
         self.assertEqual(run["status"], "needs_human")
+        self.assertIsNotNone(run["approval"]["approved_at"])
         self.assertEqual(agent.call_count, self.config["max_repairs"] + 1)
 
     def test_test_command_cannot_mutate_verified_tree(self):
@@ -349,6 +640,14 @@ class FlowTests(unittest.TestCase):
     def test_all_shipped_presets_validate(self):
         for preset in core.PRESETS:
             core.validate_config(self.repo, core.default_config(preset))
+        invalid = core.default_config("economy")
+        invalid["roles"]["reviewer"]["enabled"] = "yes"
+        with self.assertRaises((core.FlowError, ValueError)):
+            core.validate_config(self.repo, invalid)
+        invalid = core.default_config("economy")
+        invalid["roles"]["coder"]["enabled"] = True
+        with self.assertRaises(core.FlowError):
+            core.validate_config(self.repo, invalid)
         with self.assertRaises(core.FlowError):
             core.default_config("hermes")
 
@@ -366,10 +665,10 @@ class FlowTests(unittest.TestCase):
         self.assertTrue(core.matches("docs/deep/a.md", ["docs/**/*.md"]))
         self.assertTrue(core.matches("docs/a.md", ["docs/**/*.md"]))
         for name in ("secrets", "payments", "orders", "deployments", "policies"):
-            self.assertIsNotNone(github.PROTECTED_WORDS.search(f"docs/usage/{name}.md"))
+            self.assertIsNotNone(core.SENSITIVE_WORDS.search(f"docs/usage/{name}.md"))
 
     def test_corrupt_attestation_and_run_are_reported(self):
-        core.atomic(self.repo / ".maf-local.json", None)
+        core.atomic(flows.home() / "billing.json", None)
         with self.assertRaises(core.FlowError):
             core.billing_check(self.repo, self.config)
         run = core.submit(self.repo, self.task)

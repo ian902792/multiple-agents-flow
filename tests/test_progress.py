@@ -12,7 +12,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from maf import cli, core, progress
+from maf import cli, core, flows, progress
 
 TODO = ("# Todo\r\n\n- [x] Old work <!-- maf:old-task -->\n"
         "- [ ] Improve docs <!-- maf:improve-docs -->\n- [ ] Unrelated item\n\tindented\n")
@@ -23,17 +23,25 @@ class ProgressTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        self.config_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.config_temp.cleanup)
+        env = patch.dict(os.environ, {"XDG_CONFIG_HOME": self.config_temp.name})
+        env.start()
+        self.addCleanup(env.stop)
         self.repo = Path(self.temp.name)
         subprocess.run(["git", "init", "-q", "-b", "main", str(self.repo)], check=True)
         core.git(self.repo, "config", "user.email", "test@example.invalid")
         core.git(self.repo, "config", "user.name", "Flow Test")
         (self.repo / "README.md").write_text("Before\n")
-        (self.repo / ".gitignore").write_text("__pycache__/\n.maf-local.json\n")
+        (self.repo / ".gitignore").write_text("__pycache__/\n")
         self.todo = self.repo / "todo.md"
         self.todo.write_bytes(TODO.encode())
         self.commit("Initial")
         core.init(self.repo, "economy")
+        core.select_mode(self.repo, "configured")
         self.config = core.config_for(self.repo)
+        self.config["roles"]["reviewer"]["enabled"] = True
+        core.atomic(self.repo / ".maf.json", self.config)
         core.confirm_billing(self.repo, self.config)
         self.task = {"id": "improve-docs", "title": "Improve docs", "instructions": "Add usage paragraph.",
                      "paths": ["README.md"], "tests": [[sys.executable, "-c", "from pathlib import Path; assert 'After' in Path('README.md').read_text()"]],
@@ -254,17 +262,61 @@ class ProgressTests(unittest.TestCase):
                 return json.dumps({"result": {"root_pane": {"pane_id": "w2:p2"}, "workspace": {"workspace_id": "w2"}}})
             return "{}"
         with patch.dict(os.environ, {"HERDR_ENV": "1", "HERDR_PANE_ID": "w1:p1"}), patch.object(core, "command", side_effect=command):
+            with self.assertRaisesRegex(core.FlowError, "integration is off"):
+                cli.launch_herdr(self.repo)
+            self.assertEqual(calls, [])
+            flows.set_herdr(True)
             result = cli.launch_herdr(self.repo)
         self.assertEqual(result["planner_pane"], "w1:p1")
         self.assertEqual(calls[0], ["herdr", "pane", "get", "w1:p1"])
         launch = calls[-1]
         self.assertEqual(launch[:4], ["herdr", "pane", "run", "w2:p2"])
-        self.assertEqual(shlex.split(launch[-1])[-3:], ["work", "--planner-pane", "w1:p1"])
+        self.assertEqual(shlex.split(launch[-1])[-4:], ["work", "--planner-pane", "w1:p1", "--agent-panes"])
         self.assertIn("--no-focus", calls[-2])
         with patch.dict(os.environ, {"HERDR_ENV": "1", "HERDR_PANE_ID": ""}), patch.object(core, "command") as command:
             with self.assertRaises(core.FlowError):
                 cli.launch_herdr(self.repo)
         command.assert_not_called()
+
+    def test_agent_pane_shows_live_log_and_closes_only_its_own_pane(self):
+        flows.set_herdr(True)
+        calls = []
+        def command(argv, *_args, **_kwargs):
+            calls.append(argv)
+            if argv[:3] == ["herdr", "pane", "split"]:
+                splits = sum(call[:3] == ["herdr", "pane", "split"] for call in calls)
+                return json.dumps({"result": {"pane": {"pane_id": f"w1:p{splits + 1}"}}})
+            return "{}"
+        live = core.run_path(self.repo, "sample-run").parent / "coder.live"
+        other_live = core.run_path(self.repo, "other-run").parent / "coder.live"
+        with patch.dict(os.environ, {"HERDR_ENV": "1", "HERDR_PANE_ID": "w1:p1"}), \
+                patch.object(core, "command", side_effect=command):
+            with progress.agent_pane(self.repo, "MAF coder", self.repo, live, True) as pane:
+                self.assertEqual(pane, "w1:p2")
+                self.assertTrue(live.exists())
+                with progress.agent_pane(self.repo, "MAF other coder", self.repo, other_live, True) as other:
+                    self.assertEqual(other, "w1:p3")
+                    self.assertTrue(other_live.exists())
+        self.assertEqual(calls[0], ["herdr", "pane", "get", "w1:p1"])
+        self.assertEqual(calls[1][:5], ["herdr", "pane", "split", "w1:p1", "--direction"])
+        self.assertIn("--no-focus", calls[1])
+        self.assertEqual(calls[2][:4], ["herdr", "pane", "rename", "w1:p2"])
+        self.assertEqual(calls[3][:4], ["herdr", "pane", "run", "w1:p2"])
+        self.assertEqual(shlex.split(calls[3][-1])[-2:], ["live-view", str(live)])
+        self.assertEqual([call for call in calls if call[:3] == ["herdr", "pane", "close"]],
+                         [["herdr", "pane", "close", "w1:p3"], ["herdr", "pane", "close", "w1:p2"]])
+        self.assertFalse(any(argv[-1] == "w1:p1" for argv in calls if argv[:3] == ["herdr", "pane", "close"]))
+
+    def test_live_event_shows_status_without_agent_content(self):
+        event = json.dumps({"type": "item.started", "item": {"type": "command_execution", "name": "Read",
+                                                         "text": "private prompt"}, "status": "running"}).encode()
+        self.assertEqual(progress.live_event(event), "item.started command_execution Read running")
+        self.assertEqual(progress.live_event(b"secret stderr text\n"), "unstructured output")
+        self.assertEqual(progress.live_event(b'{"type":"result","subtype":"success","result":"private"}'),
+                         "result success")
+        self.assertEqual(progress.live_event(b'{"type":"assistant","message":{"content":['
+                                             b'{"type":"tool_use","name":"Read","input":{"secret":"private"}}]}}'),
+                         "assistant Read")
 
     def test_main_pane_monitor_runs_during_work_and_stops_on_failure(self):
         started, finished = threading.Event(), threading.Event()
@@ -295,6 +347,7 @@ class ProgressTests(unittest.TestCase):
 
     def test_herdr_pane_metadata_is_explicit_and_refreshed(self):
         core.submit(self.repo, self.task)
+        flows.set_herdr(True)
         original, calls = core.command, []
         def fake(argv, cwd, **kwargs):
             if argv[0] == "herdr":
@@ -313,9 +366,13 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(len(reports), 2)  # Unchanged display still renews the TTL every poll.
         self.assertEqual(reports[0][3:7], ["pane-1", "--source", "maf-progress", "--title"])
         self.assertEqual(reports[0][8:], ["--ttl-ms", "20000"])
-        self.assertIn("0/1 verified", reports[0][7])
+        self.assertIn("0/1 done", reports[0][7])
         self.assertIn("queued coding improve-docs", reports[0][7])
         self.assertFalse(any("input" in argv or "send" in argv or "kill" in argv for argv in calls))
+        flows.set_herdr(False)
+        with patch.object(core, "command") as command, self.assertRaisesRegex(core.FlowError, "integration is off"):
+            progress.report_pane(self.repo, "pane-1", "status")
+        command.assert_not_called()
 
     def test_duplicate_id_with_different_description(self):
         run = self.verified_run()

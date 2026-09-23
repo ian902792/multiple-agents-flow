@@ -1,28 +1,32 @@
 # v0.1 implementation contract
 
-Python 3.11+ stdlib. No server, web UI, API subscription proxy, or automatic installation.
-Herdr runs a persistent ordinary supervisor command in an explicitly created workspace.
+Python 3.11+ stdlib. Local-only web UI edits user-wide flows and settings; no API subscription proxy.
+Herdr is opt-in and runs a persistent ordinary supervisor command in an explicitly created workspace.
 Native agent CLIs run as bounded subprocesses, with structured output captured to private logs.
-One implementation lane initially; planner/coder/reviewer are independently configured roles.
-The economy preset uses Astra for optional planning and Pi/DeepSeek for coding and review, with one repair.
-The opus-sol preset uses Claude Opus 5 coding and Codex Sol review. Risk never overrides the reviewer role.
-The main-chat skill reuses the host's planning and does not invoke an extra planner.
+Independent Pi or Antigravity delegates can occupy up to three execution lanes; planner/coder/reviewer are independently configured roles.
+The economy preset uses Astra for optional planning and Pi/DeepSeek for coding, with one repair. The opus-sol preset uses Claude Opus 5.5 coding and a configured Codex Sol reviewer. Independent review is disabled until explicitly enabled in the selected flow.
+Claude is the main developer. Only the manually invoked `/maf-plan` skill calls the read-only Codex planner.
 
 ## Files and ownership
 
-- `maf/agents.py`: runtime adapters and result parsing (Codex, Claude, Pi, Hermes).
+- `maf/agents.py`: runtime adapters and result parsing (Codex, Claude, Pi, Hermes, Antigravity).
 - `maf/core.py`: config/task validation, atomic state, worktree, stage machine, tests.
 - `maf/github.py`: publication and conservative exact-SHA merge policy.
 - `maf/progress.py`: read-only terminal summary, optional Herdr pane metadata, todo.md checklist projection.
 - `maf/cli.py`: CLI and Herdr launcher.
-- `maf/skills.py`: project-only Claude/Codex discovery links; refuses conflicting skills and redirected parents.
+- `maf/flows.py`: user-wide named role profiles, default flow and Herdr setting; `.maf.json` is optional project policy.
+- `maf/ui.py` and `maf/static/index.html`: loopback-only flow, default and integration settings editor; `maf/static/guide.html` separately explains setup, commands and design. No project mode switching or run control.
+- `maf/skills.py`: one-time user-wide Claude/Codex discovery links; refuses conflicting skills and redirected parents.
 - `skills/maf/SKILL.md`: shared main-chat workflow, referenced by both hosts using relative symlinks.
+- `skills/maf-plan/SKILL.md`: Claude manual-only planner entrypoint.
 - `tests/`: stdlib unittest, fake subprocesses and temporary Git repositories, no model charges.
-- `README.md`: Traditional Chinese quickstart, walkthrough, safety and recovery.
+- `README.md`: human-oriented Traditional Chinese overview and quickstart.
+- `docs/CLI.md`: direct commands, task format, approval and recovery reference.
+- `docs/AGENT-INSTRUCTIONS.md`: optional personal Claude instruction template.
 
 ## Agent adapter contract
 
-`run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int) -> dict`
+`run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int, *, live_log: Path | None = None) -> dict`
 
 Return keys: `status` (`ok`, `quota`, `blocked`, `error`), `text` (final response only),
 `session_id` (string or null), `usage` (provider-reported dict or null), `detail` (brief).
@@ -30,13 +34,19 @@ No implicit latest-session resume. Reviewer is a new session every time.
 Pi usage sums assistant message_end usage across all model calls, excluding agent_end copies. Missing or
 truncated counts remain unknown; cache and reasoning counters are not added again to output/total.
 Timeout results retain only usage already emitted, not an estimate of unreported usage.
-`role` fields: `runtime`, `model`, `provider`, optional `profile`, `access` (`read`/`edit`).
+`role` fields: `runtime`, `model`, `provider`, optional `profile`, `access` (`read`/`edit`). Reviewer alone may carry boolean `enabled`; missing means disabled.
 Optional `effort`: low/medium/high. Model IDs are configurable but cannot contain provider prefixes.
 Allowed subscription routes: Codex ChatGPT login; Claude first-party subscription login;
-Pi OpenCode Go; Hermes explicitly OpenCode Go. No arbitrary commands, CLI extra args or endpoints.
-Hermes currently supports coder/edit only, with native safe mode and file toolset. The shipped
+Pi OpenCode Go; Hermes explicitly OpenCode Go; Antigravity signed-in Google account. No arbitrary CLI extra args or endpoints.
+Hermes and Antigravity support coder/edit only. Antigravity uses `agy` NDJSON stdin/stdout,
+`--sandbox`, `--mode accept-edits`, and a pinned model/effort. Before inference it rejects
+`modelProvider` API-key routing and preapproved CLI tools, and checks `agy models` for the exact
+model. Its terminal `result` must be `SUCCESS` and its `init.permission_mode` must be
+`request-review`. Headless Antigravity has no native file-only tool list; the worker asks it
+to use file tools, runs trusted repositories only, and independently checks changed paths.
+Hermes uses native safe mode and file toolset. The shipped
 alternative is `hermes-coder`, not a misleading full-Hermes preset that cannot constrain a reviewer.
-Codex uses JSONL, Claude JSON, Pi JSONL; Hermes stream JSON shape must be verified before declaring support.
+Codex, Claude, Pi and Antigravity use JSONL; Hermes stream JSON shape must be verified before declaring support.
 Adapters must not mistake exit code 0 for a successful model turn (especially quota/error events).
 Pi 0.85.1 的最後 assistant 必須 `stop` 且其後有本輪最終 `agent_settled`；舊 settled 或
 低層 `agent_end`（可能早於 retries）不能證明完成。Claude `--restricted --safe-mode` 停用自動
@@ -50,14 +60,19 @@ Bounded subprocess timeouts terminate their own process group; do not kill unrel
 
 ## State and CLI
 
-Tracked `.maf.json` holds roles and policy. Untracked `.maf-local.json` holds a human's
-confirmation that provider extra usage / Go Use balance are disabled. This is attestation,
-not a remotely enforceable spending cap. `config_hashes` remembers each explicitly confirmed effective
-configuration. A former singular `config_hash` is not accepted or migrated into approval.
-No model invocation until the exact execution configuration is confirmed.
-`maf/mode.json` under the common Git directory stores the local default mode, initially `configured`.
-Named modes replace only roles; policy/timeouts stay in `.maf.json`. Submit snapshots the effective config
-and selected mode, with `config_hash` separately binding the base `.maf.json`. Changing selection never
+Optional tracked `.maf.json` holds project roles and policy. Without it, built-in policy chooses
+local `main`, then `master`, then the current branch as base. Global `billing.json` holds a human's
+confirmation that provider extra usage / Go Use balance are disabled for each active role/model set. A disabled reviewer does not participate in billing checks or doctor auth checks.
+This is attestation, not a remotely enforceable spending cap. No model invocation until that
+role/model set is confirmed. Project policy changes still invalidate existing runs, but do not
+require billing reconfirmation if model routes are unchanged.
+`maf/mode.json` under the common Git directory stores an optional project override. Without it,
+new work uses the global default flow. `mode default` removes the override.
+`$XDG_CONFIG_HOME/multiple-agents-flow/flows.json` (default `~/.config/multiple-agents-flow/flows.json`)
+stores editable user-wide named flows; built-in `quick`, `planned`, and `quick-antigravity` are available without writing that file.
+The adjacent `settings.json` holds `default_flow` (default `quick`) and `herdr_enabled` (default false). Import/export uses explicit JSON.
+Named modes replace only roles; policy/timeouts stay in the optional `.maf.json` or built-in defaults. Submit snapshots the effective config
+and selected mode, with `config_hash` separately binding the project policy. Changing selection never
 rewrites a run or invalidates its verification; changing base configuration still invalidates existing runs.
 Runs without an explicit supported mode cannot replay models under the new routing rules; inspect and
 submit a new task instead. Existing evidence remains readable, with no migration or silent role substitution.
@@ -65,38 +80,61 @@ Private state under the repository's common Git directory `maf/runs/<id>`; atomi
 Worktrees under the target repository `.maf-worktrees/`, excluded through Git info/exclude;
 never under `.git`, because native agent safety modes correctly deny edits there.
 Task JSON: `id`, `title`, `instructions`, `paths` (explicit relative path/glob allowlist),
-`tests` (nonempty arrays of argv arrays), `risk` (`manual`, `docs`, `style`, `tests`).
+`tests` (nonempty arrays of argv arrays), `risk` (`manual`, `docs`, `style`, `tests`), and optional
+boolean `independent` for Pi or Antigravity delegates.
 Task/config snapshots pin each run. Worktrees and branches are unique; never overwrite/reuse unrelated ones.
 
-Commands: `install-skills`, `init`, `mode`, `doctor`, `confirm-billing`, `plan`, `submit`, `work`, `status`, `progress`, `resume`,
-`publish`, `merge`, `herdr` (launch work in new no-focus Herdr workspace).
-`submit` only queues. `work --once` executes one runnable task; `work` polls local state.
+Commands: `install-skills`, `settings`, `init`, `mode`, `flows`, `flow-save`, `ui`, `doctor`, `confirm-billing`, `plan`,
+`submit`, `delegate`, `verify`, `approve`, `work`, `status`, `handoff`, `progress`, `resume`, `publish`, `merge`, `herdr`.
+`submit` only queues. `work --once` executes one runnable task or one parallel wave of eligible lightweight
+delegates; with repeated `--run-id`, it drains those IDs once each. `work` polls local state.
 `submit --mode NAME` overrides the mode for one task without changing the local default.
-`work --once --run-id ID` processes only that run, never another queued task and never implicitly replays
-an interrupted stage. The skill uses this form after submit/resume. Selection changes still use the writer lock.
-`install-skills` registers one shared skill in `.agents/skills/maf` and `.claude/skills/maf` in a Git repository,
-never user-wide configuration. External-repo registration paths are locally excluded from Git.
-Execution: queued -> coding -> testing -> reviewing -> verified -> PR / needs-human / merged.
+`work --once --run-id ID` processes only that run; repeating `--run-id` names a bounded set without
+consuming other queued tasks. Interrupted stages are never implicitly replayed. `--delegate-concurrency N`
+sets the Pi/Antigravity delegate limit from 1 to 3 (default 3). The skill uses explicit IDs after delegation.
+Selection changes still use the repository writer lock.
+`install-skills` registers one shared skill in the user's `~/.agents/skills/maf` and `~/.claude/skills/maf`,
+plus manual-only `~/.claude/skills/maf-plan`. Global commands, including default-flow billing confirmation, work outside a Git repository; `mode` remains per repository.
+Execution: awaiting_approval (when required) -> queued -> coding -> testing -> `tested` when review is off, or reviewing -> `verified` when review is on. Publishing requires the latter.
+The frozen task/config/mode/kind/source SHA/publication flags are hashed at submit. Sensitive/broad edit
+paths, shell tests and manual-risk batch runs wait for `approve RUN_ID`; callers can explicitly request the
+gate for semantic high-risk work. Approval checks the pristine worktree and exact frozen scope once before
+release. The worker ignores pending runs and rechecks the scope hash before execution/publication. Bounded
+repair within that scope needs no new approval. A coder escalation or reviewer manual-risk finding stops
+at `needs_human/replan`; resume cannot silently replay it. A changed scope requires a new run.
+`delegate` snapshots a fully clean current branch HEAD, runs the selected Pi or Antigravity coder in a new worktree, then tests and optionally reviews
+the resulting commit. It never integrates the result into the source branch. `verify` snapshots a fully clean
+current HEAD, checks the changed paths against an exact base/merge-base, and starts at testing without a coder.
+Failed tests or review of external work stop for Claude to fix and require a new run at the new SHA. `handoff`
+returns compact evidence only after the selected checks and worktree HEAD match; its `review` value is null when review is off.
+The scheduler runs up to three `independent: true` Pi or Antigravity delegates at once. Parallel eligibility
+requires narrow literal file paths, disjoint paths (case-insensitive comparison), the same source SHA,
+non-manual risk and no approval gate. An explicit marker is the caller's assertion that requirements and
+test resources are independent; the scheduler cannot infer semantic independence. Other runs remain serial.
+One worker lock prevents competing supervisors; the repository writer lock protects queue selection and
+serial execution, then is released during parallel delegate execution so more work can be submitted.
+Per-run locks prevent resume/publication of a run while its parallel worker is active. Worker interruption
+stops new scheduling and waits for active delegates to reach a safe checkpoint before exiting.
 Every agent stage records a running checkpoint BEFORE invocation, with an activity label,
 start time, timeout (including up to 60 seconds for auth), and diagnostic log path.
 Each test command records its own activity checkpoint. Agent attempts also record provider and elapsed time.
 Authentication is checked once by the adapter, not again by the supervisor. An interrupted/ambiguous stage
 requires explicit recovery acknowledgement; never blindly resend. Quota waits remain pinned
 to the same role; default requires user-supplied reset time before automatic retry.
-Bounded repair rounds, separate reviewer, exact tested SHA, clean tree required after verification.
+Bounded repair rounds, optional separate reviewer, exact tested SHA, clean tree required after completion.
 Planner outputs a plan for human inspection; its output cannot silently authorize task execution.
 
 ## Progress and checklist
 
 `progress [--watch] [--poll N] [--planner-pane ID] [--sync]` reads run state without the writer lock
 and without any model call. Completed candidates also pass the current evidence gate and bounded local Git
-reads (`core.verified`); matching saved SHAs alone never suffice. It shows stage/status, tested and reviewed SHAs, and `verified` and `merged`
+reads (`core.tested` or `core.verified`); matching saved SHAs alone never suffice. It shows stage/status, tested and reviewed SHAs, and `verified` and `merged`
 as separate columns; corrupt runs are listed, not skipped. Titles and feedback are stripped of control
 characters before printing. `--watch` prints only on change, sleeps the bounded poll interval, and exits
 cleanly on Ctrl-C. `--planner-pane` requires `HERDR_ENV=1` and an explicit live pane id verified with
 `herdr pane get`; each poll runs `herdr pane report-metadata PANE --source maf-progress --title TEXT
 --ttl-ms TTL` (max of 15000 and `(poll + 15) * 1000`) to renew the TTL even when the display is unchanged.
-Titles include verified/total and active stage/task. A disappearing pane disables metadata with a warning.
+Titles include completed/total, the concurrent running count when greater than one, and an active stage/task. A disappearing pane disables metadata with a warning.
 TTY widths below 100 use multiple lines wrapped to terminal width, including 38 columns; pipes retain the table.
 No input is sent and no agent
 lifecycle is touched; Herdr failures are warnings only.
@@ -105,9 +143,16 @@ next steps and per-attempt native usage; no prompt or transcript. It cannot be c
 Deadlines overdue by more than 15 seconds request inspection, not an inferred exit or permission to retry.
 Permission/auth stops, quota resets, exhausted repairs and publication recovery have distinct guidance.
 `herdr` validates the inherited HERDR_PANE_ID before creating its workspace and passes it to
-`work --planner-pane ID`. A local monitor thread reuses progress.show every five seconds while the worker
-holds the writer lock. It refreshes the main pane's metadata without injecting prompts or invoking models.
-The observer stops with the worker; no additional per-agent panes or streaming transcripts are needed.
+`work --planner-pane ID --agent-panes`. A local monitor thread reuses progress.show every five seconds while the worker
+runs. It refreshes the main pane's metadata without injecting prompts or invoking models.
+For each active coder/reviewer (and an explicitly invoked planner inside Herdr), MAF splits a no-focus pane
+from its own Herdr pane, labels it, and runs the private `live-view` observer. The adapter tees native
+stdout into a private live event file while retaining its bounded parser and final evidence log.
+The observer prints sanitized event names/tool types, not prompts or full transcripts. Only the pane ID
+returned by that split is closed after the role finishes; pane failures warn without replaying the agent.
+Agents still run as supervisor-owned subprocesses; Herdr's agent lifecycle display is not verification.
+Parallel Pi or Antigravity delegates can show multiple observer panes at once. A manually invoked `work` needs
+`--agent-panes` to opt in; plain `work` keeps its previous terminal behavior.
 Successful test logs stay in local evidence; review prompts carry only argv, exit_code and log path.
 
 Checklist: a task opts in when the tracked, regular root `todo.md` has exactly one unchecked line
@@ -115,9 +160,9 @@ Checklist: a task opts in when the tracked, regular root `todo.md` has exactly o
 no marker means no integration, and runs without a snapshot need no migration. Task `paths` must not
 cover `todo.md` (no coder self-signoff); symlinks, untracked files and duplicate markers are rejected.
 After `process` returns, and on explicit `progress --sync` under the writer lock, a run whose status is
-past independent review (`verified`/`publishing`/`pr`/`merging`/`merged`, or `needs_human` only at one of those
-completed stages), whose full configured test list all passed, whose
-review approves the tested SHA and whose worktree HEAD still equals it (`core.verified`) has the exact
+`tested` or past independent review (`verified`/`publishing`/`pr`/`merging`/`merged`, or `needs_human` only at a
+completed stage), whose full configured test list all passed, and whose worktree HEAD still equals the
+tested SHA (`core.tested`), plus an approving review of that SHA when enabled (`core.verified`), has the exact
 snapshotted line replaced by `[x]` in the ROOT `todo.md`; all other bytes are preserved and the write is an
 atomic replace that refuses symlinks. A missing, edited or duplicated line fails closed with a visible
 warning; the outcome (`marked`, `already`, `failed` + detail) is recorded in `run.checklist.synced` without
@@ -125,8 +170,8 @@ touching status/stage or replaying agents. Retry is idempotent. Nothing is ever 
 同 task-id 的任何重複 marker 都拒絕，包括不同描述與已勾選行。寫入時再次確認 todo 已追蹤、
 根目錄位於設定 base branch；暫存內容 flush 後，在 os.replace 前立即重查一般檔案 identity／內容。
 未共用 writer lock 的編輯器仍可能在最後檢查與 replace 之間競爭，這個剩餘競態無法由 rename 消除。
-Git timeout／state-save OSError 只產生已清理控制字元的警告，保留 verified 狀態與原測試／審查證據。
-A checked box means tested and independently reviewed on the run worktree; it does NOT mean merged or
+Git timeout／state-save OSError 只產生已清理控制字元的警告，保留完成狀態與原測試／可選審查證據。
+A checked box means the selected test/review checks passed on the run worktree; it does NOT mean merged or
 released. The root `todo.md` becomes intentionally dirty: commit that progress record before the next
 `submit`; the clean-tree and merge checks are not relaxed.
 
@@ -135,7 +180,7 @@ released. The root `todo.md` becomes intentionally dirty: commit that progress r
 Push only owned branch without force. Reconcile existing PR after uncertain network outcomes.
 Default create draft PR. Publish on explicit command; automatic publication is an explicit
 per-submission flag. Auto merge is opt-in per task and requires nonempty approved path policy.
-Run tests on final commit; review attests same commit; base must still match remote base.
+Publishing requires enabled independent review. Run tests on final commit; review attests same commit; base must still match remote base.
 Required GitHub checks must pass (pending/failed/unknown block); no `--admin`, no bypass.
 General docs/static CSS/test-addition categories only; protected files deny before allow.
 AGENTS/CLAUDE/SOUL, workflow/policy, CI, dependencies, auth, finance/trading never low risk.
@@ -144,7 +189,7 @@ No auto merge based solely on model-supplied risk or completion text.
 
 ## Acceptance
 
-Offline fake-agent end-to-end coding -> command tests -> independent review -> verified.
+Offline fake-agent end-to-end coding -> command tests -> tested, or optional independent review -> verified.
 Recovery, quota, invalid reviewer JSON, stale commit, path escape, policy changes, empty tests,
 failed checks, base movement, and duplicate publication covered by runnable tests.
 Real subscription smoke only after billing confirmation. No claim that fake tests establish

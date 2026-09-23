@@ -17,15 +17,18 @@ import time
 from pathlib import Path
 
 # Fixed subscription routes (runtime -> provider). Model IDs come from config; only the token shape is checked.
-_ROUTES = {"codex": "chatgpt", "claude": "claude-subscription", "pi": "opencode-go", "hermes": "opencode-go"}
+_ROUTES = {"codex": "chatgpt", "claude": "claude-subscription", "pi": "opencode-go",
+           "hermes": "opencode-go", "antigravity": "google-account"}
 _OUTPUT_LIMIT = 8_000_000  # bytes kept per stream (tail); result events are at the end
-_ROLE_KEYS = {"runtime", "model", "provider", "profile", "access", "effort"}
+_ROLE_KEYS = {"runtime", "model", "provider", "profile", "access", "effort", "enabled"}
 _SAFE_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _QUOTA = re.compile(
     r"usage limit|rate[ _-]?limit|quota|too many requests|\b429\b|out of (?:extra )?usage"
     r"|hit your limit|monthly spend limit|session limit|insufficient (?:credits?|balance)|exhausted", re.I)
 _AUTH = re.compile(r"not logged in|log ?in|unauthori[sz]ed|authenticat|\b401\b|permission|approval", re.I)
-_SCRUB_PREFIX = ("ANTHROPIC_", "OPENAI_", "OPENCODE_", "OPENROUTER_", "AZURE_OPENAI_", "CLAUDE_", "PI_")
+_DENIED = re.compile(r"permission denied|approval required|requires approval|soft.denied|access denied|not allowed", re.I)
+_SCRUB_PREFIX = ("ANTHROPIC_", "OPENAI_", "OPENCODE_", "OPENROUTER_", "AZURE_OPENAI_", "CLAUDE_", "PI_",
+                 "GEMINI_", "GOOGLE_GEMINI_")
 _SCRUB_SUFFIX = ("_API_KEY", "_BASE_URL", "_AUTH_TOKEN", "_API_BASE")
 _SCRUB_EXACT = {"CLAUDECODE", "CODEX_API_KEY"}
 _KEEP = {"HERMES_HOME"}  # profile/home selection only; every other HERMES_* override is dropped
@@ -46,6 +49,8 @@ def validate_role(role) -> None:
     extra = set(role) - _ROLE_KEYS
     if extra:
         raise ValueError(f"unknown role keys: {sorted(extra)}")
+    if "enabled" in role and type(role["enabled"]) is not bool:
+        raise ValueError("enabled must be true or false")
     provider = _ROUTES.get(role.get("runtime"))
     if provider is None:
         raise ValueError(f"unsupported runtime: {role.get('runtime')!r}")
@@ -60,14 +65,17 @@ def validate_role(role) -> None:
     if profile is not None and (role["runtime"] != "hermes" or not isinstance(profile, str)
                                 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", profile)):
         raise ValueError("profile is only valid for hermes and must be a safe name")
-    if role.get("effort", "medium") not in ("low", "medium", "high"):
-        raise ValueError("effort must be low, medium or high")
+    efforts = ("low", "medium", "high", "xhigh", "max") if role["runtime"] in ("codex", "claude") else ("low", "medium", "high")
+    if role.get("effort", "medium") not in efforts:
+        raise ValueError(f"{role['runtime']} effort must be one of: {', '.join(efforts)}")
     if role["runtime"] == "hermes" and role["access"] == "read":
         # Verified in hermes-agent toolsets.py/model_tools.py/tools_config.py: every selection surface
         # (-t, platform_toolsets, agent.disabled_toolsets, `hermes tools disable`) works on toolset names;
         # `file` bundles read_file with write_file/patch and bare tool names are dropped as unknown.
         # Only a zero-tool session would be write-safe, and that cannot read the repository.
         raise ValueError("hermes has no native read-only toolset; only access 'edit' is supported")
+    if role["runtime"] == "antigravity" and role["access"] != "edit":
+        raise ValueError("antigravity has no native read-only toolset; only access 'edit' is supported")
 
 
 def _hermes_prefix(role):
@@ -83,7 +91,8 @@ def _argv(role: dict, timeout: int) -> list[str]:
                 "-c", 'model_reasoning_effort="' + effort + '"', "-"]
     if rt == "claude":
         tools = "Read,Glob,Grep" + (",Edit,Write" if edit else "")
-        return ["claude", "-p", "--output-format", "json", "--model", model, "--effort", effort, "--restricted", "--safe-mode",
+        return ["claude", "-p", "--output-format", "stream-json", "--verbose", "--model", model, "--effort", effort,
+                "--restricted", "--safe-mode",
                 "--tools", tools, "--allowedTools", tools, "--permission-mode", "acceptEdits",
                 "--permission-prompts", "none", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}']
     if rt == "pi":
@@ -91,18 +100,27 @@ def _argv(role: dict, timeout: int) -> list[str]:
         return ["pi", "--print", "--mode", "json", "--provider", "opencode-go", "--model", model,
                 "--thinking", effort, "--tools", tools, "--no-extensions", "--no-skills", "--no-prompt-templates",
                 "--no-context-files", "--no-approve", "--offline"]
+    if rt == "antigravity":
+        return ["agy", "--input-format", "stream-json", "--output-format", "stream-json",
+                "--disable-slash-commands", "--mode", "accept-edits", "--sandbox", "--model", model,
+                "--effort", effort, "--print-timeout", str(int(timeout)) + "s"]
     return _hermes_prefix(role) + ["chat", "--query-file", "-", "--oneshot", "--format", "stream-json",
                                    "--provider", "opencode-go", "--model", model, "--toolsets", "file",
                                    "--safe-mode", "--reasoning", effort, "--max-turns", "30", "--run-budget", str(int(timeout))]
 
 
-def _pump(stream, buf: bytearray):
+def _pump(stream, buf: bytearray, on_output=None):
     """Copy a pipe into buf, keeping only the last _OUTPUT_LIMIT bytes."""
     try:
         while chunk := stream.read1(65536):
             buf += chunk
             if len(buf) > _OUTPUT_LIMIT:
                 del buf[:len(buf) - _OUTPUT_LIMIT]
+            if on_output:
+                try:
+                    on_output(chunk)
+                except OSError:
+                    on_output = None  # The supervisor still drains and verifies the complete agent turn.
     except (OSError, ValueError):
         pass
     finally:
@@ -135,13 +153,13 @@ def _killpg(proc):
         proc.wait()
 
 
-def _exec(argv, *, stdin: str, timeout: float, cwd=None, on_start=None):
+def _exec(argv, *, stdin: str, timeout: float, cwd=None, on_start=None, on_output=None):
     """Run argv in its own process group. The group is killed on timeout, KeyboardInterrupt or any other
     exception; an escaped grandchild holding the pipes cannot hang the return. -> (rc, out, err, timed_out)."""
     proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             cwd=cwd, env=clean_env(), start_new_session=True)
     out, err, timed_out = bytearray(), bytearray(), False
-    threads = [threading.Thread(target=_pump, args=(proc.stdout, out), daemon=True),
+    threads = [threading.Thread(target=_pump, args=(proc.stdout, out, on_output), daemon=True),
                threading.Thread(target=_pump, args=(proc.stderr, err), daemon=True),
                threading.Thread(target=_feed, args=(proc.stdin, stdin), daemon=True)]
     try:
@@ -167,19 +185,36 @@ def _exec(argv, *, stdin: str, timeout: float, cwd=None, on_start=None):
 def _auth_problems(role: dict) -> list[str]:
     """Safe status-only auth checks (never prints or reads credentials)."""
     rt = role["runtime"]
-    binary = rt
+    binary = "agy" if rt == "antigravity" else rt
     if shutil.which(binary) is None:
         return [f"{binary} not found on PATH"]
-    argv = {"codex": ["codex", "login", "status"],
-            "claude": ["claude", "auth", "status", "--json"],
-            "pi": ["pi", "auth", "check", "--provider", "opencode-go", "--json"],
-            "hermes": _hermes_prefix(role) + ["auth", "status", "opencode-go"]}[rt]
+    if rt == "antigravity":
+        path = Path.home() / ".gemini" / "antigravity-cli" / "settings.json"
+        try:
+            settings = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return ["agy settings unavailable; cannot verify the account-only route"]
+        if (not isinstance(settings, dict) or settings.get("modelProvider") is not None
+                or settings.get("permissionMode", "request-review") != "request-review"
+                or not isinstance(settings.get("permissions", {}), dict)
+                or not isinstance(settings.get("permissions", {}).get("allow", []), list)
+                or settings.get("permissions", {}).get("allow")):
+            return ["agy must use its signed-in account without API-key routing or preapproved tools"]
+        argv = ["agy", "models"]
+    else:
+        argv = {"codex": ["codex", "login", "status"],
+                "claude": ["claude", "auth", "status", "--json"],
+                "pi": ["pi", "auth", "check", "--provider", "opencode-go", "--json"],
+                "hermes": _hermes_prefix(role) + ["auth", "status", "opencode-go"]}[rt]
     try:
         rc, out, err, timed_out = _exec(argv, stdin="", timeout=60)
     except OSError as e:
         return [f"{binary} auth check failed to start: {e}"]
     if timed_out or rc != 0:
         return [f"{binary} auth status exit {rc}{' (timeout)' if timed_out else ''}"]
+    if rt == "antigravity":
+        models = {line.split()[0] for line in out.splitlines() if line.split()}
+        return [] if role["model"] in models else [f"agy model {role['model']} is not available to this account"]
     if rt == "codex":  # codex prints status on stderr
         return [] if "Logged in using ChatGPT" in out + err else ["codex is not logged in with ChatGPT"]
     if rt == "claude":
@@ -318,7 +353,29 @@ def _parse_hermes(out):
     return _ok(r.get("text") or "", sid, usage)
 
 
-_PARSERS = {"codex": _parse_codex, "claude": _parse_claude, "pi": _parse_pi, "hermes": _parse_hermes}
+def _parse_antigravity(out):
+    events = _jsonl(out)
+    init = [e.get("init") for e in events if e.get("event") == "init"]
+    results = [e.get("result") for e in events if e.get("event") == "result"]
+    if len(init) != 1 or not isinstance(init[0], dict) or len(results) != 1 or not isinstance(results[0], dict):
+        return None
+    r = results[0]
+    sid, usage = r.get("conversation_id"), r.get("usage")
+    if init[0].get("permission_mode") != "request-review":
+        return _result("blocked", session_id=sid, usage=usage, detail="agy permission mode is not request-review")
+    for event in events:
+        step = event.get("step_update")
+        if isinstance(step, dict) and isinstance(step.get("tool_info"), dict):
+            error = step["tool_info"].get("error")
+            if error and _DENIED.search(json.dumps(error)):
+                return _result("blocked", session_id=sid, usage=usage, detail="agy tool permission was denied")
+    if r.get("status") != "SUCCESS":
+        return _classify(r.get("error") or f"agy status {r.get('status')}", sid, usage)
+    return _ok(r.get("response") or "", sid, usage)
+
+
+_PARSERS = {"codex": _parse_codex, "claude": _parse_claude, "pi": _parse_pi,
+            "hermes": _parse_hermes, "antigravity": _parse_antigravity}
 
 
 def _append_log(log: Path, text: str):
@@ -328,7 +385,7 @@ def _append_log(log: Path, text: str):
         f.write(text)
 
 
-def run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int) -> dict:
+def run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int, *, live_log: Path | None = None) -> dict:
     """Run one fresh agent session. Prompt goes over stdin; argv is fixed per role."""
     validate_role(role)
     problems = _auth_problems(role)
@@ -336,16 +393,35 @@ def run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int) -> di
         _append_log(log, "== blocked before inference ==\n" + "; ".join(problems) + "\n")
         return _result("blocked", detail="; ".join(problems))
     argv = _argv(role, timeout)
+    input_data = (json.dumps({"event": "user", "message": {"content": prompt}}) + "\n"
+                  if role["runtime"] == "antigravity" else prompt)
     # Live checkpoint before invocation: argv + pid only (prompt goes over stdin, never logged here).
     _append_log(log, f"== checkpoint ==\n{json.dumps({'argv': argv, 'started': time.time(), 'timeout': timeout})}\n")
     try:
-        rc, out, err, timed_out = _exec(argv, stdin=prompt, timeout=timeout, cwd=str(cwd),
-                                        on_start=lambda pid: _append_log(log, f"pid={pid}\n"))
+        if live_log is None:
+            rc, out, err, timed_out = _exec(argv, stdin=input_data, timeout=timeout, cwd=str(cwd),
+                                            on_start=lambda pid: _append_log(log, f"pid={pid}\n"))
+        else:
+            lock = threading.Lock()
+            with open(os.open(live_log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), "ab", buffering=0) as live:
+                def mirror(chunk):
+                    with lock:
+                        remaining = memoryview(chunk)
+                        while remaining:
+                            written = live.write(remaining)
+                            if not written:
+                                raise OSError("Live log write made no progress")
+                            remaining = remaining[written:]
+                rc, out, err, timed_out = _exec(argv, stdin=input_data, timeout=timeout, cwd=str(cwd),
+                                                on_start=lambda pid: _append_log(log, f"pid={pid}\n"),
+                                                on_output=mirror)
     except OSError as e:
         _append_log(log, f"== exit ==\nfailed to start: {e}\n")
         return _result("error", detail=f"failed to start {argv[0]}: {e}")
     _append_log(log, f"== exit ==\n{rc} timed_out={timed_out}\n== stdout ==\n{out}\n== stderr ==\n{err}\n")
     res = _PARSERS[role["runtime"]](out) or _classify(err.strip()[-300:] or f"exit {rc}: no result event")
+    if role["runtime"] == "antigravity" and res["status"] == "ok" and _DENIED.search(err):
+        res = _result("blocked", session_id=res["session_id"], usage=res["usage"], detail="agy tool permission was denied")
     if timed_out:
         return _result("error", session_id=res["session_id"], usage=res["usage"],
                        detail=f"timeout after {timeout}s; process group killed")

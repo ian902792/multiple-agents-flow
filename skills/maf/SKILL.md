@@ -1,12 +1,13 @@
 ---
 name: maf
-description: Set up and operate multiple-agents-flow in the main coding chat. Use for MAF setup, economy or Opus/Sol mode selection, delegated development, progress, and blocked-run recovery.
+description: Operate multiple-agents-flow from the main coding chat. Use for global or project flow selection, scoped Pi or Antigravity delegation, exact-commit verification, progress, and blocked-run recovery.
 ---
 
 # MAF
 
-Stay in the current conversation. Use its reasoning for planning; do not launch
-another planner or delegate orchestration. Follow the user's language.
+Stay in the current conversation. Claude is the main developer for ordinary
+tasks. Never call the Codex planner automatically: only the human's explicit
+`/maf-plan` invocation may do that. Follow the user's language.
 
 ## Locate and dispatch
 
@@ -14,52 +15,132 @@ Resolve this SKILL.md's real path (follow symlinks). The tool root is
 `parents[2]` of that file; the entrypoint is its `flow.py`. Use the current
 project's Git root as target unless the user names another repository. Tool
 and target may differ. Verify paths and quote each shell argument. Invoke
-`rtk proxy python3 <tool>/flow.py --repo <target> ...` for machine-readable output.
+`python3 <tool>/flow.py --repo <target> ...` for machine-readable output.
 Never ask the user to copy a shell function or hand-write task JSON.
 
 Claude uses `/maf <action>`; Codex CLI/IDE uses `/skills` to select `maf`, or
 `$maf <action>`. Do not promise `/maf` is a Codex built-in. Interpret arguments
-as a request, never as shell text. With no action, show mode and progress, or
-explain setup if `.maf.json` does not exist.
+as a request, never as shell text. With no action, show mode and progress.
 
 | Action | Operation |
 | --- | --- |
-| `setup [MODE]` | Initialize if needed, select mode, check readiness. |
-| `mode [MODE]` | Show or persist the default for new tasks. No inference. |
-| `run <requirement>` | Prepare an approved task, submit, execute that exact ID. |
+| `setup [MODE]` | Check readiness; optional mode sets a project override. |
+| `mode [MODE\|default]` | Show or persist a project override; `default` restores the global flow. No inference. |
+| `delegate <requirements>` | Give one or more bounded tasks to the selected lightweight coder, in separate worktrees. |
+| `verify <requirement>` | Test Claude's current committed HEAD; independently review only when the selected flow enables it. |
+| `handoff RUN_ID` | Read a completed run's concise exact-SHA evidence. |
+| `run <requirement>` | Explicit legacy batch run with a separate coder. |
+| `approve RUN_ID` | After the human accepts a frozen task plan, release its one-time execution gate. |
 | `status` | Read `progress --json`; summarize stage and blockers. |
 | `resume RUN_ID` | Diagnose, resolve authorized blockers, verify stopped processes, then resume. |
-| `install <repository>` | Run `install-skills` against that Git root to register this skill there. |
+| `install` | Register this skill once in the user's Claude and Codex skill directories. |
 
-Modes: `economy` = Pi/DeepSeek Flash coding + fresh Pi review;
-`opus-sol` = Claude Opus 5 coding + Codex Sol review;
-`hermes-coder` = Hermes coding + Pi review;
-`configured` = `.maf.json` roles. Tests run as approved commands without a
-tester model. Changing the main-chat model is a separate host UI action.
+Modes: `economy` = Pi/DeepSeek Flash coding;
+`opus-sol` = pinned Claude Opus 5.5 coding with Codex GPT-6 Sol available for review;
+`hermes-coder` = Hermes coding with Pi available for review;
+`configured` = project `.maf.json` roles when present, built-in economy otherwise.
+`quick`, `planned`, `quick-antigravity`, and user-created names are user-wide role
+profiles; use `flows` to inspect them. `quick-antigravity` uses the signed-in
+`agy` account with Gemini 3.8 Flash High for narrow coding tasks. Profiles select future
+MAF agents, not the current Claude session. Tests run as approved commands,
+without a tester model. Claude's `/model` and `/effort` control the main chat.
+The main Claude preference in built-in flows is `claude-opus-5-5`. Review is off
+unless `roles.reviewer.enabled` is true; do not turn it on without the user's request.
 
 ## Setup and mode
 
-1. Read target instructions and `.maf.json`. If absent, use `init --preset
-   economy` (or the requested preset; `configured` initializes with economy).
-   Never overwrite an existing config.
-2. Use `mode MODE` to select; `mode` alone reports effective roles and billing
-   readiness. Selection lives in private Git state, affects new submissions
-   only, and preserves existing runs. Do not edit `.maf.json` to switch modes.
-   `submit --mode MODE` overrides just one task.
+1. Read target instructions and `mode`. New Git repositories with an initial
+   commit use the global default flow immediately; do not create `.maf.json`
+   unless project policy needs its own base branch, protected paths, or timeouts.
+   Never overwrite an existing config. `ui` edits user-wide flows, the global
+   default and the optional Herdr setting; it never starts an agent.
+2. Use `mode MODE` only when a project needs an override; `mode default`
+   restores global selection. `mode` alone reports effective roles and billing
+   readiness. Project selection lives in private Git state, affects new
+   submissions only, and preserves existing runs. Do not edit `.maf.json` to
+   switch modes. `submit --mode MODE` overrides just one task.
 3. Run `doctor` for setup/readiness, not every status poll. It checks the
    selected mode without inference; it cannot prove model availability.
-4. If billing confirmation is missing, show exact provider/model routes and
+4. If billing confirmation is missing, show exact active provider/model routes and
    ask the human to confirm subscription coverage with extra usage / Go Use
-   balance disabled. Existing authorization for that exact configuration is
-   sufficient. Only then run `confirm-billing --no-overage`. Login success or
-   a setup request is not billing attestation. Approved configurations are
-   remembered, so switching back needs no repeated attestation.
+   balance disabled. Existing authorization for that exact role/model set is
+   sufficient. Only then run `confirm-billing --no-overage` with `--repo`
+   for a project override, or without it for the global default. Login success
+   or a setup request is not billing attestation. Approved role/model sets are
+   remembered globally, so switching back needs no repeated attestation.
 5. Report the mode and remaining blockers. No inference, commit, push, provider
-   setting change, or global agent configuration change during setup. Installing
-   in another project uses `install-skills`, then opens/reloads that project's
-   host session; never overwrite unrelated skills or install into user-wide paths.
+   setting change, or global agent configuration change during setup. The skill
+   is installed once for this user via `install-skills`; other Git projects need
+   no MAF configuration. Never overwrite unrelated skills.
 
-## Run
+## Claude-first work
+
+For ordinary tasks, implement in this Claude conversation. Do not start a
+separate Claude coder. Use the selected Pi or Antigravity coder only for narrow
+edits or test-writing tasks with explicit paths and approved test argv. The
+lightweight coder must not execute shell tests; the
+supervisor runs them. Do not delegate planning, broad integration, or final
+sign-off to the lightweight coder. Mark a delegated task `"independent": true` only when it has its own
+clear acceptance criteria, exact non-overlapping editable file paths, and no
+dependency on another task or shared test resource. Queue all independent tasks
+from the same clean HEAD before starting the worker. MAF runs up to three at once
+by default; broad, sensitive, or approval-gated work remains serial. Do not
+claim that parallel execution alone reduces total tokens.
+
+Before substantial work, show the concrete goal, editable paths, test argv,
+model roles, repair limit and any publication action once. Ask for a decision
+only if this plan is not already covered by the user's request or prior approval.
+After approval, continue within that scope without asking at each agent/test/
+repair step. Ordinary small tasks within the user's request need no extra prompt.
+Use `--require-approval` for security, permission, financial, deployment, data
+loss, or ambiguous requirements even if the file names look harmless. MAF also
+holds manual-risk batch tasks, sensitive/broad path scopes and shell verification
+commands automatically. An `awaiting_approval` run cannot start an agent or test.
+Read `status RUN_ID` and show its frozen instructions, paths, tests, roles and
+approval reasons. Invoke `approve RUN_ID` only after the human confirms that
+scope, or when their existing approval clearly covers this exact scope. Never
+approve a changed plan by inference. New paths, commands or requirements need
+a new task and approval. Approval is for local execution only; publication and
+merge still require their own explicit authorization.
+
+Prepare private task JSON with `id`, `title`, `instructions`, `paths`, `tests`,
+`risk`, and optional boolean `independent`, as described below. Keep it outside the Git worktree. Before
+`delegate` or `verify`, commit the current work and ensure the tree is fully
+clean; these commands snapshot exact HEAD. Do not stash or reset user changes.
+Read `mode` first. Follow the selected global or project flow; do not switch
+to another flow unless the user requests it.
+
+- `delegate <task-file> [--mode NAME]` queues the selected Pi or Antigravity coder in an isolated
+  worktree at HEAD. For multiple independent requirements, prepare and submit
+  each task before starting the worker. Resolve any `awaiting_approval` gate,
+  then run `work --once --run-id ID` with one `--run-id` per submitted task;
+  the worker runs eligible tasks concurrently and drains those IDs without
+  consuming unrelated queued work. Read each `handoff ID` after `tested` or `verified`
+  completion. Inspect each scoped diff and integrate its commit range into the
+  main branch yourself. A cherry-pick creates a new SHA, so run `verify` on
+  that combined commit before calling it complete.
+- `verify <task-file> [--base ANCESTOR] [--mode NAME]` tests the current HEAD
+  and calls the selected independent non-Claude reviewer only when enabled. By default it
+  compares with the merge-base of the configured base branch. For work on the
+  base branch, pass an exact ancestor with `--base`. Run its ID through
+  `work --once --run-id ID`; `handoff ID` gives the tested SHA and optional review.
+  On failure, Claude fixes the source branch, commits, and starts a new verify
+  run. Resolve any `awaiting_approval` gate before `work`. Never let a delegated coder
+  repair an external Claude commit.
+
+If the coder returns `MAF_NEEDS_HUMAN:` or the reviewer marks a security,
+permission or requirements finding as manual risk, stop and report the concrete
+question. Do not resume that run; settle the issue and submit a new scoped task.
+Ordinary test/review failures use the configured repair budget automatically.
+
+Only claim completion if `handoff` succeeds for the current exact commit.
+When review is off, report `tested` and do not claim independent review. When
+enabled and approved on the same SHA, report `verified`. Publish/auto-merge
+requires enabled independent review.
+If current HEAD has moved since submission, the evidence is for the earlier
+SHA; submit a new verify run. Never auto-publish or merge a delegated run.
+
+## Explicit batch run
 
 1. Read `mode` and `progress --json`. Honor billing/auth blockers. If a previous
    submission response was interrupted, inspect existing IDs before resubmitting.
@@ -70,27 +151,34 @@ tester model. Changing the main-chat model is a separate host UI action.
    relative edit scopes. Tests: nonempty argv arrays of trusted, approved project
    commands. Risk defaults `manual`; it controls merge eligibility, never the
    reviewer model. No dummy tests to satisfy the schema.
-4. Briefly state scope, coding/review models, and acceptance commands. Proceed
+4. Briefly state scope, coding model, optional reviewer, and acceptance commands. Proceed
    when authorized by the user or applicable project instructions. If approval
    is missing, prepare this concrete task before asking. Do not repeatedly ask
-   for authorization already given in the conversation.
+   for authorization already given in the conversation. Mark semantic high-risk
+   tasks with `--require-approval`.
 5. Save JSON in a private temporary file outside tracked files; call `submit
    <task-file>` (optionally the explicitly requested `--mode MODE`). Respect the
    clean tracked tree and configured base branch. If dirty, identify blocking
    files; do not stash, reset, or commit them automatically. Never add `--publish`
    or `--auto-merge` without explicit authorization.
-6. Capture the returned ID and run `work --once --run-id RUN_ID` through the
-   host's managed long-running command/session facility. Inside Herdr only,
-   with `HERDR_ENV=1` and inherited `HERDR_PANE_ID`, append `--planner-pane
-   <that-id>` for main-pane progress. Never guess pane IDs. If an existing worker
+6. Capture the returned ID. If status is `awaiting_approval`, inspect the frozen
+   run and release it as described above. Then run `work --once --run-id RUN_ID` through the
+   host's managed long-running command/session facility. Only if the user-wide
+   `settings` has `herdr_enabled=true` and this session is inside Herdr with
+   `HERDR_ENV=1` and inherited `HERDR_PANE_ID`, append `--planner-pane <that-id>`
+   for main-pane progress. Never guess pane IDs. If an existing worker
    owns the lock, inspect its status; do not start competing workers or resubmit.
+   If the human enabled Herdr and explicitly wants a visible agent pane for an
+   ad hoc run inside Herdr, add `--agent-panes`; the `herdr` supervisor launcher
+   enables these temporary observer panes automatically. They close after each
+   role, and their display is never verification evidence.
 7. Report meaningful progress in the main chat. Read `progress --json` at useful
    intervals or on request, not every few seconds through model turns. Herdr
    metadata polls locally without model calls; a worker does not automatically
    wake an idle chat. Do not detach using untracked `nohup` or promise persistence
    if the host cannot retain the command session.
-8. Read the final snapshot. Report ID, status/stage, coding/review models,
-   exact-SHA verification, blocker and next action. Verified is not merged;
+8. Read the final snapshot. Report ID, status/stage, coding model, optional reviewer,
+   exact-SHA test/review evidence, blocker and next action. Tested or verified is not merged;
    worker exit code zero alone is not success. Skip child transcripts unless
    needed for a specific failure.
 
@@ -114,4 +202,4 @@ reconciliation within existing authorization, never coder/reviewer replay.
 Explain the exact blocker and smallest required user action.
 
 The skill is an entrypoint, not a safety boundary. The supervisor owns worktrees,
-commits, tests, independent review, retries, and GitHub policy.
+commits, tests, optional independent review, retries, and GitHub policy.

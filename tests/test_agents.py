@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -13,6 +14,8 @@ CODEX = {"runtime": "codex", "provider": "chatgpt", "model": "gpt-6-astra", "acc
 CLAUDE = {"runtime": "claude", "provider": "claude-subscription", "model": "claude-opus-5", "access": "edit"}
 PI = {"runtime": "pi", "provider": "opencode-go", "model": "deepseek-v4.1-flash", "access": "read"}
 HERMES = {"runtime": "hermes", "provider": "opencode-go", "model": "glm-5.3", "access": "edit", "profile": "coder"}
+ANTIGRAVITY = {"runtime": "antigravity", "provider": "google-account", "model": "gemini-3.8-flash-high",
+               "access": "edit", "effort": "high"}
 FORBIDDEN = {"--yolo", "--dangerously-skip-permissions", "danger-full-access", "--bare", "--api-key",
              "bypassPermissions", "--approve", "-a"}
 AUTH_OK = {"codex": "Logged in using ChatGPT\n",
@@ -42,7 +45,7 @@ class FakeExec:
 
 class RoleValidation(unittest.TestCase):
     def test_valid_roles_and_configurable_models(self):
-        for role in (CODEX, CLAUDE, PI, HERMES, dict(CODEX, model="gpt-5.5-codex"), dict(CLAUDE, model="claude-sonnet-5"),
+        for role in (CODEX, CLAUDE, PI, HERMES, ANTIGRAVITY, dict(CODEX, model="gpt-5.5-codex"), dict(CLAUDE, model="claude-sonnet-5"),
                      dict(PI, model="glm-5.3", effort="high")):
             agents.validate_role(role)
 
@@ -54,6 +57,7 @@ class RoleValidation(unittest.TestCase):
             dict(HERMES, profile="../x"), dict(CODEX, profile="p"), dict(CODEX, runtime="opencode"), "codex",
             dict(PI, model="openai/gpt-6-astra"), dict(PI, model="glm-5.3:high"),
             dict(PI, model="deepseek-v4.1-flash\n"), dict(PI, effort="unlimited"),
+            dict(ANTIGRAVITY, provider="gemini-api"), dict(ANTIGRAVITY, access="read"),
         ]
         for role in bad:
             with self.subTest(role=role), self.assertRaises(ValueError):
@@ -69,7 +73,8 @@ class Environment(unittest.TestCase):
     def test_clean_env_scrubs_overrides(self):
         dirty = {"ANTHROPIC_API_KEY": "k", "ANTHROPIC_BASE_URL": "u", "OPENAI_API_KEY": "k", "OPENAI_BASE_URL": "u",
                  "OPENCODE_GO_API_KEY": "k", "CLAUDECODE": "1", "CLAUDE_CODE_USE_BEDROCK": "1",
-                 "FOO_API_KEY": "k", "BAR_BASE_URL": "u", "PI_API_KEY": "k", "HERMES_KANBAN_TASK": "1",
+                 "FOO_API_KEY": "k", "BAR_BASE_URL": "u", "PI_API_KEY": "k", "GEMINI_API_KEY": "k",
+                 "GOOGLE_GEMINI_BASE_URL": "u", "HERMES_KANBAN_TASK": "1",
                  "HERMES_YOLO": "1", "HERMES_HOME": "/h/.hermes", "PATH": "/bin", "HOME": "/h"}
         with mock.patch.dict(os.environ, dirty, clear=True):
             env = agents.clean_env()
@@ -102,6 +107,8 @@ class ArgvSafety(unittest.TestCase):
 
     def test_claude(self):
         argv = self.check(CLAUDE)
+        self.assertEqual(argv[argv.index("--output-format") + 1], "stream-json")
+        self.assertIn("--verbose", argv)
         self.assertEqual(argv[argv.index("--tools") + 1], "Read,Glob,Grep,Edit,Write")
         self.assertEqual(argv[argv.index("--allowedTools") + 1], "Read,Glob,Grep,Edit,Write")
         self.assertIn("--restricted", argv)
@@ -129,6 +136,40 @@ class ArgvSafety(unittest.TestCase):
         self.assertIn("--safe-mode", argv)  # no hooks, plugins, MCP servers, or user config customizations
         self.assertNotIn("terminal", argv)
         self.assertEqual(self.check({k: v for k, v in HERMES.items() if k != "profile"})[:2], ["hermes", "chat"])
+
+    def test_antigravity_uses_account_and_stdin_without_bypass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / ".gemini" / "antigravity-cli"
+            root.mkdir(parents=True)
+            (root / "settings.json").write_text("{}")
+            stream = jl({"event": "init", "init": {"permission_mode": "request-review"}},
+                        {"event": "result", "result": {"conversation_id": "agy-1", "status": "SUCCESS",
+                                                      "response": "Done", "usage": {"total_tokens": 12}}})
+            fake = FakeExec("gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n", (0, stream, "", False))
+            prompt = "Edit README; never print my prompt"
+            with mock.patch.object(Path, "home", return_value=Path(directory)), \
+                    mock.patch.object(agents, "_exec", fake), \
+                    mock.patch.object(agents.shutil, "which", return_value="/x"):
+                result = agents.run_agent(ANTIGRAVITY, prompt, Path(directory), Path(directory) / "log", 90)
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(fake.calls[0]["argv"], ["agy", "models"])
+            argv = fake.calls[1]["argv"]
+            self.assertEqual(argv[argv.index("--model") + 1], "gemini-3.8-flash-high")
+            self.assertIn("--sandbox", argv)
+            self.assertFalse(FORBIDDEN & set(argv))
+            self.assertNotIn(prompt, " ".join(argv))
+            self.assertEqual(json.loads(fake.calls[1]["stdin"])["message"]["content"], prompt)
+            self.assertEqual(agents._parse_antigravity(jl({"event": "init", "init": {"permission_mode": "always-proceed"}},
+                                                         {"event": "result", "result": {"status": "SUCCESS", "response": "Done"}}))["status"], "blocked")
+            self.assertEqual(agents._parse_antigravity(jl({"event": "init", "init": {"permission_mode": "request-review"}},
+                                                         {"event": "result", "result": {"status": "ERROR", "error": "quota exceeded"}}))["status"], "quota")
+            self.assertEqual(agents._parse_antigravity(jl({"event": "init", "init": {"permission_mode": "request-review"}},
+                                                         {"event": "step_update", "step_update": {"tool_info": {"error": "permission denied"}}},
+                                                         {"event": "result", "result": {"status": "SUCCESS", "response": "Done"}}))["status"], "blocked")
+            (root / "settings.json").write_text('{"modelProvider":"gemini"}')
+            with mock.patch.object(Path, "home", return_value=Path(directory)), \
+                    mock.patch.object(agents.shutil, "which", return_value="/x"):
+                self.assertIn("account", agents.doctor_role(ANTIGRAVITY)[0])
 
 
 class Parsers(unittest.TestCase):
@@ -158,6 +199,7 @@ class Parsers(unittest.TestCase):
                          "session_id": "s1", "usage": {"input_tokens": 1}})
         self.assertEqual(agents._parse_claude(ok)["text"], "done")
         self.assertEqual(agents._parse_claude(ok)["session_id"], "s1")
+        self.assertEqual(agents._parse_claude(json.dumps({"type": "system"}) + "\n" + ok)["text"], "done")
         quota = json.dumps({"type": "result", "subtype": "error_during_execution", "is_error": True,
                             "result": "Rate limit reached: out of extra usage", "session_id": "s2"})
         self.assertEqual(agents._parse_claude(quota)["status"], "quota")
@@ -321,6 +363,29 @@ class RunAgent(unittest.TestCase):
 
 
 class RealSubprocess(unittest.TestCase):
+    def test_agent_output_reaches_live_log_before_completion(self):
+        script = ("import json,time; "
+                  "print(json.dumps({'type':'thread.started','thread_id':'t'}), flush=True); "
+                  "time.sleep(.4); "
+                  "print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'done'}}), flush=True); "
+                  "print(json.dumps({'type':'turn.completed','usage':{}}), flush=True)")
+        with tempfile.TemporaryDirectory() as directory:
+            log, live = Path(directory) / "agent.log", Path(directory) / "agent.live"
+            result = []
+            with mock.patch.object(agents, "_auth_problems", return_value=[]), \
+                    mock.patch.object(agents, "_argv", return_value=[sys.executable, "-c", script]):
+                worker = threading.Thread(target=lambda: result.append(agents.run_agent(CODEX, "task", Path(directory), log, 5,
+                                                                                         live_log=live)))
+                worker.start()
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline and (not live.exists() or b"thread.started" not in live.read_bytes()):
+                    time.sleep(.01)
+                self.assertTrue(worker.is_alive())
+                worker.join(5)
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(result[0]["status"], "ok")
+            self.assertIn(b"turn.completed", live.read_bytes())
+
     def test_timeout_kills_own_process_group(self):
         rc, out, err, timed_out = agents._exec(["sh", "-c", "sleep 30 & echo $!; wait"], stdin="", timeout=0.3)
         self.assertTrue(timed_out)

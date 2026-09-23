@@ -7,6 +7,7 @@ import math
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -22,8 +23,8 @@ TODO = "todo.md"
 MARKER = re.compile(r"^\s*- \[( |x)\] .*<!-- maf:([a-z][a-z0-9-]{0,39}) -->\s*$")
 CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 PANE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
-# Stages past independent review. Checked never means merged; merged is its own column.
-DONE = ("verified", "publishing", "pr", "merging", "merged")
+# Completed stages. Checked never means merged; merged is its own column.
+DONE = ("tested", "verified", "publishing", "pr", "merging", "merged")
 COLUMNS = ("task", "run", "stage", "status", "tested", "reviewed", "verified", "merged", "checklist")
 TTL_MS = 15000
 COMPACT_WIDTH = 100
@@ -90,28 +91,26 @@ def snapshot(repo, task):
 
 
 def completed(run):
-    """Agent stages are finished: stage is past independent review and status is either past review or a
-    publish/merge stop (needs_human). Incomplete coding/testing/reviewing never qualifies, whatever the status."""
+    """Agent stages finished with test evidence, and review evidence when selected."""
     return run.get("stage") in DONE and (run.get("status") in DONE or run.get("status") == "needs_human")
 
 
 def eligible(repo, run):
-    """Evidence gate: passing tests, independent approval and the current worktree HEAD bind to one SHA."""
+    """Evidence gate: passing tests and optional review bind to the current HEAD."""
     if not completed(run):
-        raise core.FlowError(f"Run is {run.get('stage')}/{run.get('status')}; only tested and independently reviewed runs are projected.")
+        raise core.FlowError(f"Run is {run.get('stage')}/{run.get('status')}; only completed runs are projected.")
     tests = run.get("tests") or []
     if (not tests or any(type(item.get("exit_code")) is not int or item["exit_code"] != 0 for item in tests)
             or [item.get("argv") for item in tests] != run["task"]["tests"]):
         raise core.FlowError("No passing test evidence.")
-    head, review = run.get("tested_sha"), run.get("review") or {}
-    core.review_result(json.dumps(review), head)
-    if (not head or review.get("decision") != "approve" or review.get("head_sha") != head
-            or review.get("findings") or run.get("reviewed_sha") != head):
-        raise core.FlowError("Independent approval does not bind to the tested SHA.")
+    if not core.review_enabled(run["config"]):
+        if run["stage"] != "tested" or run.get("review") or run.get("reviewed_sha"):
+            raise core.FlowError("Test-only run has inconsistent review state.")
+        return core.tested(repo, run)
     return core.verified(repo, run)
 
 
-def verified_now(repo, run):
+def eligible_now(repo, run):
     """Display-only re-check of the evidence gate with cheap local Git reads. Never raises, never writes."""
     try:
         eligible(repo, run)
@@ -234,9 +233,15 @@ def diagnostics(run):
             result["next"] = f"Wait until confirmed reset {reset}; worker will retry."
         else:
             result.update(attention=True, next="Confirm quota reset and stopped process, then " + resume + " [--after TIME_WITH_ZONE].")
+    elif status == "awaiting_approval":
+        result.update(attention=True, next=f"Inspect status {clean(run['id'], 80)} (task, paths, tests, roles); then approve {clean(run['id'], 80)} once.")
     elif status in ("needs_human", "creating"):
         result["attention"] = True
-        if stage in DONE:
+        if stage == "replan":
+            result["next"] = "Requirements or security risk need a human decision; submit a new scoped task after resolving it."
+        elif stage == "external_fix":
+            result["next"] = "Fix the source branch, commit, and start a new verify run for the new SHA."
+        elif stage in DONE:
             result["next"] = "Inspect feedback; reconcile with publish/merge. Do not replay agents."
         elif run.get("repairs", 0) > run["config"]["max_repairs"]:
             result["next"] = "Repair budget exhausted. Ask planner to diagnose the failure and submit a new scoped task."
@@ -252,7 +257,7 @@ def row_for(repo, run):
     """Evidence-only row: verified means the gate passes right now on the run worktree; merged means GitHub confirmed."""
     if run.get("status") == "corrupt":
         return {"task": "?", "run": clean(run.get("id", "?"), 80), "stage": "corrupt", "status": "corrupt",
-                "tested": "-", "reviewed": "-", "verified": "no", "merged": "no", "checklist": "-",
+                "tested": "-", "reviewed": "-", "verified": "no", "complete": "no", "merged": "no", "checklist": "-",
                 "created": 0, "note": clean(run.get("feedback", "")), "activity": "-", "elapsed": "-",
                 "attention": True, "next": "Inspect the corrupt state file; do not retry or delete evidence.", "log": "", "agents": []}
     task = run.get("task") if isinstance(run.get("task"), dict) else {}
@@ -270,19 +275,21 @@ def row_for(repo, run):
     note = clean(task.get("title", ""), 80)
     if status in ("needs_human", "waiting_quota") and run.get("feedback"):
         note += " | " + clean(run["feedback"])
+    valid = completed(run) and eligible_now(repo, run)
     row = {"task": clean(task.get("id", "?"), 40), "run": clean(run.get("id", "?"), 80),
             "mode": clean(run.get("mode", "unknown"), 40),
             "stage": clean(run.get("stage", "?"), 40), "status": status,
             "tested": tested[:7] or "-", "reviewed": reviewed[:7] or "-",
-            "verified": "yes" if completed(run) and verified_now(repo, run) else "no",
+            "verified": "yes" if valid and core.review_enabled(run["config"]) else "no",
+            "complete": "yes" if valid else "no",
             "merged": "yes" if run.get("status") == "merged" else "no", "checklist": checklist,
             "created": float(run.get("created_at") or 0), "note": note,
             "agents": [{k: attempt.get(k) for k in ("role", "runtime", "provider", "model", "status", "duration_seconds", "usage_scope", "usage")}
                        for attempt in run.get("agents", [])], **diagnostics(run)}
-    if run["config_hash"] != core.digest(core.read_json(Path(repo) / ".maf.json")):
+    if run["config_hash"] != core.digest(core.config_for(repo)):
         row.update(attention=True, next="Configuration changed since submission. Do not resume/publish this run; inspect the old worker and submit a new task.")
-    elif completed(run) and row["verified"] == "no":
-        row.update(attention=True, next="Saved completion no longer verifies. Inspect tests, review and worktree HEAD before publication.")
+    elif completed(run) and not valid:
+        row.update(attention=True, next="Saved completion no longer has valid evidence. Inspect tests, review and worktree HEAD.")
     return row
 
 
@@ -333,8 +340,7 @@ def render(rows, compact=False):
             lines.extend(detail_lines(row))
     counts = counts_for(rows)
     lines.append(f"{len(rows)} run(s)" + ("; " + ", ".join(f"{n} {s}" for s, n in sorted(counts.items())) if counts else ""))
-    lines.append("verified = tests + independent review at HEAD; not merged, not released." if compact else
-                 "verified/checked = tests + independent review on the run worktree; not merged, not released.")
+    lines.append("tested = tests at HEAD; verified = tests + independent review; not merged or released.")
     if compact:
         width = max(1, shutil.get_terminal_size((38, 24)).columns)
         lines = [part for line in lines for part in textwrap.wrap(line, width=width)]
@@ -354,11 +360,14 @@ def detail_lines(row):
 
 def title_for(rows):
     """Pane title: verified/total, the active (running, else queued) stage and task, then attention counts."""
-    verified = sum(row["verified"] == "yes" for row in rows)
-    parts = [f"maf {verified}/{len(rows)} verified"]
+    done = sum(row["complete"] == "yes" for row in rows)
+    parts = [f"maf {done}/{len(rows)} done"]
     attention = sum(row["attention"] for row in rows)
     if attention:
         parts.append(f"!{attention} attention")
+    running = sum(row["status"] == "running" for row in rows)
+    if running > 1:
+        parts.append(f"{running} running")
     active = next((row for status in ("running", "queued", "waiting_quota") for row in rows if row["status"] == status), None)
     if active:
         parts.append(f"{active['status']} {active['stage']} {active['task']}")
@@ -370,6 +379,9 @@ def title_for(rows):
 
 def check_pane(repo, pane):
     """Explicit live pane only: no focused-pane guessing, no input, no lifecycle changes."""
+    from . import flows
+    if not flows.settings()["herdr_enabled"]:
+        raise core.FlowError("Herdr integration is off; enable it with settings herdr on or in Flow Studio.")
     if os.environ.get("HERDR_ENV") != "1":
         raise core.FlowError("--planner-pane needs HERDR_ENV=1 (run inside Herdr) and the current live pane id.")
     if not isinstance(pane, str) or not PANE_ID.fullmatch(pane):
@@ -383,8 +395,98 @@ def ttl_for(poll):
 
 
 def report_pane(repo, pane, title, poll=5):
+    from . import flows
+    if not flows.settings()["herdr_enabled"]:
+        raise core.FlowError("Herdr integration is off; pane reporting stopped.")
     core.command(["herdr", "pane", "report-metadata", pane, "--source", "maf-progress",
                   "--title", title, "--ttl-ms", str(ttl_for(poll))], repo, timeout=15)
+
+
+def live_event(raw):
+    """Display only event names and tool types; raw private logs remain the verification source."""
+    try:
+        event = json.loads(raw)
+    except ValueError:
+        return "unstructured output"
+    if not isinstance(event, dict):
+        return "event"
+    item = event.get("item") if isinstance(event.get("item"), dict) else {}
+    step = event.get("step_update") if isinstance(event.get("step_update"), dict) else {}
+    result = event.get("result") if isinstance(event.get("result"), dict) else {}
+    message = event.get("message") if isinstance(event.get("message"), dict) else {}
+    blocks = message.get("content") if isinstance(message.get("content"), list) else []
+    tool_names = [block.get("name") for block in blocks[:3]
+                  if isinstance(block, dict) and block.get("type") == "tool_use"]
+    parts = [event.get("type"), event.get("event"), item.get("type"), item.get("name"),
+             step.get("step_type"), step.get("tool_name"), event.get("toolName"), *tool_names,
+             event.get("status"), result.get("status"), event.get("subtype")]
+    return " ".join(part for part in parts if isinstance(part, str) and PANE_ID.fullmatch(part)) or "event"
+
+
+def follow_live(repo, path):
+    """Follow a private agent event stream until the owned Herdr pane closes."""
+    root = core.root_for(repo)
+    path = Path(path)
+    if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(root):
+        raise core.FlowError("Live log must be a regular file in this repository's private MAF state.")
+    print("MAF agent events (full private log is kept for diagnosis)", flush=True)
+    pending, too_large = bytearray(), False
+    try:
+        with path.open("rb") as stream:
+            while True:
+                chunk = stream.readline(4096)
+                if not chunk:
+                    time.sleep(.2)
+                    continue
+                if len(pending) + len(chunk) > 65536:
+                    too_large = True
+                if not too_large:
+                    pending.extend(chunk)
+                if chunk.endswith(b"\n"):
+                    label = "large event omitted" if too_large else live_event(bytes(pending))
+                    print(f"{time.strftime('%H:%M:%S')} {label}", flush=True)
+                    pending.clear()
+                    too_large = False
+    except KeyboardInterrupt:
+        return
+
+
+@contextlib.contextmanager
+def agent_pane(repo, label, cwd, live_log, enabled):
+    """Display a supervised agent's live output; never delegate execution or verification to the pane."""
+    if not enabled:
+        yield None
+        return
+    parent, pane = os.environ.get("HERDR_PANE_ID"), None
+    try:
+        check_pane(repo, parent)
+        live_log.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        live_log.touch(mode=0o600, exist_ok=True)
+        created = json.loads(core.command(["herdr", "pane", "split", parent, "--direction", "right",
+                                           "--cwd", str(cwd), "--no-focus"], repo, timeout=15))
+        pane = created["result"]["pane"]["pane_id"]
+        if not isinstance(pane, str) or not PANE_ID.fullmatch(pane) or pane == parent:
+            raise core.FlowError("Herdr returned an invalid child pane id.")
+        core.command(["herdr", "pane", "rename", pane, clean(label, 80)], repo, timeout=15)
+        launcher = Path(__file__).resolve().parent.parent / "flow.py"
+        viewer = [sys.executable, "-u", str(launcher), "--repo", str(repo), "live-view", str(live_log)]
+        core.command(["herdr", "pane", "run", pane, shlex.join(viewer)], repo, timeout=15)
+    except CAUGHT as exc:
+        warn(f"agent pane unavailable: {exc}; agent continues in the supervisor.")
+        if isinstance(pane, str) and PANE_ID.fullmatch(pane) and pane != parent:
+            try:
+                core.command(["herdr", "pane", "close", pane], repo, timeout=15)
+            except CAUGHT as close_exc:
+                warn(f"agent pane {pane} could not be closed: {close_exc}")
+        pane = None
+    try:
+        yield pane
+    finally:
+        if pane:
+            try:
+                core.command(["herdr", "pane", "close", pane], repo, timeout=15)
+            except CAUGHT as exc:
+                warn(f"agent pane {pane} could not be closed: {exc}")
 
 
 def show(repo, watch=False, poll=5, pane=None, stop=None):

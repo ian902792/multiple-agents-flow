@@ -6,16 +6,7 @@ from pathlib import PurePosixPath
 import re
 from urllib.parse import quote
 
-from .core import FlowError, command, git, matches, save, verified
-
-
-PROTECTED_NAMES = {
-    "agents.md", "claude.md", "soul.md", "security.md", "codeowners",
-    "package.json", "package-lock.json", "bun.lock", "bun.lockb", "yarn.lock", "pnpm-lock.yaml",
-    "cargo.toml", "cargo.lock", "pyproject.toml", "requirements.txt", "uv.lock",
-    "makefile", "dockerfile", "justfile", "conftest.py", "__init__.py",
-}
-PROTECTED_WORDS = re.compile(r"(^|[/_.-])(auth|secret|credential|permission|polic(?:y|ies)|workflow|billing|trade|trading|order|broker|risk|money|payment|migration|deploy(?:ment)?)(?:s|es)?([/_.-]|$)", re.I)
+from .core import FlowError, command, git, matches, save, sensitive_path, verified
 
 
 class ChecksPending(FlowError):
@@ -36,12 +27,8 @@ def risk_reasons(run):
     reasons = []
     for index in range(0, len(fields) - 1, 2):
         status, path = fields[index:index + 2]
-        parts = PurePosixPath(path).parts
         lower = path.lower()
-        if (any(part.startswith(".") for part in parts)
-                or PurePosixPath(lower).name in PROTECTED_NAMES
-                or PROTECTED_WORDS.search(lower)
-                or matches(path, config["protected_paths"])):
+        if sensitive_path(path, config):
             reasons.append(f"Protected path: {path}")
             continue
         if not matches(path, allowed):
