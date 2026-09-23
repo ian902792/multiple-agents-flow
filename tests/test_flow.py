@@ -29,10 +29,11 @@ class FlowTests(unittest.TestCase):
         core.git(self.repo, "config", "user.email", "test@example.invalid")
         core.git(self.repo, "config", "user.name", "Flow Test")
         (self.repo / "README.md").write_text("Before\n")
-        (self.repo / ".gitignore").write_text("__pycache__/\n.maf-local.json\n")
+        (self.repo / ".gitignore").write_text("__pycache__/\n")
         core.git(self.repo, "add", ".")
         core.git(self.repo, "commit", "-qm", "Initial")
         core.init(self.repo, "economy")
+        core.select_mode(self.repo, "configured")
         self.config = core.config_for(self.repo)
         core.confirm_billing(self.repo, self.config)
         self.task = {"id": "improve-docs", "title": "Improve docs", "instructions": "Add usage paragraph.",
@@ -128,8 +129,7 @@ class FlowTests(unittest.TestCase):
         core.atomic(self.repo / ".maf.json", self.config)
         with self.assertRaises(core.FlowError):
             core.verified(self.repo, new)
-        with self.assertRaises(core.FlowError):
-            core.billing_check(self.repo, core.execution_config(self.repo, "opus-sol")[1])
+        core.billing_check(self.repo, core.execution_config(self.repo, "opus-sol")[1])
 
     def test_sensitive_task_waits_for_one_scope_approval(self):
         task = dict(self.task, paths=["AGENTS.md"])
@@ -209,11 +209,42 @@ class FlowTests(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             cli.main(["--repo", str(missing_repo), "settings"])
             cli.main(["--repo", str(missing_repo), "settings", "herdr", "on"])
+            cli.main(["--repo", str(missing_repo), "settings", "default-flow", "quick-antigravity"])
             cli.main(["--repo", str(missing_repo), "flows"])
+            cli.main(["confirm-billing", "--no-overage"])
         lines = out.getvalue()
         self.assertIn('"herdr_enabled": false', lines)
         self.assertIn('"herdr_enabled": true', lines)
         self.assertIn('"quick"', lines)
+        self.assertIn('"quick-antigravity"', lines)
+
+    def test_new_repository_uses_global_flow_without_init(self):
+        with tempfile.TemporaryDirectory() as directory:
+            other = Path(directory)
+            subprocess.run(["git", "init", "-q", "-b", "main", str(other)], check=True)
+            core.git(other, "config", "user.email", "test@example.invalid")
+            core.git(other, "config", "user.name", "Flow Test")
+            (other / "README.md").write_text("Before\n")
+            core.git(other, "add", "README.md")
+            core.git(other, "commit", "-qm", "Initial")
+            self.assertFalse((other / ".maf.json").exists())
+            self.assertEqual(core.execution_config(other)[0], "quick")
+            flows.set_default("quick-antigravity")
+            mode, config = core.execution_config(other)
+            self.assertEqual((mode, config["roles"]["coder"]["model"]),
+                             ("quick-antigravity", "gemini-3.8-flash-high"))
+            with self.assertRaises(core.FlowError):
+                core.billing_check(other, config)
+            core.confirm_billing(other, config)
+            core.billing_check(self.repo, config)
+            run = core.submit(other, dict(self.task, independent=True), kind="delegate")
+            self.assertEqual(run["config"]["roles"]["coder"]["runtime"], "antigravity")
+            self.assertTrue(core.parallel_lightweight(run))
+            self.assertFalse((other / ".maf.json").exists())
+            core.select_mode(other, "planned")
+            self.assertEqual(core.execution_config(other)[0], "planned")
+            core.select_mode(other, "default")
+            self.assertEqual(core.execution_config(other)[0], "quick-antigravity")
 
     def test_current_model_suggestions_allow_deeper_codex_effort_but_not_pi(self):
         flow = flows.templates()["quick"]
@@ -251,9 +282,9 @@ class FlowTests(unittest.TestCase):
 
     def test_independent_pi_delegates_overlap_and_allow_new_submission(self):
         self.assertEqual(cli.parser().parse_args(["work", "--run-id", "a", "--run-id", "b"]).run_id, ["a", "b"])
-        self.assertEqual(cli.parser().parse_args(["work"]).pi_concurrency, 3)
+        self.assertEqual(cli.parser().parse_args(["work"]).delegate_concurrency, 3)
         with self.assertRaisesRegex(core.FlowError, "1..3"):
-            core.work(self.repo, once=True, pi_concurrency=4)
+            core.work(self.repo, once=True, delegate_concurrency=4)
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")
         tasks = []
@@ -367,8 +398,7 @@ class FlowTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(core.FlowError):
                 core.submit(self.repo, self.task)
         core.select_mode(self.repo, "configured")
-        core.atomic(self.repo / ".maf-local.json", {"subscription_only_confirmed": True,
-                                                   "config_hash": core.digest(self.config)})
+        core.atomic(flows.home() / "billing.json", {"config_hash": core.digest(self.config)})
         with self.assertRaises(core.FlowError):
             core.billing_check(self.repo, self.config)
 
@@ -415,11 +445,11 @@ class FlowTests(unittest.TestCase):
                 task = dict(self.task, **{field: value})
                 with self.assertRaises(core.FlowError):
                     core.validate_task(task)
-        with self.assertRaisesRegex(core.FlowError, "Only Pi delegate"):
+        with self.assertRaisesRegex(core.FlowError, "Only lightweight delegate"):
             core.submit(self.repo, dict(self.task, independent=True))
 
     def test_no_implicit_billing_approval(self):
-        (self.repo / ".maf-local.json").unlink()
+        (flows.home() / "billing.json").unlink()
         run = core.submit(self.repo, self.task)
         with self.assertRaises(core.FlowError), patch.object(core.agents, "run_agent") as agent:
             core.execute(self.repo, run)
@@ -486,8 +516,7 @@ class FlowTests(unittest.TestCase):
         core.atomic(self.repo / ".maf.json", self.config)
         with self.assertRaises(core.FlowError):
             core.verified(self.repo, run)
-        with self.assertRaises(core.FlowError):
-            core.billing_check(self.repo, self.config)
+        core.billing_check(self.repo, self.config)
 
     def test_repair_budget_is_bounded(self):
         self.task["tests"] = [[sys.executable, "-c", "raise SystemExit(1)"]]
@@ -596,7 +625,7 @@ class FlowTests(unittest.TestCase):
             self.assertIsNotNone(core.SENSITIVE_WORDS.search(f"docs/usage/{name}.md"))
 
     def test_corrupt_attestation_and_run_are_reported(self):
-        core.atomic(self.repo / ".maf-local.json", None)
+        core.atomic(flows.home() / "billing.json", None)
         with self.assertRaises(core.FlowError):
             core.billing_check(self.repo, self.config)
         run = core.submit(self.repo, self.task)

@@ -3,20 +3,20 @@
 Python 3.11+ stdlib. Local-only web UI edits user-wide flows and settings; no API subscription proxy.
 Herdr is opt-in and runs a persistent ordinary supervisor command in an explicitly created workspace.
 Native agent CLIs run as bounded subprocesses, with structured output captured to private logs.
-Independent Pi delegates can occupy up to three execution lanes; planner/coder/reviewer are independently configured roles.
+Independent Pi or Antigravity delegates can occupy up to three execution lanes; planner/coder/reviewer are independently configured roles.
 The economy preset uses Astra for optional planning and Pi/DeepSeek for coding and review, with one repair.
 The opus-sol preset uses Claude Opus 5.5 coding and Codex Sol review. Risk never overrides the reviewer role.
 Claude is the main developer. Only the manually invoked `/maf-plan` skill calls the read-only Codex planner.
 
 ## Files and ownership
 
-- `maf/agents.py`: runtime adapters and result parsing (Codex, Claude, Pi, Hermes).
+- `maf/agents.py`: runtime adapters and result parsing (Codex, Claude, Pi, Hermes, Antigravity).
 - `maf/core.py`: config/task validation, atomic state, worktree, stage machine, tests.
 - `maf/github.py`: publication and conservative exact-SHA merge policy.
 - `maf/progress.py`: read-only terminal summary, optional Herdr pane metadata, todo.md checklist projection.
 - `maf/cli.py`: CLI and Herdr launcher.
-- `maf/flows.py`: user-wide named role profiles and Herdr setting; `.maf.json` remains project policy.
-- `maf/ui.py` and `maf/static/index.html`: loopback-only flow and integration settings editor; no mode switching or run control.
+- `maf/flows.py`: user-wide named role profiles, default flow and Herdr setting; `.maf.json` is optional project policy.
+- `maf/ui.py` and `maf/static/index.html`: loopback-only flow, default and integration settings editor; no project mode switching or run control.
 - `maf/skills.py`: one-time user-wide Claude/Codex discovery links; refuses conflicting skills and redirected parents.
 - `skills/maf/SKILL.md`: shared main-chat workflow, referenced by both hosts using relative symlinks.
 - `skills/maf-plan/SKILL.md`: Claude manual-only planner entrypoint.
@@ -38,10 +38,16 @@ Timeout results retain only usage already emitted, not an estimate of unreported
 `role` fields: `runtime`, `model`, `provider`, optional `profile`, `access` (`read`/`edit`).
 Optional `effort`: low/medium/high. Model IDs are configurable but cannot contain provider prefixes.
 Allowed subscription routes: Codex ChatGPT login; Claude first-party subscription login;
-Pi OpenCode Go; Hermes explicitly OpenCode Go. No arbitrary commands, CLI extra args or endpoints.
-Hermes currently supports coder/edit only, with native safe mode and file toolset. The shipped
+Pi OpenCode Go; Hermes explicitly OpenCode Go; Antigravity signed-in Google account. No arbitrary CLI extra args or endpoints.
+Hermes and Antigravity support coder/edit only. Antigravity uses `agy` NDJSON stdin/stdout,
+`--sandbox`, `--mode accept-edits`, and a pinned model/effort. Before inference it rejects
+`modelProvider` API-key routing and preapproved CLI tools, and checks `agy models` for the exact
+model. Its terminal `result` must be `SUCCESS` and its `init.permission_mode` must be
+`request-review`. Headless Antigravity has no native file-only tool list; the worker asks it
+to use file tools, runs trusted repositories only, and independently checks changed paths.
+Hermes uses native safe mode and file toolset. The shipped
 alternative is `hermes-coder`, not a misleading full-Hermes preset that cannot constrain a reviewer.
-Codex, Claude and Pi use JSONL; Hermes stream JSON shape must be verified before declaring support.
+Codex, Claude, Pi and Antigravity use JSONL; Hermes stream JSON shape must be verified before declaring support.
 Adapters must not mistake exit code 0 for a successful model turn (especially quota/error events).
 Pi 0.85.1 的最後 assistant 必須 `stop` 且其後有本輪最終 `agent_settled`；舊 settled 或
 低層 `agent_end`（可能早於 retries）不能證明完成。Claude `--restricted --safe-mode` 停用自動
@@ -55,17 +61,19 @@ Bounded subprocess timeouts terminate their own process group; do not kill unrel
 
 ## State and CLI
 
-Tracked `.maf.json` holds roles and policy. Untracked `.maf-local.json` holds a human's
-confirmation that provider extra usage / Go Use balance are disabled. This is attestation,
-not a remotely enforceable spending cap. `config_hashes` remembers each explicitly confirmed effective
-configuration. A former singular `config_hash` is not accepted or migrated into approval.
-No model invocation until the exact execution configuration is confirmed.
-`maf/mode.json` under the common Git directory stores the local default mode, initially `configured`.
+Optional tracked `.maf.json` holds project roles and policy. Without it, built-in policy chooses
+local `main`, then `master`, then the current branch as base. Global `billing.json` holds a human's
+confirmation that provider extra usage / Go Use balance are disabled for each exact role/model set.
+This is attestation, not a remotely enforceable spending cap. No model invocation until that
+role/model set is confirmed. Project policy changes still invalidate existing runs, but do not
+require billing reconfirmation if model routes are unchanged.
+`maf/mode.json` under the common Git directory stores an optional project override. Without it,
+new work uses the global default flow. `mode default` removes the override.
 `$XDG_CONFIG_HOME/multiple-agents-flow/flows.json` (default `~/.config/multiple-agents-flow/flows.json`)
-stores editable user-wide named flows; built-in `quick` and `planned` are available without writing that file.
-The adjacent `settings.json` holds `herdr_enabled`, default false. Import/export uses explicit JSON.
-Named modes replace only roles; policy/timeouts stay in `.maf.json`. Submit snapshots the effective config
-and selected mode, with `config_hash` separately binding the base `.maf.json`. Changing selection never
+stores editable user-wide named flows; built-in `quick`, `planned`, and `quick-antigravity` are available without writing that file.
+The adjacent `settings.json` holds `default_flow` (default `quick`) and `herdr_enabled` (default false). Import/export uses explicit JSON.
+Named modes replace only roles; policy/timeouts stay in the optional `.maf.json` or built-in defaults. Submit snapshots the effective config
+and selected mode, with `config_hash` separately binding the project policy. Changing selection never
 rewrites a run or invalidates its verification; changing base configuration still invalidates existing runs.
 Runs without an explicit supported mode cannot replay models under the new routing rules; inspect and
 submit a new task instead. Existing evidence remains readable, with no migration or silent role substitution.
@@ -74,20 +82,20 @@ Worktrees under the target repository `.maf-worktrees/`, excluded through Git in
 never under `.git`, because native agent safety modes correctly deny edits there.
 Task JSON: `id`, `title`, `instructions`, `paths` (explicit relative path/glob allowlist),
 `tests` (nonempty arrays of argv arrays), `risk` (`manual`, `docs`, `style`, `tests`), and optional
-boolean `independent` for Pi delegates.
+boolean `independent` for Pi or Antigravity delegates.
 Task/config snapshots pin each run. Worktrees and branches are unique; never overwrite/reuse unrelated ones.
 
 Commands: `install-skills`, `settings`, `init`, `mode`, `flows`, `flow-save`, `ui`, `doctor`, `confirm-billing`, `plan`,
 `submit`, `delegate`, `verify`, `approve`, `work`, `status`, `handoff`, `progress`, `resume`, `publish`, `merge`, `herdr`.
-`submit` only queues. `work --once` executes one runnable task or one parallel wave of eligible Pi
+`submit` only queues. `work --once` executes one runnable task or one parallel wave of eligible lightweight
 delegates; with repeated `--run-id`, it drains those IDs once each. `work` polls local state.
 `submit --mode NAME` overrides the mode for one task without changing the local default.
 `work --once --run-id ID` processes only that run; repeating `--run-id` names a bounded set without
-consuming other queued tasks. Interrupted stages are never implicitly replayed. `--pi-concurrency N`
-sets the Pi delegate limit from 1 to 3 (default 3). The skill uses explicit IDs after delegation.
+consuming other queued tasks. Interrupted stages are never implicitly replayed. `--delegate-concurrency N`
+sets the Pi/Antigravity delegate limit from 1 to 3 (default 3). The skill uses explicit IDs after delegation.
 Selection changes still use the repository writer lock.
 `install-skills` registers one shared skill in the user's `~/.agents/skills/maf` and `~/.claude/skills/maf`,
-plus manual-only `~/.claude/skills/maf-plan`. Global commands work outside a Git repository; `mode` remains per repository.
+plus manual-only `~/.claude/skills/maf-plan`. Global commands, including default-flow billing confirmation, work outside a Git repository; `mode` remains per repository.
 Execution: awaiting_approval (when required) -> queued -> coding -> testing -> reviewing -> verified -> PR / needs-human / merged.
 The frozen task/config/mode/kind/source SHA/publication flags are hashed at submit. Sensitive/broad edit
 paths, shell tests and manual-risk batch runs wait for `approve RUN_ID`; callers can explicitly request the
@@ -95,12 +103,12 @@ gate for semantic high-risk work. Approval checks the pristine worktree and exac
 release. The worker ignores pending runs and rechecks the scope hash before execution/publication. Bounded
 repair within that scope needs no new approval. A coder escalation or reviewer manual-risk finding stops
 at `needs_human/replan`; resume cannot silently replay it. A changed scope requires a new run.
-`delegate` snapshots a fully clean current branch HEAD, runs a Pi coder in a new worktree, then tests/reviews
+`delegate` snapshots a fully clean current branch HEAD, runs the selected Pi or Antigravity coder in a new worktree, then tests/reviews
 the resulting commit. It never integrates the result into the source branch. `verify` snapshots a fully clean
 current HEAD, checks the changed paths against an exact base/merge-base, and starts at testing without a coder.
 Failed tests or review of external work stop for Claude to fix and require a new run at the new SHA. `handoff`
 returns compact evidence only after tests, independent approval and the worktree HEAD all match.
-The scheduler runs up to three `independent: true` Pi delegates at once. Parallel eligibility
+The scheduler runs up to three `independent: true` Pi or Antigravity delegates at once. Parallel eligibility
 requires narrow literal file paths, disjoint paths (case-insensitive comparison), the same source SHA,
 non-manual risk and no approval gate. An explicit marker is the caller's assertion that requirements and
 test resources are independent; the scheduler cannot infer semantic independence. Other runs remain serial.
@@ -144,7 +152,7 @@ stdout into a private live event file while retaining its bounded parser and fin
 The observer prints sanitized event names/tool types, not prompts or full transcripts. Only the pane ID
 returned by that split is closed after the role finishes; pane failures warn without replaying the agent.
 Agents still run as supervisor-owned subprocesses; Herdr's agent lifecycle display is not verification.
-Parallel Pi delegates can show multiple observer panes at once. A manually invoked `work` needs
+Parallel Pi or Antigravity delegates can show multiple observer panes at once. A manually invoked `work` needs
 `--agent-panes` to opt in; plain `work` keeps its previous terminal behavior.
 Successful test logs stay in local evidence; review prompts carry only argv, exit_code and log path.
 

@@ -27,6 +27,8 @@ class LocalUITests(unittest.TestCase):
                         html = response.read().decode()
                     self.assertIn("Flow Studio", html)
                     self.assertIn("awaiting_approval", html)
+                    self.assertIn('id="coder-runtime"', html)
+                    self.assertIn('id="set-default"', html)
                     token = re.search(r'const token="([0-9a-f]+)"', html).group(1)
                     with self.assertRaises(HTTPError) as denied:
                         urlopen(url + "/api/state")
@@ -44,6 +46,8 @@ class LocalUITests(unittest.TestCase):
                     denied.exception.close()
                     with urlopen(Request(url + "/api/settings", b'{"herdr_enabled": true}', headers=headers)) as response:
                         self.assertTrue(json.load(response)["settings"]["herdr_enabled"])
+                    with urlopen(Request(url + "/api/default", b'{"name": "my-flow"}', headers=headers)) as response:
+                        self.assertEqual(json.load(response)["settings"]["default_flow"], "my-flow")
                     with self.assertRaises(HTTPError) as denied:
                         urlopen(Request(url + "/api/settings", b'{}', headers=dict(headers, Origin="https://evil.example")))
                     self.assertEqual(denied.exception.code, 403)

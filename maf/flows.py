@@ -17,11 +17,16 @@ def templates():
                          "access": "read", "effort": "medium"}
     planned = deepcopy(roles)
     planned["reviewer"]["effort"] = "high"
+    antigravity = deepcopy(roles)
+    antigravity["coder"] = {"runtime": "antigravity", "provider": "google-account",
+                             "model": "gemini-3.8-flash-high", "access": "edit", "effort": "high"}
     return {
         "quick": {"description": "小任務：Claude 主對話開發；必要時交給 Pi；Codex 獨立審查。",
                   "manual_plan": False, "main": {"model": "opus", "effort": "medium"}, "roles": roles},
         "planned": {"description": "中大型任務：手動 /maf-plan 規畫；Claude 實作，可交 Pi 處理明確小任務。",
                     "manual_plan": True, "main": {"model": "opus", "effort": "high"}, "roles": planned},
+        "quick-antigravity": {"description": "小任務：Claude 主對話開發；明確小工作交 Antigravity Gemini Flash；Codex 獨立審查。",
+                              "manual_plan": False, "main": {"model": "opus", "effort": "medium"}, "roles": antigravity},
     }
 
 
@@ -44,18 +49,28 @@ def exclusive():
 
 def settings():
     path = home() / "settings.json"
-    data = core.read_json(path) if path.exists() or path.is_symlink() else {"herdr_enabled": False}
-    if not isinstance(data, dict) or set(data) != {"herdr_enabled"} or type(data["herdr_enabled"]) is not bool:
-        raise core.FlowError("Invalid global settings.json; expected a boolean herdr_enabled.")
-    return data
+    data = core.read_json(path) if path.exists() or path.is_symlink() else {}
+    if (not isinstance(data, dict) or set(data) - {"herdr_enabled", "default_flow"}
+            or type(data.get("herdr_enabled", False)) is not bool
+            or not isinstance(data.get("default_flow", "quick"), str)
+            or data.get("default_flow", "quick") not in catalog()):
+        raise core.FlowError("Invalid global settings.json; expected herdr_enabled and a saved default_flow.")
+    return {"herdr_enabled": data.get("herdr_enabled", False), "default_flow": data.get("default_flow", "quick")}
 
 
 def set_herdr(enabled):
     if type(enabled) is not bool:
         raise core.FlowError("Herdr setting must be true or false.")
     with exclusive():
-        settings()
-        core.atomic(home() / "settings.json", {"herdr_enabled": enabled})
+        core.atomic(home() / "settings.json", {**settings(), "herdr_enabled": enabled})
+    return settings()
+
+
+def set_default(name):
+    if not isinstance(name, str) or name not in catalog():
+        raise core.FlowError("Choose a saved flow as the global default.")
+    with exclusive():
+        core.atomic(home() / "settings.json", {**settings(), "default_flow": name})
     return settings()
 
 

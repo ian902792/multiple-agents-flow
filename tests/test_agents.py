@@ -14,6 +14,8 @@ CODEX = {"runtime": "codex", "provider": "chatgpt", "model": "gpt-6-astra", "acc
 CLAUDE = {"runtime": "claude", "provider": "claude-subscription", "model": "claude-opus-5", "access": "edit"}
 PI = {"runtime": "pi", "provider": "opencode-go", "model": "deepseek-v4.1-flash", "access": "read"}
 HERMES = {"runtime": "hermes", "provider": "opencode-go", "model": "glm-5.3", "access": "edit", "profile": "coder"}
+ANTIGRAVITY = {"runtime": "antigravity", "provider": "google-account", "model": "gemini-3.8-flash-high",
+               "access": "edit", "effort": "high"}
 FORBIDDEN = {"--yolo", "--dangerously-skip-permissions", "danger-full-access", "--bare", "--api-key",
              "bypassPermissions", "--approve", "-a"}
 AUTH_OK = {"codex": "Logged in using ChatGPT\n",
@@ -43,7 +45,7 @@ class FakeExec:
 
 class RoleValidation(unittest.TestCase):
     def test_valid_roles_and_configurable_models(self):
-        for role in (CODEX, CLAUDE, PI, HERMES, dict(CODEX, model="gpt-5.5-codex"), dict(CLAUDE, model="claude-sonnet-5"),
+        for role in (CODEX, CLAUDE, PI, HERMES, ANTIGRAVITY, dict(CODEX, model="gpt-5.5-codex"), dict(CLAUDE, model="claude-sonnet-5"),
                      dict(PI, model="glm-5.3", effort="high")):
             agents.validate_role(role)
 
@@ -55,6 +57,7 @@ class RoleValidation(unittest.TestCase):
             dict(HERMES, profile="../x"), dict(CODEX, profile="p"), dict(CODEX, runtime="opencode"), "codex",
             dict(PI, model="openai/gpt-6-astra"), dict(PI, model="glm-5.3:high"),
             dict(PI, model="deepseek-v4.1-flash\n"), dict(PI, effort="unlimited"),
+            dict(ANTIGRAVITY, provider="gemini-api"), dict(ANTIGRAVITY, access="read"),
         ]
         for role in bad:
             with self.subTest(role=role), self.assertRaises(ValueError):
@@ -70,7 +73,8 @@ class Environment(unittest.TestCase):
     def test_clean_env_scrubs_overrides(self):
         dirty = {"ANTHROPIC_API_KEY": "k", "ANTHROPIC_BASE_URL": "u", "OPENAI_API_KEY": "k", "OPENAI_BASE_URL": "u",
                  "OPENCODE_GO_API_KEY": "k", "CLAUDECODE": "1", "CLAUDE_CODE_USE_BEDROCK": "1",
-                 "FOO_API_KEY": "k", "BAR_BASE_URL": "u", "PI_API_KEY": "k", "HERMES_KANBAN_TASK": "1",
+                 "FOO_API_KEY": "k", "BAR_BASE_URL": "u", "PI_API_KEY": "k", "GEMINI_API_KEY": "k",
+                 "GOOGLE_GEMINI_BASE_URL": "u", "HERMES_KANBAN_TASK": "1",
                  "HERMES_YOLO": "1", "HERMES_HOME": "/h/.hermes", "PATH": "/bin", "HOME": "/h"}
         with mock.patch.dict(os.environ, dirty, clear=True):
             env = agents.clean_env()
@@ -132,6 +136,40 @@ class ArgvSafety(unittest.TestCase):
         self.assertIn("--safe-mode", argv)  # no hooks, plugins, MCP servers, or user config customizations
         self.assertNotIn("terminal", argv)
         self.assertEqual(self.check({k: v for k, v in HERMES.items() if k != "profile"})[:2], ["hermes", "chat"])
+
+    def test_antigravity_uses_account_and_stdin_without_bypass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / ".gemini" / "antigravity-cli"
+            root.mkdir(parents=True)
+            (root / "settings.json").write_text("{}")
+            stream = jl({"event": "init", "init": {"permission_mode": "request-review"}},
+                        {"event": "result", "result": {"conversation_id": "agy-1", "status": "SUCCESS",
+                                                      "response": "Done", "usage": {"total_tokens": 12}}})
+            fake = FakeExec("gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n", (0, stream, "", False))
+            prompt = "Edit README; never print my prompt"
+            with mock.patch.object(Path, "home", return_value=Path(directory)), \
+                    mock.patch.object(agents, "_exec", fake), \
+                    mock.patch.object(agents.shutil, "which", return_value="/x"):
+                result = agents.run_agent(ANTIGRAVITY, prompt, Path(directory), Path(directory) / "log", 90)
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(fake.calls[0]["argv"], ["agy", "models"])
+            argv = fake.calls[1]["argv"]
+            self.assertEqual(argv[argv.index("--model") + 1], "gemini-3.8-flash-high")
+            self.assertIn("--sandbox", argv)
+            self.assertFalse(FORBIDDEN & set(argv))
+            self.assertNotIn(prompt, " ".join(argv))
+            self.assertEqual(json.loads(fake.calls[1]["stdin"])["message"]["content"], prompt)
+            self.assertEqual(agents._parse_antigravity(jl({"event": "init", "init": {"permission_mode": "always-proceed"}},
+                                                         {"event": "result", "result": {"status": "SUCCESS", "response": "Done"}}))["status"], "blocked")
+            self.assertEqual(agents._parse_antigravity(jl({"event": "init", "init": {"permission_mode": "request-review"}},
+                                                         {"event": "result", "result": {"status": "ERROR", "error": "quota exceeded"}}))["status"], "quota")
+            self.assertEqual(agents._parse_antigravity(jl({"event": "init", "init": {"permission_mode": "request-review"}},
+                                                         {"event": "step_update", "step_update": {"tool_info": {"error": "permission denied"}}},
+                                                         {"event": "result", "result": {"status": "SUCCESS", "response": "Done"}}))["status"], "blocked")
+            (root / "settings.json").write_text('{"modelProvider":"gemini"}')
+            with mock.patch.object(Path, "home", return_value=Path(directory)), \
+                    mock.patch.object(agents.shutil, "which", return_value="/x"):
+                self.assertIn("account", agents.doctor_role(ANTIGRAVITY)[0])
 
 
 class Parsers(unittest.TestCase):

@@ -2,6 +2,13 @@
 
 這份文件區分離線測試與真正的 provider / GitHub 驗證，避免把 mock 當成實際成功。
 
+## 2026-09-23：Antigravity 與零專案設定的全域預設
+
+- 102 項 unittest 全數通過；新增測試涵蓋無 `.maf.json` 的 Git 專案繼承全域 flow、切換回全域預設、角色模型確認跨專案共用，以及 Antigravity 的帳號路由、stdin、sandbox、成功／額度／權限拒絕解析。
+- 本機已安裝 `agy` 1.2.9；唯讀 `agy models` 列出 `gemini-3.8-flash-high`。未呼叫真實 Gemini 模型，也未替使用者更改登入、供應商費用設定或使用者全域 MAF 設定。新路由仍需使用者先確認訂閱涵蓋與沒有額外計費。
+- Flow Studio 在隔離的暫存全域設定目錄中完成瀏覽器互動：把 coder 從 Pi 切到 Antigravity，模型自動改為 Gemini 3.8 Flash High、effort high，儲存並設為全域預設；重新載入後設定仍正確。390px 手機視窗 `scrollWidth=390`，無整頁橫向溢出。GUI 選單定位錯誤在實測時發現並修正。
+- Antigravity CLI 沒有與 Pi 相同的原生 file-only 工具白名單；MAF 使用 headless request-review、sandbox、無預先放行工具與獨立路徑／測試／review 檢查。此版未做真實 Antigravity 編輯、Herdr pane 或並行模型 smoke。
+
 ## 2026-09-23：全域 flow 與 terminal 操作
 
 - 94 項 unittest 在允許 loopback 的環境全數通過；涵蓋全域 skill 安裝與衝突拒絕、跨專案 flow 可見而 mode 各自獨立、無 Git repository 時的全域 CLI、GUI token／Origin、Herdr 預設關閉與停用後拒絕 pane 回報。

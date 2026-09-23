@@ -71,6 +71,8 @@ def server(port=0):
                     flows.save(body["name"], body["flow"])
                 elif self.path == "/api/settings" and isinstance(body, dict) and set(body) == {"herdr_enabled"}:
                     flows.set_herdr(body["herdr_enabled"])
+                elif self.path == "/api/default" and isinstance(body, dict) and set(body) == {"name"}:
+                    flows.set_default(body["name"])
                 else:
                     return self.reply(400, json.dumps({"error": "Unknown operation or payload."}))
                 self.reply(200, json.dumps(state(), ensure_ascii=False))

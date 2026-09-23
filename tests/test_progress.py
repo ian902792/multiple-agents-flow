@@ -33,11 +33,12 @@ class ProgressTests(unittest.TestCase):
         core.git(self.repo, "config", "user.email", "test@example.invalid")
         core.git(self.repo, "config", "user.name", "Flow Test")
         (self.repo / "README.md").write_text("Before\n")
-        (self.repo / ".gitignore").write_text("__pycache__/\n.maf-local.json\n")
+        (self.repo / ".gitignore").write_text("__pycache__/\n")
         self.todo = self.repo / "todo.md"
         self.todo.write_bytes(TODO.encode())
         self.commit("Initial")
         core.init(self.repo, "economy")
+        core.select_mode(self.repo, "configured")
         self.config = core.config_for(self.repo)
         core.confirm_billing(self.repo, self.config)
         self.task = {"id": "improve-docs", "title": "Improve docs", "instructions": "Add usage paragraph.",

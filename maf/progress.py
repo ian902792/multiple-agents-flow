@@ -286,7 +286,7 @@ def row_for(repo, run):
             "created": float(run.get("created_at") or 0), "note": note,
             "agents": [{k: attempt.get(k) for k in ("role", "runtime", "provider", "model", "status", "duration_seconds", "usage_scope", "usage")}
                        for attempt in run.get("agents", [])], **diagnostics(run)}
-    if run["config_hash"] != core.digest(core.read_json(Path(repo) / ".maf.json")):
+    if run["config_hash"] != core.digest(core.config_for(repo)):
         row.update(attention=True, next="Configuration changed since submission. Do not resume/publish this run; inspect the old worker and submit a new task.")
     elif completed(run) and row["verified"] == "no":
         row.update(attention=True, next="Saved completion no longer verifies. Inspect tests, review and worktree HEAD before publication.")
@@ -412,12 +412,15 @@ def live_event(raw):
     if not isinstance(event, dict):
         return "event"
     item = event.get("item") if isinstance(event.get("item"), dict) else {}
+    step = event.get("step_update") if isinstance(event.get("step_update"), dict) else {}
+    result = event.get("result") if isinstance(event.get("result"), dict) else {}
     message = event.get("message") if isinstance(event.get("message"), dict) else {}
     blocks = message.get("content") if isinstance(message.get("content"), list) else []
     tool_names = [block.get("name") for block in blocks[:3]
                   if isinstance(block, dict) and block.get("type") == "tool_use"]
-    parts = [event.get("type"), item.get("type"), item.get("name"),
-             event.get("toolName"), *tool_names, event.get("status"), event.get("subtype")]
+    parts = [event.get("type"), event.get("event"), item.get("type"), item.get("name"),
+             step.get("step_type"), step.get("tool_name"), event.get("toolName"), *tool_names,
+             event.get("status"), result.get("status"), event.get("subtype")]
     return " ".join(part for part in parts if isinstance(part, str) and PANE_ID.fullmatch(part)) or "event"
 
 

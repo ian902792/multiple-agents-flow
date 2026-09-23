@@ -13,21 +13,21 @@ from . import agents, core, flows, github, progress, skills
 
 def parser():
     cli = argparse.ArgumentParser(description="Subscription-first multi-agent workflow (Python 3.11+, macOS/Linux).")
-    cli.add_argument("--repo", type=Path, default=Path.cwd(), help="Target Git repository root (default: cwd)")
+    cli.add_argument("--repo", type=Path, help="Target Git repository root (default: cwd)")
     commands = cli.add_subparsers(dest="action", required=True)
     commands.add_parser("install-skills", help="Register MAF skills once for this user in Claude and Codex")
     p = commands.add_parser("settings", help="Show or change user-wide optional integrations")
-    p.add_argument("key", nargs="?", choices=("herdr",))
-    p.add_argument("value", nargs="?", choices=("on", "off"))
+    p.add_argument("key", nargs="?", choices=("herdr", "default-flow"))
+    p.add_argument("value", nargs="?", help="on/off for Herdr, or a saved flow name")
     p = commands.add_parser("init", help="Create .maf.json without overwriting existing configuration")
     p.add_argument("--preset", choices=core.PRESETS, default="economy")
-    p = commands.add_parser("mode", help="Show or select the local default for new tasks; existing runs stay pinned")
+    p = commands.add_parser("mode", help="Show or select a project override; 'default' restores the global flow")
     p.add_argument("name", nargs="?")
     commands.add_parser("flows", help="List user-wide named flows")
     p = commands.add_parser("flow-save", help="Save a named flow from a JSON file")
     p.add_argument("file", type=Path)
     commands.add_parser("doctor", help="Check runtime/auth availability without model inference")
-    p = commands.add_parser("confirm-billing", help="Record your manual confirmation of subscription-only billing")
+    p = commands.add_parser("confirm-billing", help="Confirm model routes globally; --repo confirms its selected mode")
     p.add_argument("--no-overage", action="store_true", required=True)
     p = commands.add_parser("plan", help="Ask planner for a plan; never execute its output automatically")
     p.add_argument("--goal-file", type=Path, required=True)
@@ -39,7 +39,7 @@ def parser():
     p.add_argument("--auto-merge", action="store_true", help="Authorize low-risk merge if all policy/GitHub gates pass")
     p.add_argument("--require-approval", action="store_true", help="Hold execution for one plan/scope approval")
     for name in ("delegate", "verify"):
-        p = commands.add_parser(name, help="Queue Pi work or verify the current committed Claude work")
+        p = commands.add_parser(name, help="Queue lightweight work or verify the current committed Claude work")
         p.add_argument("task", type=Path)
         p.add_argument("--mode", help="Use this mode or named flow for this task only")
         p.add_argument("--require-approval", action="store_true", help="Hold execution for one plan/scope approval")
@@ -47,8 +47,8 @@ def parser():
             p.add_argument("--base", help="Exact ancestor ref to compare with HEAD; default is merge-base with base branch")
     p = commands.add_parser("work", help="Process queued work; waits consume no model tokens")
     p.add_argument("--once", action="store_true")
-    p.add_argument("--run-id", action="append", help="Only process these runs; repeat for independent Pi tasks")
-    p.add_argument("--pi-concurrency", type=int, default=3, help="Maximum simultaneous independent Pi delegates (default: 3; range: 1..3)")
+    p.add_argument("--run-id", action="append", help="Only process these runs; repeat for independent delegates")
+    p.add_argument("--delegate-concurrency", type=int, default=3, help="Maximum simultaneous independent delegates (default: 3; range: 1..3)")
     p.add_argument("--poll", type=int, default=30)
     p.add_argument("--planner-pane", metavar="PANE_ID", help="Inside Herdr: update the main task pane while this worker runs")
     p.add_argument("--agent-panes", action="store_true", help="Inside Herdr: show each supervised agent's live output in a temporary pane")
@@ -138,13 +138,17 @@ def mode_info(repo):
 
 def main(argv=None):
     args = parser().parse_args(argv)
-    repo = args.repo.resolve()
+    repo = (args.repo or Path.cwd()).resolve()
     try:
         if args.action == "install-skills":
             result = skills.install()
         elif args.action == "settings":
-            if args.value:
+            if args.key == "herdr" and args.value in ("on", "off"):
                 result = flows.set_herdr(args.value == "on")
+            elif args.key == "default-flow" and args.value:
+                result = flows.set_default(args.value)
+            elif args.key is not None:
+                raise core.FlowError("Use settings herdr on|off or settings default-flow NAME.")
             else:
                 result = flows.settings()
         elif args.action == "flows":
@@ -158,6 +162,12 @@ def main(argv=None):
             from . import ui
             ui.serve(args.port, not args.no_open)
             return
+        elif args.action == "confirm-billing" and args.repo is None:
+            name = flows.settings()["default_flow"]
+            roles = flows.catalog()[name]["roles"]
+            core.confirm_billing(None, {"roles": roles})
+            result = {"confirmed": True, "flow": name, "roles": roles,
+                      "warning": "Human attestation only; provider billing settings remain authoritative."}
         else:
             result = None
         if result is not None:
@@ -181,7 +191,7 @@ def main(argv=None):
             if args.agent_panes:
                 progress.check_pane(repo, os.environ.get("HERDR_PANE_ID"))
             with progress.monitor(repo, args.planner_pane):
-                core.work(repo, args.once, args.poll, args.run_id, args.agent_panes, args.pi_concurrency)
+                core.work(repo, args.once, args.poll, args.run_id, args.agent_panes, args.delegate_concurrency)
             return
         elif args.action == "progress":
             if not 1 <= args.poll <= 3600:

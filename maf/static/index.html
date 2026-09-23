@@ -35,47 +35,49 @@ h1{font-size:32px;line-height:1.15;letter-spacing:-.05em;margin:0}h2{font-size:1
 <div class="app">
   <aside><p class="side-title">Flows</p><nav class="flow-list" id="flow-list" aria-label="Flow 清單"></nav><button class="side-action" id="new-flow" type="button">＋ 新增 flow</button><a class="side-link" href="#guide">安裝與使用指南 ↗</a></aside>
   <main>
-    <div class="welcome"><div><strong>定義一次，在每個專案使用</strong><p>這裡編輯 flow 的角色、模型和使用範圍；在 Claude terminal 輸入 <code>/maf mode 名稱</code> 才會切換該專案。</p></div><a href="#guide">查看安裝與指令 →</a></div>
-    <div class="heading"><div><label class="field-label" for="flow-name">Flow 名稱</label><input class="name-input" id="flow-name" autocomplete="off" spellcheck="false" maxlength="40" aria-label="Flow 名稱"></div><div class="status">儲存後由 terminal 選用</div></div>
+    <div class="welcome"><div><strong>定義一次，在每個專案使用</strong><p>這裡編輯全域 flow、選常用小任務 Agent，並指定新專案的預設 flow。個別專案仍可在 terminal 切換。</p></div><a href="#guide">查看安裝與指令 →</a></div>
+    <div class="heading"><div><label class="field-label" for="flow-name">Flow 名稱</label><input class="name-input" id="flow-name" autocomplete="off" spellcheck="false" maxlength="40" aria-label="Flow 名稱"></div><div class="status" id="default-status"></div></div>
     <label class="field-label" for="description">適用範圍與使用時機</label><textarea class="description" id="description" maxlength="200" placeholder="例如：單一檔案的小修正；Claude 開發，Codex 審查。"></textarea>
-    <div class="actions"><button class="primary" id="save-flow" type="button">儲存 flow</button><button class="secondary" id="export-flow" type="button">匯出 JSON</button><button class="secondary" id="import-flow" type="button">匯入 JSON</button><input id="import-file" type="file" accept="application/json,.json" hidden></div>
+    <div class="actions"><button class="primary" id="save-flow" type="button">儲存 flow</button><button class="secondary" id="set-default" type="button">設為全域預設</button><button class="secondary" id="export-flow" type="button">匯出 JSON</button><button class="secondary" id="import-flow" type="button">匯入 JSON</button><input id="import-file" type="file" accept="application/json,.json" hidden></div>
     <div class="notice" id="notice" role="status" aria-live="polite"></div>
-    <p class="explain">畫面只保存全域設定，不啟動 agent、不選擇專案 mode。<code>/maf mode</code> 的選擇只影響該專案後續的新任務；已提交任務保留原模型。只有你手動輸入 <code>/maf-plan</code> 才會呼叫 Codex 規畫。</p>
+    <p class="explain">新 Git 專案直接使用全域預設，不必建立 <code>.maf.json</code>。<code>/maf mode 名稱</code> 只覆寫目前專案的新任務；<code>/maf mode default</code> 回到全域預設。已提交任務保留原模型。只有你手動輸入 <code>/maf-plan</code> 才會呼叫 Codex 規畫。</p>
     <section aria-labelledby="main-title"><h2 id="main-title">主 Claude 對話的建議偏好</h2><div class="main-row"><label><span class="field-label">Model</span><input class="model-input" id="main-model" list="models-claude" aria-label="Claude model" spellcheck="false"></label><label><span class="field-label">Effort</span><select class="effort-select" id="main-effort" aria-label="Claude effort"><option>low</option><option>medium</option><option>high</option><option>xhigh</option><option>max</option></select></label></div><p class="helper">這是 flow 的記錄與提示，不會控制目前 Claude session。在 terminal 用 Claude 的 <code>/model</code>、<code>/effort</code> 切換主對話；MAF 只把下面角色設定套用到之後新建的 MAF 任務。</p></section>
     <section aria-labelledby="agent-title"><h2 id="agent-title">MAF Agent 設定</h2><p class="guide-lead">Model 欄位可挑常用型號；輸入新 ID 並儲存後，會出現在其他 flow 的建議清單。選項不保證訂閱或 CLI 已提供該模型；更換路由後執行前仍須確認訂閱。</p><div class="role-head"><span>角色</span><span>Model</span><span>Effort</span></div>
       <div class="role-row" data-role="planner"><div><div class="role-name">Codex 規畫</div><div class="role-route"></div></div><input class="model-input" aria-label="規畫 model" spellcheck="false"><select class="effort-select" aria-label="規畫 effort"><option>low</option><option>medium</option><option>high</option></select></div>
-      <div class="role-row" data-role="coder"><div><div class="role-name">Pi 小任務</div><div class="role-route"></div></div><input class="model-input" aria-label="Pi model" spellcheck="false"><select class="effort-select" aria-label="Pi effort"><option>low</option><option>medium</option><option>high</option></select></div>
+      <div class="role-row" data-role="coder"><div><label class="field-label" for="coder-runtime">小任務 Agent</label><select class="effort-select" id="coder-runtime" aria-label="小任務 Agent"><option value="pi">Pi</option><option value="antigravity">Antigravity</option><option value="claude">Claude</option><option value="codex">Codex</option><option value="hermes">Hermes</option></select><div class="role-route"></div></div><input class="model-input" aria-label="小任務 model" spellcheck="false"><select class="effort-select" aria-label="小任務 effort"><option>low</option><option>medium</option><option>high</option></select></div>
       <div class="role-row" data-role="reviewer"><div><div class="role-name">獨立 Review</div><div class="role-route"></div></div><input class="model-input" aria-label="Review model" spellcheck="false"><select class="effort-select" aria-label="Review effort"><option>low</option><option>medium</option><option>high</option></select></div>
       <label class="check"><input id="manual-plan" type="checkbox">此 flow 適合大型任務，提醒我手動執行 /maf-plan</label>
+      <p class="helper">選 Antigravity 時，請先用 <code>agy models</code> 確認帳號列出 <code>gemini-3.8-flash-high</code>。MAF 只讓它擔任小任務 coder，使用既有 Google 帳號登入與 CLI sandbox；測試由 supervisor 執行，審查仍交獨立 reviewer。API key 路由或預先放行工具會被拒絕。設定 flow 不會立即啟動 agent。</p>
     </section>
     <section id="flows-guide" aria-labelledby="flows-guide-title"><h2 id="flows-guide-title">怎麼選 flow？</h2><div class="guide-grid">
-      <div class="guide-card"><h3>Quick · 小任務</h3><p>Claude 在主對話開發；完成並提交後，用 Codex Sol 獨立 review。明確的小範圍工作才交給 Pi。</p><ol><li>在專案的 Claude terminal 輸入 <code>/maf mode quick</code>。</li><li>請 Claude 開發；必要時輸入 <code>/maf delegate 需求</code>。</li><li>commit 後輸入 <code>/maf verify 需求</code>。</li></ol></div>
+      <div class="guide-card"><h3>Quick · 小任務</h3><p>Claude 在主對話開發；完成並提交後，用 Codex Sol 獨立 review。明確的小範圍工作才交給 Pi。把 quick 設成全域預設後，新專案不用選 mode。</p><ol><li>請 Claude 開發；必要時輸入 <code>/maf delegate 需求</code>。</li><li>commit 後輸入 <code>/maf verify 需求</code>。</li></ol></div>
+      <div class="guide-card"><h3>Quick Antigravity · Gemini 小任務</h3><p>同樣由 Claude 主導，明確小任務交給已登入的 Antigravity Gemini 3.8 Flash High，Codex Sol 負責獨立 review。在左邊選 <code>quick-antigravity</code>，按「設為全域預設」即可跨專案使用。</p></div>
       <div class="guide-card"><h3>Planned · 中大型任務</h3><p>由你決定何時請 Codex Astra 規畫；Claude 負責整合，Pi 處理明確小任務，最後測試與獨立 review。</p><ol><li>輸入 <code>/maf mode planned</code>。</li><li>需要規畫時手動輸入 <code>/maf-plan 需求</code>，檢查計畫。</li><li>互不依賴的小工作可一起 delegate 給多個 Pi；Claude 整合、commit 後 verify。</li></ol></div>
-      <div class="guide-card"><h3>自訂 · 跨專案常用流程</h3><p>按「新增 flow」，寫清適用範圍、調整模型與 effort 並儲存。例如命名為 <code>docs-review</code>。在任一專案的 terminal 輸入 <code>/maf mode docs-review</code>；每個專案的選擇各自保存。</p></div>
+      <div class="guide-card"><h3>自訂 · 跨專案常用流程</h3><p>按「新增 flow」，選小任務 Agent，調整模型與 effort 並儲存。例如命名為 <code>docs-review</code>。按「設為全域預設」可讓新專案直接使用；或在單一專案輸入 <code>/maf mode docs-review</code>。</p></div>
       <div class="guide-card"><h3>模型升級</h3><p>主 Claude 偏好可用 <code>opus</code> 跟隨最新 Opus；自動化角色宜用固定版本，例如 <code>claude-opus-5-5</code>。Codex 以明確 ID 選型號，例如 <code>gpt-6-sol</code>。MAF agent 模型改變後，使用該訂閱路由前須重新確認。參考 <a href="https://code.claude.com/docs/en/model-config" target="_blank" rel="noopener noreferrer">Claude 模型文件</a>與 <a href="https://learn.chatgpt.com/docs/models" target="_blank" rel="noopener noreferrer">Codex 模型文件</a>。</p></div>
     </div></section>
     <section aria-labelledby="approval-title"><h2 id="approval-title">任務核准：只在起點與例外時打擾你</h2><p class="guide-lead">小任務依照你已提出的需求直接做；較大或敏感的任務先由 Claude 列出目標、可修改路徑、測試指令、模型角色、修復次數與發布動作。你確認一次後，同一個 run 會自動完成實作、測試、獨立 review 與範圍內的修復。</p><div class="guide-grid"><div class="guide-card"><h3>何時停在起點？</h3><p>敏感檔案、過寬的路徑、shell 測試、手動風險的獨立 coder 任務，或明確加上 <code>--require-approval</code> 時，run 會顯示 <code>awaiting_approval</code>。先看完整 <code>status RUN_ID</code>；確認後使用 <code>/maf approve RUN_ID</code> 或 CLI <code>approve RUN_ID</code>。若對話中已核准同一份具體計畫，不需再問一次。</p></div><div class="guide-card"><h3>何時再問你？</h3><p>需求衝突、權限或資安風險需要決定時，run 停在 <code>needs_human/replan</code>，不會自行重試。範圍或測試要改時建立新任務；普通測試失敗和可修的 review 問題會在既定修復次數內自動處理。核准本機執行不代表允許 push 或合併。</p></div></div><p class="helper">主 Claude 對話由 <code>/maf</code> skill 遵守這項約定；MAF CLI 只約束它啟動的子任務。Flow Studio 負責設定 flow，不提供任務核准按鈕。</p></section>
-    <section aria-labelledby="herdr-title"><h2 id="herdr-title">可選整合 · Herdr</h2><label class="check"><input id="herdr-enabled" type="checkbox">啟用 MAF 的 Herdr 整合</label><div class="actions"><button class="secondary" id="save-settings" type="button">儲存整合設定</button></div><div class="guide-grid"><div class="guide-card"><h3>關閉（預設）</h3><p>在一般 terminal 執行 <code>work</code>，用 <code>progress</code>／<code>/maf status</code> 看狀態；不建立 Herdr workspace 或 agent pane。</p></div><div class="guide-card"><h3>啟用</h3><p>在 Herdr pane 執行 <code>herdr</code>：MAF 建立不搶焦點的 supervisor workspace，更新主任務 pane 的進度標題；每個 coder／reviewer 執行時會開自己的暫時 pane 顯示即時事件與工具類型，完成後自動關閉。從 Herdr 手動執行 <code>/maf-plan</code> 也會為 planner 開暫時 pane。</p></div></div><p class="helper">這些 pane 只供觀察；agent 仍由 supervisor 管理，正式結果以測試與 commit 證據為準。原始輸出保存在私有 log，pane 不顯示 prompt 或全文。獨立 Pi 任務可同時顯示多個 pane，最多三個任務。此開關只允許整合，不會自行啟動 worker；啟用後仍須在 Herdr 內明確輸入 <code>python3 "$FLOW" --repo "$TARGET" herdr</code>。若只跑一次，可用 <code>work --once --run-id RUN_ID --agent-panes</code>，多個任務可重複 <code>--run-id</code>。</p></section>
-    <section id="guide" aria-labelledby="guide-title"><h2 id="guide-title">安裝與使用指南</h2><p class="guide-lead">MAF 把日常開發留在 Claude；Pi 只接範圍清楚的任務，Codex 只在手動規畫或獨立審查時啟動。短任務上下文、程式測試與對應同一 commit 的 review，讓交接更精簡，也較容易追查結果；實際 token 用量仍取決於任務與模型。</p>
-      <div class="pipeline" aria-label="工作流程"><span>Claude 主對話</span><b>→</b><span>可選：Pi 小任務</span><b>→</b><span>程式測試</span><b>→</b><span>Codex 獨立 review</span><b>→</b><span>同一 commit 的證據</span></div>
+    <section aria-labelledby="herdr-title"><h2 id="herdr-title">可選整合 · Herdr</h2><label class="check"><input id="herdr-enabled" type="checkbox">啟用 MAF 的 Herdr 整合</label><div class="actions"><button class="secondary" id="save-settings" type="button">儲存整合設定</button></div><div class="guide-grid"><div class="guide-card"><h3>關閉（預設）</h3><p>在一般 terminal 執行 <code>work</code>，用 <code>progress</code>／<code>/maf status</code> 看狀態；不建立 Herdr workspace 或 agent pane。</p></div><div class="guide-card"><h3>啟用</h3><p>在 Herdr pane 執行 <code>herdr</code>：MAF 建立不搶焦點的 supervisor workspace，更新主任務 pane 的進度標題；每個 coder／reviewer 執行時會開自己的暫時 pane 顯示即時事件與工具類型，完成後自動關閉。從 Herdr 手動執行 <code>/maf-plan</code> 也會為 planner 開暫時 pane。</p></div></div><p class="helper">這些 pane 只供觀察；agent 仍由 supervisor 管理，正式結果以測試與 commit 證據為準。原始輸出保存在私有 log，pane 不顯示 prompt 或全文。獨立 Pi／Antigravity 任務可同時顯示多個 pane，最多三個任務。此開關只允許整合，不會自行啟動 worker；啟用後仍須在 Herdr 內明確輸入 <code>python3 "$FLOW" --repo "$TARGET" herdr</code>。若只跑一次，可用 <code>work --once --run-id RUN_ID --agent-panes</code>，多個任務可重複 <code>--run-id</code>。</p></section>
+    <section id="guide" aria-labelledby="guide-title"><h2 id="guide-title">安裝與使用指南</h2><p class="guide-lead">MAF 把日常開發留在 Claude；Pi 或 Antigravity 只接範圍清楚的任務，Codex 只在手動規畫或獨立審查時啟動。短任務上下文、程式測試與對應同一 commit 的 review，讓交接更精簡，也較容易追查結果；實際 token 用量仍取決於任務與模型。</p>
+      <div class="pipeline" aria-label="工作流程"><span>Claude 主對話</span><b>→</b><span>可選：Pi／Antigravity 小任務</span><b>→</b><span>程式測試</span><b>→</b><span>Codex 獨立 review</span><b>→</b><span>同一 commit 的證據</span></div>
       <div class="guide-step"><h3>1 · 全域安裝一次</h3><p>需要 Python 3.11+、Git、Claude Code；預設 flow 的 <code>doctor</code> 也會檢查 Codex CLI 與 Pi CLI。下載工具後，只執行一次 <code>install-skills</code>，在使用者目錄註冊 Claude 的 <code>/maf</code>、<code>/maf-plan</code> 與 Codex 的 <code>$maf</code>。不需在每個專案重裝；若 repository 尚未公開，先取得存取權。</p><pre id="install-code">git clone https://github.com/ian902792/multiple-agents-flow.git
 cd multiple-agents-flow
 FLOW="$PWD/flow.py"
 python3 "$FLOW" install-skills
 python3 "$FLOW" ui</pre><button class="secondary copy-guide" data-copy="install-code" type="button">複製指令</button></div>
-      <div class="guide-step"><h3>2 · 每個專案只建立政策</h3><p>在目標 Git 專案開啟 Claude，輸入 <code>/maf setup quick</code> 即可初始化並選 mode；不再安裝 skill。CLI 等價指令如下，<code>--repo</code> 放在子命令前。目標專案需已有第一個 commit。</p><pre id="setup-code">TARGET="/path/to/your-git-project"
-python3 "$FLOW" --repo "$TARGET" init
-python3 "$FLOW" --repo "$TARGET" mode quick
+      <div class="guide-step"><h3>2 · 選全域預設</h3><p>左側選 <code>quick</code>（Pi）或 <code>quick-antigravity</code>（Gemini），按「設為全域預設」。在任何已建立首個 commit 的 Git 專案直接使用，不用 <code>init</code>。需要專案專用政策時，才執行 <code>init</code> 建立 <code>.maf.json</code>。</p><pre id="setup-code">TARGET="/path/to/your-git-project"
+python3 "$FLOW" settings default-flow quick-antigravity
+python3 "$FLOW" --repo "$TARGET" mode
 python3 "$FLOW" --repo "$TARGET" doctor</pre><button class="secondary copy-guide" data-copy="setup-code" type="button">複製指令</button></div>
-      <div class="guide-step"><h3>3 · 確認訂閱後開始</h3><p>在供應商確認登入、所選模型包含於現有訂閱、額外用量／餘額扣款已關閉。<code>doctor</code> 不呼叫模型，無法證明訂閱涵蓋。確認後執行：</p><pre id="billing-code">python3 "$FLOW" --repo "$TARGET" confirm-billing --no-overage
-python3 "$FLOW" --repo "$TARGET" doctor</pre><button class="secondary copy-guide" data-copy="billing-code" type="button">複製指令</button><p class="helper">接著在目標專案重新開啟 Claude 對話，輸入 <code>/maf status</code>；小任務用 <code>/maf mode quick</code>，大型任務先用 <code>/maf mode planned</code>，需要規畫時再手動 <code>/maf-plan 需求</code>。完整 CLI 範例見專案 README。</p></div>
-      <div class="guide-step"><h3>4 · 互不依賴的小工作可交給多個 Pi</h3><p>在同一則需求中列出各自的工作與驗收方式，例如安裝說明、常見問題與疑難排解，各自修改不同檔案。Claude 先從同一個乾淨 commit 建立三份任務，標記 <code>independent: true</code>，再讓 MAF 執行。最多三個 Pi 任務同時跑；每件有自己的 worktree、測試、review 與暫時 Herdr pane。編輯檔案重疊、路徑太廣或需要核准的任務會依序處理。並行縮短等待時間，但不保證總 token 變少。整合後的 commit 仍需重新 <code>verify</code>。</p><pre>/maf delegate 同時處理：1. 補 docs/install.md；2. 補 docs/faq.md；3. 補 docs/troubleshooting.md；各自驗收。</pre><p class="helper">使用 CLI 時，先各自 <code>delegate TASK.json</code>，再用 <code>work --once --run-id ID1 --run-id ID2 --run-id ID3</code>；完整範例見 README 與指令參考。</p></div>
+      <div class="guide-step"><h3>3 · 確認訂閱後開始</h3><p>在供應商確認登入、所選模型包含於現有訂閱、額外用量／餘額扣款已關閉。<code>doctor</code> 不呼叫模型；Antigravity 模型清單也不等於訂閱費用保證。確認後，在任意目錄執行一次全域確認：</p><pre id="billing-code">python3 "$FLOW" confirm-billing --no-overage
+python3 "$FLOW" --repo "$TARGET" doctor</pre><button class="secondary copy-guide" data-copy="billing-code" type="button">複製指令</button><p class="helper">接著在目標專案開啟 Claude 對話，輸入 <code>/maf status</code>；大型任務可用 <code>/maf mode planned</code>，需要規畫時再手動 <code>/maf-plan 需求</code>。更換模型／路由後再確認一次該組合。完整 CLI 範例見專案 README。</p></div>
+      <div class="guide-step"><h3>4 · 互不依賴的小工作可併發</h3><p>在同一則需求中列出各自的工作與驗收方式，例如安裝說明、常見問題與疑難排解，各自修改不同檔案。Claude 先從同一個乾淨 commit 建立三份任務，標記 <code>independent: true</code>，再讓 MAF 執行。最多三個 Pi／Antigravity 任務同時跑；每件有自己的 worktree、測試、review 與暫時 Herdr pane。編輯檔案重疊、路徑太廣或需要核准的任務會依序處理。並行縮短等待時間，但不保證總 token 變少。整合後的 commit 仍需重新 <code>verify</code>。</p><pre>/maf delegate 同時處理：1. 補 docs/install.md；2. 補 docs/faq.md；3. 補 docs/troubleshooting.md；各自驗收。</pre><p class="helper">使用 CLI 時，先各自 <code>delegate TASK.json</code>，再用 <code>work --once --run-id ID1 --run-id ID2 --run-id ID3</code>；完整範例見 README 與指令參考。</p></div>
       <div class="guide-step"><h3>Claude terminal 指令 · 用法與輸出</h3><p>以下在 Claude Code 的專案對話中輸入。Codex 用 <code>$maf</code> 或 <code>/skills → maf</code>；<code>/maf-plan</code> 是 Claude 專用手動規畫指令。結果會回報在目前對話中，格式依 host 略有不同。</p><div class="table-wrap"><table class="command-table"><thead><tr><th>指令</th><th>用途</th><th>輸出</th></tr></thead><tbody>
-      <tr><td><code>/maf</code></td><td>查看目前 mode 與進度</td><td>模式、角色、阻塞摘要；未初始化時提示 setup</td></tr>
-      <tr><td><code>/maf setup quick</code></td><td>初始化專案政策並選 flow</td><td>專案設定路徑、doctor 結果與待確認事項</td></tr>
-      <tr><td><code>/maf mode [名稱]</code></td><td>查看或切換本專案後續任務的 flow</td><td>所選 mode、可用名稱、角色模型與 billing 狀態</td></tr>
+      <tr><td><code>/maf</code></td><td>查看目前 mode 與進度</td><td>模式、角色與阻塞摘要</td></tr>
+      <tr><td><code>/maf setup [名稱]</code></td><td>檢查本專案是否可使用；指定名稱時設為專案覆寫</td><td>doctor 結果與待確認事項</td></tr>
+      <tr><td><code>/maf mode [名稱|default]</code></td><td>查看或切換本專案後續任務的 flow；default 跟隨全域</td><td>所選 mode、可用名稱、角色模型與 billing 狀態</td></tr>
       <tr><td><code>/maf approve RUN_ID</code></td><td>確認已檢視的凍結計畫並放行一次</td><td>run ID、<code>queued</code> 與核准時間；範圍變更時拒絕</td></tr>
-      <tr><td><code>/maf delegate 需求</code></td><td>把一件或數件獨立小任務交 Pi</td><td>各任務的 run ID、驗證狀態、阻塞或 handoff</td></tr>
+      <tr><td><code>/maf delegate 需求</code></td><td>把一件或數件獨立小任務交所選 Pi／Antigravity</td><td>各任務的 run ID、驗證狀態、阻塞或 handoff</td></tr>
       <tr><td><code>/maf verify 需求</code></td><td>驗證 Claude 已 commit 的 HEAD</td><td>run ID、測試與審查對應 SHA、結果</td></tr>
       <tr><td><code>/maf handoff RUN_ID</code></td><td>讀已驗證任務的交接</td><td>精確 SHA、測試、審查與後續動作</td></tr>
       <tr><td><code>/maf run 需求</code></td><td>明確要求獨立 coder 的批次任務</td><td>run ID、階段、結果或阻塞</td></tr>
@@ -89,17 +91,17 @@ python3 "$FLOW" --repo "$TARGET" doctor</pre><button class="secondary copy-guide
       <tr><td><code>ui</code></td><td>開啟本機設定頁</td><td><code>MAF Flow Studio: http://127.0.0.1:PORT/</code></td></tr>
       <tr><td><code>flows</code></td><td>列出全域 flow</td><td><code>{"flows": {...}}</code></td></tr>
       <tr><td><code>flow-save FILE</code></td><td>匯入 GUI 匯出的 JSON</td><td>已驗證的 flow JSON</td></tr>
-      <tr><td><code>settings [herdr on|off]</code></td><td>看或設定全域 Herdr 開關</td><td><code>{"herdr_enabled": false}</code> 或 <code>true</code></td></tr>
-      <tr><td><code>init</code></td><td>建立本專案 <code>.maf.json</code></td><td>設定路徑與下一步</td></tr>
-      <tr><td><code>mode [名稱]</code></td><td>查看或切換本專案 mode</td><td>模式、可用名稱、角色與 billing</td></tr>
+      <tr><td><code>settings [herdr on|off]</code>、<code>settings default-flow NAME</code></td><td>看或設定全域預設與 Herdr 開關</td><td><code>{"default_flow": "quick", "herdr_enabled": false}</code></td></tr>
+      <tr><td><code>init</code></td><td>可選：建立本專案特殊政策 <code>.maf.json</code></td><td>設定路徑與下一步</td></tr>
+      <tr><td><code>mode [名稱|default]</code></td><td>查看或切換本專案 mode；default 清除覆寫</td><td>模式、可用名稱、角色與 billing</td></tr>
       <tr><td><code>doctor</code></td><td>檢查 CLI／登入與訂閱確認紀錄</td><td>各角色問題陣列、billing 問題；有問題時非零代碼</td></tr>
-      <tr><td><code>confirm-billing --no-overage</code></td><td>記錄人已核對現有訂閱</td><td><code>{"confirmed": true, ...}</code></td></tr>
+      <tr><td><code>confirm-billing --no-overage</code></td><td>全域記錄已核對預設 flow 的訂閱；加 <code>--repo</code> 確認專案覆寫</td><td><code>{"confirmed": true, ...}</code></td></tr>
       <tr><td><code>plan --goal-file FILE [--mode NAME]</code></td><td>手動只讀規畫</td><td>計畫文字與私有結果路徑</td></tr>
       <tr><td><code>submit TASK.json [--mode NAME] [--require-approval]</code></td><td>排入獨立 coder 任務</td><td>run JSON，含 ID、<code>queued</code> 或 <code>awaiting_approval</code></td></tr>
-      <tr><td><code>delegate TASK.json [--mode NAME] [--require-approval]</code></td><td>排入 Pi 小任務</td><td>run JSON，含 ID、狀態與核准原因</td></tr>
+      <tr><td><code>delegate TASK.json [--mode NAME] [--require-approval]</code></td><td>排入 Pi／Antigravity 小任務</td><td>run JSON，含 ID、狀態與核准原因</td></tr>
       <tr><td><code>verify TASK.json [--mode NAME] [--require-approval]</code></td><td>排入目前 commit 的測試與審查</td><td>run JSON，含 ID、source SHA 與狀態</td></tr>
       <tr><td><code>approve RUN_ID</code></td><td>放行一次已檢視的任務範圍</td><td>run JSON，狀態變成 <code>queued</code></td></tr>
-      <tr><td><code>work [--once] [--run-id ID ...] [--pi-concurrency N] [--agent-panes]</code></td><td>處理佇列；獨立 Pi 任務最多同時三個，Herdr 可開各自的觀察 pane</td><td>每個任務的階段與結果，或無可執行任務的訊息</td></tr>
+      <tr><td><code>work [--once] [--run-id ID ...] [--delegate-concurrency N] [--agent-panes]</code></td><td>處理佇列；獨立 Pi／Antigravity 任務最多同時三個，Herdr 可開各自的觀察 pane</td><td>每個任務的階段與結果，或無可執行任務的訊息</td></tr>
       <tr><td><code>status [RUN_ID]</code></td><td>列摘要或完整單一 run</td><td>run 陣列或單一 run JSON</td></tr>
       <tr><td><code>progress [--json|--watch]</code></td><td>讀進度，可選 JSON／持續監看</td><td>階段、SHA、阻塞、下一步；JSON 不含 transcript</td></tr>
       <tr><td><code>handoff RUN_ID</code></td><td>讀已驗證證據</td><td>精確 commit SHA、測試與 review 結果</td></tr>
@@ -108,9 +110,10 @@ python3 "$FLOW" --repo "$TARGET" doctor</pre><button class="secondary copy-guide
       <tr><td><code>merge RUN_ID</code></td><td>已授權時合併或核對結果</td><td>合併狀態或政策阻塞</td></tr>
       <tr><td><code>herdr</code></td><td>在 Herdr 內啟動 supervisor 與自動 agent pane</td><td>workspace ID、worker pane ID、主任務 pane ID</td></tr>
       </tbody></table></div><p class="helper">發布／合併的其他旗標與任務 JSON 格式見 README。選 mode 和儲存 flow 都不呼叫模型；<code>plan</code>、<code>work</code> 才可能啟動 agent。</p></div>
-      <div class="guide-step"><h3>範例 · 開關、切換與核准</h3><pre id="example-code">python3 "$FLOW" settings                 # {"herdr_enabled": false}
-python3 "$FLOW" settings herdr on        # {"herdr_enabled": true}
-python3 "$FLOW" --repo "$TARGET" mode quick
+      <div class="guide-step"><h3>範例 · 開關、切換與核准</h3><pre id="example-code">python3 "$FLOW" settings                 # {"default_flow": "quick", "herdr_enabled": false}
+python3 "$FLOW" settings herdr on        # {"default_flow": "quick", "herdr_enabled": true}
+python3 "$FLOW" settings default-flow quick-antigravity
+python3 "$FLOW" --repo "$TARGET" mode default
 # Claude terminal: /maf mode planned
 # Claude terminal: /maf-plan 設計跨模組重構
 # Claude terminal: /maf mode docs-review
@@ -119,12 +122,13 @@ python3 "$FLOW" --repo "$TARGET" mode quick
     </section>
   </main>
 </div>
-<datalist id="models-claude"></datalist><datalist id="models-codex"></datalist><datalist id="models-pi"></datalist><datalist id="models-hermes"></datalist>
+<datalist id="models-claude"></datalist><datalist id="models-codex"></datalist><datalist id="models-pi"></datalist><datalist id="models-hermes"></datalist><datalist id="models-antigravity"></datalist>
 <script nonce="__MAF_TOKEN__">
 const token="__MAF_TOKEN__";
 const el=id=>document.getElementById(id);
 let snapshot=null, currentName="", draft=null;
-const suggestedModels={claude:["opus","claude-opus-5-5","sonnet","haiku"],codex:["gpt-6-sol","gpt-6-astra","gpt-6-luna"],pi:["deepseek-v4.1-flash"],hermes:["deepseek-v4.1-flash"]};
+const suggestedModels={claude:["opus","claude-opus-5-5","sonnet","haiku"],codex:["gpt-6-sol","gpt-6-astra","gpt-6-luna"],pi:["deepseek-v4.1-flash"],hermes:["deepseek-v4.1-flash"],antigravity:["gemini-3.8-flash-high","gemini-3.8-flash-medium"]};
+const coderRoutes={pi:["opencode-go","deepseek-v4.1-flash","medium"],antigravity:["google-account","gemini-3.8-flash-high","high"],claude:["claude-subscription","claude-opus-5-5","medium"],codex:["chatgpt","gpt-6-sol","medium"],hermes:["opencode-go","deepseek-v4.1-flash","medium"]};
 async function api(path, body){
   const response=await fetch(path,{method:body?"POST":"GET",headers:{"X-MAF-Token":token,...(body?{"Content-Type":"application/json"}:{})},body:body?JSON.stringify(body):undefined});
   const value=await response.json();
@@ -141,8 +145,13 @@ function collect(){
   flow.main.model=el("main-model").value.trim();flow.main.effort=el("main-effort").value;
   for(const row of document.querySelectorAll(".role-row")){
     const role=flow.roles[row.dataset.role];
+    if(row.dataset.role==="coder"){
+      role.runtime=el("coder-runtime").value;
+      role.provider=coderRoutes[role.runtime][0];
+      if(role.runtime!=="hermes")delete role.profile;
+    }
     role.model=row.querySelector(".model-input").value.trim();
-    role.effort=row.querySelector(".effort-select").value;
+    role.effort=row.querySelector(":scope > .effort-select").value;
   }
   return {name,flow};
 }
@@ -166,31 +175,35 @@ function drawEfforts(select,runtime,value){
 function draw(){
   const list=el("flow-list");list.replaceChildren();
   for(const name of Object.keys(snapshot.flows).sort()){
-    const button=document.createElement("button");button.type="button";button.textContent=name;
+    const button=document.createElement("button");button.type="button";button.textContent=name+(name===snapshot.settings.default_flow?" · 預設":"");
     button.className="flow-item"+(name===currentName?" current":"");
     button.addEventListener("click",()=>edit(name,snapshot.flows[name]));list.append(button);
   }
   el("flow-name").value=currentName;el("description").value=draft.description;el("manual-plan").checked=draft.manual_plan;
+  el("default-status").textContent="全域預設："+snapshot.settings.default_flow;
   el("main-model").value=draft.main.model;el("main-effort").value=draft.main.effort;
   drawModelLists();
   for(const row of document.querySelectorAll(".role-row")){
     const role=draft.roles[row.dataset.role];
+    if(row.dataset.role==="coder")el("coder-runtime").value=role.runtime;
     row.querySelector(".role-route").textContent=role.runtime+" / "+role.provider;
     row.querySelector(".model-input").value=role.model;
     row.querySelector(".model-input").setAttribute("list","models-"+role.runtime);
-    drawEfforts(row.querySelector(".effort-select"),role.runtime,role.effort);
+    drawEfforts(row.querySelector(":scope > .effort-select"),role.runtime,role.effort);
   }
   el("herdr-enabled").checked=snapshot.settings.herdr_enabled;
 }
-async function refresh(){snapshot=await api("/api/state");if(!draft||!snapshot.flows[currentName]){currentName="quick";draft=structuredClone(snapshot.flows[currentName])}draw()}
+async function refresh(){snapshot=await api("/api/state");if(!draft||!snapshot.flows[currentName]){currentName=snapshot.settings.default_flow;draft=structuredClone(snapshot.flows[currentName])}draw()}
 async function save(){
   const {name,flow}=collect();
   try{
     snapshot=await api("/api/flow",{name,flow});currentName=name;draft=structuredClone(flow);
-    draw();message("Flow 已儲存。到專案的 Claude terminal 輸入 /maf mode "+name+" 才會選用。",false);
+    draw();message("Flow 已儲存；如要讓新專案預設使用，按「設為全域預設」。",false);
   }catch(error){message(error.message,true)}
 }
 el("save-flow").addEventListener("click",save);
+el("set-default").addEventListener("click",async()=>{try{if(!snapshot.flows[currentName])throw Error("請先儲存 flow。");snapshot=await api("/api/default",{name:currentName});draw();message("新專案預設使用 "+currentName+"。已有專案可用 /maf mode default 跟隨全域預設。") }catch(error){message(error.message,true)}});
+el("coder-runtime").addEventListener("change",()=>{const runtime=el("coder-runtime").value;const previous=draft.roles.coder.runtime;draft=collect().flow;const [provider,model,effort]=coderRoutes[runtime];draft.roles.coder={runtime,provider,model,access:"edit",effort};if(previous==="pi"&&runtime==="antigravity")draft.description=draft.description.replace("交給 Pi","交給 Antigravity").replace("交 Pi","交 Antigravity");if(previous==="antigravity"&&runtime==="pi")draft.description=draft.description.replace("交給 Antigravity","交給 Pi").replace("交 Antigravity","交 Pi");draw();message("請檢查適用範圍文字與模型，然後儲存 flow。")});
 el("save-settings").addEventListener("click",async()=>{try{snapshot=await api("/api/settings",{herdr_enabled:el("herdr-enabled").checked});message("Herdr 整合設定已儲存。",false)}catch(error){message(error.message,true)}});
 el("new-flow").addEventListener("click",()=>{edit("",draft);el("flow-name").focus();message("輸入新名稱後儲存。")});
 el("export-flow").addEventListener("click",()=>{

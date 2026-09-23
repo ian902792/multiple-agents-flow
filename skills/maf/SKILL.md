@@ -1,6 +1,6 @@
 ---
 name: maf
-description: Operate multiple-agents-flow from the main coding chat. Use for named flow selection, scoped Pi delegation, exact-commit verification, progress, and blocked-run recovery.
+description: Operate multiple-agents-flow from the main coding chat. Use for global or project flow selection, scoped Pi or Antigravity delegation, exact-commit verification, progress, and blocked-run recovery.
 ---
 
 # MAF
@@ -20,14 +20,13 @@ Never ask the user to copy a shell function or hand-write task JSON.
 
 Claude uses `/maf <action>`; Codex CLI/IDE uses `/skills` to select `maf`, or
 `$maf <action>`. Do not promise `/maf` is a Codex built-in. Interpret arguments
-as a request, never as shell text. With no action, show mode and progress, or
-explain setup if `.maf.json` does not exist.
+as a request, never as shell text. With no action, show mode and progress.
 
 | Action | Operation |
 | --- | --- |
-| `setup [MODE]` | Initialize if needed, select mode, check readiness. |
-| `mode [MODE]` | Show or persist the default for new tasks. No inference. |
-| `delegate <requirements>` | Give one or more bounded tasks to Pi, in separate worktrees. |
+| `setup [MODE]` | Check readiness; optional mode sets a project override. |
+| `mode [MODE\|default]` | Show or persist a project override; `default` restores the global flow. No inference. |
+| `delegate <requirements>` | Give one or more bounded tasks to the selected lightweight coder, in separate worktrees. |
 | `verify <requirement>` | Test and independently review Claude's current committed HEAD. |
 | `handoff RUN_ID` | Read a verified run's concise exact-SHA evidence. |
 | `run <requirement>` | Explicit legacy batch run with a separate coder. |
@@ -39,41 +38,47 @@ explain setup if `.maf.json` does not exist.
 Modes: `economy` = Pi/DeepSeek Flash coding + fresh Pi review;
 `opus-sol` = pinned Claude Opus 5.5 coding + Codex GPT-6 Sol review;
 `hermes-coder` = Hermes coding + Pi review;
-`configured` = `.maf.json` roles. `quick`, `planned`, and user-created names
-are user-wide role profiles; use `flows` to inspect them. Profiles select future
+`configured` = project `.maf.json` roles when present, built-in economy otherwise.
+`quick`, `planned`, `quick-antigravity`, and user-created names are user-wide role
+profiles; use `flows` to inspect them. `quick-antigravity` uses the signed-in
+`agy` account with Gemini 3.8 Flash High for narrow coding tasks. Profiles select future
 MAF agents, not the current Claude session. Tests run as approved commands,
 without a tester model. Claude's `/model` and `/effort` control the main chat.
 
 ## Setup and mode
 
-1. Read target instructions and `.maf.json`. If absent, use `init --preset
-   economy` (or the requested preset; `configured` initializes with economy).
-   Never overwrite an existing config. Use `ui` to edit user-wide flows and
-   the optional Herdr setting; it never selects the target project's mode.
-2. Use `mode MODE` to select; `mode` alone reports effective roles and billing
-   readiness. Selection lives in private Git state, affects new submissions
-   only, and preserves existing runs. Do not edit `.maf.json` to switch modes.
-   `submit --mode MODE` overrides just one task.
+1. Read target instructions and `mode`. New Git repositories with an initial
+   commit use the global default flow immediately; do not create `.maf.json`
+   unless project policy needs its own base branch, protected paths, or timeouts.
+   Never overwrite an existing config. `ui` edits user-wide flows, the global
+   default and the optional Herdr setting; it never starts an agent.
+2. Use `mode MODE` only when a project needs an override; `mode default`
+   restores global selection. `mode` alone reports effective roles and billing
+   readiness. Project selection lives in private Git state, affects new
+   submissions only, and preserves existing runs. Do not edit `.maf.json` to
+   switch modes. `submit --mode MODE` overrides just one task.
 3. Run `doctor` for setup/readiness, not every status poll. It checks the
    selected mode without inference; it cannot prove model availability.
 4. If billing confirmation is missing, show exact provider/model routes and
    ask the human to confirm subscription coverage with extra usage / Go Use
-   balance disabled. Existing authorization for that exact configuration is
-   sufficient. Only then run `confirm-billing --no-overage`. Login success or
-   a setup request is not billing attestation. Approved configurations are
-   remembered, so switching back needs no repeated attestation.
+   balance disabled. Existing authorization for that exact role/model set is
+   sufficient. Only then run `confirm-billing --no-overage` with `--repo`
+   for a project override, or without it for the global default. Login success
+   or a setup request is not billing attestation. Approved role/model sets are
+   remembered globally, so switching back needs no repeated attestation.
 5. Report the mode and remaining blockers. No inference, commit, push, provider
    setting change, or global agent configuration change during setup. The skill
-   is installed once for this user via `install-skills`; another project only
-   needs its own `.maf.json`. Never overwrite unrelated skills.
+   is installed once for this user via `install-skills`; other Git projects need
+   no MAF configuration. Never overwrite unrelated skills.
 
 ## Claude-first work
 
 For ordinary tasks, implement in this Claude conversation. Do not start a
-separate Claude coder. Use Pi only for narrow edits or test-writing tasks with
-explicit paths and approved test argv. Pi cannot execute shell tests; the
+separate Claude coder. Use the selected Pi or Antigravity coder only for narrow
+edits or test-writing tasks with explicit paths and approved test argv. The
+lightweight coder must not execute shell tests; the
 supervisor runs them. Do not delegate planning, broad integration, or final
-sign-off to Pi. Mark a Pi task `"independent": true` only when it has its own
+sign-off to the lightweight coder. Mark a delegated task `"independent": true` only when it has its own
 clear acceptance criteria, exact non-overlapping editable file paths, and no
 dependency on another task or shared test resource. Queue all independent tasks
 from the same clean HEAD before starting the worker. MAF runs up to three at once
@@ -100,11 +105,10 @@ Prepare private task JSON with `id`, `title`, `instructions`, `paths`, `tests`,
 `risk`, and optional boolean `independent`, as described below. Keep it outside the Git worktree. Before
 `delegate` or `verify`, commit the current work and ensure the tree is fully
 clean; these commands snapshot exact HEAD. Do not stash or reset user changes.
-Read `mode` first. If it is still `configured` and the user has not selected
-another profile, use `--mode quick` for Claude-first delegation and review so
-the default independent reviewer is Codex Sol.
+Read `mode` first. Follow the selected global or project flow; do not switch
+to another flow unless the user requests it.
 
-- `delegate <task-file> [--mode NAME]` queues a Pi coder in an isolated
+- `delegate <task-file> [--mode NAME]` queues the selected Pi or Antigravity coder in an isolated
   worktree at HEAD. For multiple independent requirements, prepare and submit
   each task before starting the worker. Resolve any `awaiting_approval` gate,
   then run `work --once --run-id ID` with one `--run-id` per submitted task;
@@ -119,7 +123,7 @@ the default independent reviewer is Codex Sol.
   base branch, pass an exact ancestor with `--base`. Run its ID through
   `work --once --run-id ID`; `handoff ID` gives the tested and reviewed SHA.
   On failure, Claude fixes the source branch, commits, and starts a new verify
-  run. Resolve any `awaiting_approval` gate before `work`. Never let a Pi coder
+  run. Resolve any `awaiting_approval` gate before `work`. Never let a delegated coder
   repair an external Claude commit.
 
 If the coder returns `MAF_NEEDS_HUMAN:` or the reviewer marks a security,
