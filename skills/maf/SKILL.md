@@ -31,6 +31,7 @@ explain setup if `.maf.json` does not exist.
 | `verify <requirement>` | Test and independently review Claude's current committed HEAD. |
 | `handoff RUN_ID` | Read a verified run's concise exact-SHA evidence. |
 | `run <requirement>` | Explicit legacy batch run with a separate coder. |
+| `approve RUN_ID` | After the human accepts a frozen task plan, release its one-time execution gate. |
 | `status` | Read `progress --json`; summarize stage and blockers. |
 | `resume RUN_ID` | Diagnose, resolve authorized blockers, verify stopped processes, then resume. |
 | `install` | Register this skill once in the user's Claude and Codex skill directories. |
@@ -74,6 +75,22 @@ task with explicit paths and approved test argv. Pi cannot execute shell tests;
 the supervisor runs them. Do not delegate planning, broad integration, or final
 sign-off to Pi.
 
+Before substantial work, show the concrete goal, editable paths, test argv,
+model roles, repair limit and any publication action once. Ask for a decision
+only if this plan is not already covered by the user's request or prior approval.
+After approval, continue within that scope without asking at each agent/test/
+repair step. Ordinary small tasks within the user's request need no extra prompt.
+Use `--require-approval` for security, permission, financial, deployment, data
+loss, or ambiguous requirements even if the file names look harmless. MAF also
+holds manual-risk batch tasks, sensitive/broad path scopes and shell verification
+commands automatically. An `awaiting_approval` run cannot start an agent or test.
+Read `status RUN_ID` and show its frozen instructions, paths, tests, roles and
+approval reasons. Invoke `approve RUN_ID` only after the human confirms that
+scope, or when their existing approval clearly covers this exact scope. Never
+approve a changed plan by inference. New paths, commands or requirements need
+a new task and approval. Approval is for local execution only; publication and
+merge still require their own explicit authorization.
+
 Prepare private task JSON with exactly `id`, `title`, `instructions`, `paths`,
 `tests`, `risk`, as described below. Keep it outside the Git worktree. Before
 `delegate` or `verify`, commit the current work and ensure the tree is fully
@@ -83,7 +100,8 @@ another profile, use `--mode quick` for Claude-first delegation and review so
 the default independent reviewer is Codex Sol.
 
 - `delegate <task-file> [--mode NAME]` starts a Pi coder in an isolated
-  worktree at HEAD. Run `work --once --run-id ID`, then read `handoff ID` only
+  worktree at HEAD. Resolve any `awaiting_approval` gate first, then run
+  `work --once --run-id ID` and read `handoff ID` only
   after verified completion. Inspect the scoped diff and integrate its commit
   range into the main branch yourself. A cherry-pick creates a new SHA, so run
   `verify` on that combined commit before calling it verified.
@@ -93,7 +111,13 @@ the default independent reviewer is Codex Sol.
   base branch, pass an exact ancestor with `--base`. Run its ID through
   `work --once --run-id ID`; `handoff ID` gives the tested and reviewed SHA.
   On failure, Claude fixes the source branch, commits, and starts a new verify
-  run. Never let a Pi coder repair an external Claude commit.
+  run. Resolve any `awaiting_approval` gate before `work`. Never let a Pi coder
+  repair an external Claude commit.
+
+If the coder returns `MAF_NEEDS_HUMAN:` or the reviewer marks a security,
+permission or requirements finding as manual risk, stop and report the concrete
+question. Do not resume that run; settle the issue and submit a new scoped task.
+Ordinary test/review failures use the configured repair budget automatically.
 
 Only claim verification if `handoff` succeeds for the current exact commit.
 If current HEAD has moved since submission, the evidence is for the earlier
@@ -113,13 +137,15 @@ SHA; submit a new verify run. Never auto-publish or merge a delegated run.
 4. Briefly state scope, coding/review models, and acceptance commands. Proceed
    when authorized by the user or applicable project instructions. If approval
    is missing, prepare this concrete task before asking. Do not repeatedly ask
-   for authorization already given in the conversation.
+   for authorization already given in the conversation. Mark semantic high-risk
+   tasks with `--require-approval`.
 5. Save JSON in a private temporary file outside tracked files; call `submit
    <task-file>` (optionally the explicitly requested `--mode MODE`). Respect the
    clean tracked tree and configured base branch. If dirty, identify blocking
    files; do not stash, reset, or commit them automatically. Never add `--publish`
    or `--auto-merge` without explicit authorization.
-6. Capture the returned ID and run `work --once --run-id RUN_ID` through the
+6. Capture the returned ID. If status is `awaiting_approval`, inspect the frozen
+   run and release it as described above. Then run `work --once --run-id RUN_ID` through the
    host's managed long-running command/session facility. Only if the user-wide
    `settings` has `herdr_enabled=true` and this session is inside Herdr with
    `HERDR_ENV=1` and inherited `HERDR_PANE_ID`, append `--planner-pane <that-id>`

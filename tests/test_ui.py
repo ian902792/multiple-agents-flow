@@ -26,6 +26,7 @@ class LocalUITests(unittest.TestCase):
                     with urlopen(url + "/") as response:
                         html = response.read().decode()
                     self.assertIn("Flow Studio", html)
+                    self.assertIn("awaiting_approval", html)
                     token = re.search(r'const token="([0-9a-f]+)"', html).group(1)
                     with self.assertRaises(HTTPError) as denied:
                         urlopen(url + "/api/state")

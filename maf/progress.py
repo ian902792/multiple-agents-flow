@@ -234,9 +234,13 @@ def diagnostics(run):
             result["next"] = f"Wait until confirmed reset {reset}; worker will retry."
         else:
             result.update(attention=True, next="Confirm quota reset and stopped process, then " + resume + " [--after TIME_WITH_ZONE].")
+    elif status == "awaiting_approval":
+        result.update(attention=True, next=f"Inspect status {clean(run['id'], 80)} (task, paths, tests, roles); then approve {clean(run['id'], 80)} once.")
     elif status in ("needs_human", "creating"):
         result["attention"] = True
-        if stage == "external_fix":
+        if stage == "replan":
+            result["next"] = "Requirements or security risk need a human decision; submit a new scoped task after resolving it."
+        elif stage == "external_fix":
             result["next"] = "Fix the source branch, commit, and start a new verify run for the new SHA."
         elif stage in DONE:
             result["next"] = "Inspect feedback; reconcile with publish/merge. Do not replay agents."

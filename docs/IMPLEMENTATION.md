@@ -75,14 +75,20 @@ Task JSON: `id`, `title`, `instructions`, `paths` (explicit relative path/glob a
 Task/config snapshots pin each run. Worktrees and branches are unique; never overwrite/reuse unrelated ones.
 
 Commands: `install-skills`, `settings`, `init`, `mode`, `flows`, `flow-save`, `ui`, `doctor`, `confirm-billing`, `plan`,
-`submit`, `delegate`, `verify`, `work`, `status`, `handoff`, `progress`, `resume`, `publish`, `merge`, `herdr`.
+`submit`, `delegate`, `verify`, `approve`, `work`, `status`, `handoff`, `progress`, `resume`, `publish`, `merge`, `herdr`.
 `submit` only queues. `work --once` executes one runnable task; `work` polls local state.
 `submit --mode NAME` overrides the mode for one task without changing the local default.
 `work --once --run-id ID` processes only that run, never another queued task and never implicitly replays
 an interrupted stage. The skill uses this form after submit/resume. Selection changes still use the writer lock.
 `install-skills` registers one shared skill in the user's `~/.agents/skills/maf` and `~/.claude/skills/maf`,
 plus manual-only `~/.claude/skills/maf-plan`. Global commands work outside a Git repository; `mode` remains per repository.
-Execution: queued -> coding -> testing -> reviewing -> verified -> PR / needs-human / merged.
+Execution: awaiting_approval (when required) -> queued -> coding -> testing -> reviewing -> verified -> PR / needs-human / merged.
+The frozen task/config/mode/kind/source SHA/publication flags are hashed at submit. Sensitive/broad edit
+paths, shell tests and manual-risk batch runs wait for `approve RUN_ID`; callers can explicitly request the
+gate for semantic high-risk work. Approval checks the pristine worktree and exact frozen scope once before
+release. The worker ignores pending runs and rechecks the scope hash before execution/publication. Bounded
+repair within that scope needs no new approval. A coder escalation or reviewer manual-risk finding stops
+at `needs_human/replan`; resume cannot silently replay it. A changed scope requires a new run.
 `delegate` snapshots a fully clean current branch HEAD, runs a Pi coder in a new worktree, then tests/reviews
 the resulting commit. It never integrates the result into the source branch. `verify` snapshots a fully clean
 current HEAD, checks the changed paths against an exact base/merge-base, and starts at testing without a coder.

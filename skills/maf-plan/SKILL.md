@@ -23,9 +23,11 @@ the main implementer after planning.
    select another model/effort. The CLI checks the exact subscription route
    before inference. Do not add API billing or bypass flags.
 4. Summarize the plan in the current Claude chat. Treat its proposed tasks as
-   suggestions, not authorization. Continue implementation only within the
-   user's existing authorization. Delegate narrow independent work to Pi when
-   useful, and verify the final commit with tests and an independent review.
+   suggestions, not authorization. If implementation is not already authorized,
+   show the concrete paths, tests, roles and risks and ask once before starting.
+   Then continue within the approved scope without repeated prompts. Delegate
+   narrow independent work to Pi when useful, and verify the final commit with
+   tests and an independent review.
 
 If readiness or billing confirmation is missing, show the exact route and
 blocker. Never attest to a subscription on the user's behalf without their

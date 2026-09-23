@@ -62,6 +62,17 @@ Claude 的 `/maf` 與 Codex 的 `/skills`／`$maf` 使用方式依據
 
 `run` 保留為明確要求的獨立 coder 批次流程。Skill 不會直接改變**目前 Claude 對話**的模型；GUI 可記住主對話建議偏好，實際切換請在 Claude terminal 使用 `/model`、`/effort`。其他角色的設定影響之後啟動的 MAF agent。
 
+### 一次核准，範圍內自動執行
+
+一般小任務沿用你在對話中給的授權，不再逐步詢問。中大型或敏感任務，Claude 先整理**目標、允許修改的路徑、要執行的測試指令、角色模型、最多修復次數及是否發布**，你確認一次後，同一個 run 的編輯、測試、獨立審查與有限次修復會自動接續。一次對話核准可涵蓋當時列清楚的多個子任務；CLI 仍各自記錄 run 的核准，不會重複打擾你。
+
+MAF 會把敏感或過寬的修改範圍、shell 測試，以及 `risk: "manual"` 的獨立 coder 批次任務停在 `awaiting_approval`；其他語意上的高風險任務可加 `--require-approval`。這與 `risk` 的**自動合併資格**是兩回事。請先看過 `status RUN_ID` 的凍結任務、路徑、測試與角色，再用 `approve RUN_ID` 放行；`work` 不會執行待核准任務。核准綁定任務／設定／來源 SHA，內容改了要重新提交。`approve` 只授權本機執行，不授權 push 或合併。
+
+若實作發現需求衝突、權限／資安問題，或 reviewer 指出需要人決定的風險，run 會停在 `needs_human/replan`，不自動重試。確認新範圍後建立新任務；一般可修正的測試或程式問題仍在原本的修復次數內自動處理。主 Claude 對話本身不由 MAF CLI 控制，這項規則由 `/maf` skill 在主對話執行。
+
+CLI 無法辨識 `approve` 是真人輸入還是 agent 代為執行；這個 gate 防止 worker 意外提前執行，並保留核准的範圍紀錄，不是隔離不可信 agent 的安全邊界。主 agent 必須遵守對話中的實際授權。
+`/maf mode` 選的是多 agent flow，與 Claude Code 主對話的 Auto 權限模式互不相同；MAF 的起點核准只約束它啟動的本機 run。
+
 ## 本機 Flow Studio
 
 ```sh
@@ -112,6 +123,7 @@ python3 /path/to/multiple-agents-flow/flow.py --repo /path/to/repo init
 - **只操作你信任的 repository。** worktree 不是安全沙箱；專案測試是你批准執行的程式。
 - **預設只做到本機驗證。** `--publish` 才授權 push / draft PR；`--auto-merge` 才授權低風險合併。
 - **不自動執行 Planner 的輸出。** 你先看過計劃與測試指令，再 submit 任務。
+- **敏感任務有一次起點核准。** `awaiting_approval` 不會啟動 agent 或測試；核准後只在原範圍內自動繼續。
 - **不保證無人介入。** 登入、未知額度重置時間、權限、模糊中斷及高風險變更都會停下來。
 - CLI 會以非互動模式運作，Herdr 顯示 supervisor 進度；完整輸出保存在本機。不是靠抓取 TUI 畫面判定成功。
 
@@ -213,6 +225,14 @@ python3 "$FLOW" --repo "$TARGET" work --once --run-id RUN_ID
 python3 "$FLOW" --repo "$TARGET" handoff RUN_ID
 ```
 
+若 `delegate`／`verify` 回傳 `"status": "awaiting_approval"`，先在 Claude 對話確認該任務的範圍與測試；已核准相同計畫就直接記錄。CLI 範例：
+
+```sh
+python3 "$FLOW" --repo "$TARGET" status RUN_ID    # 看完整凍結計畫與 approval.reasons
+python3 "$FLOW" --repo "$TARGET" approve RUN_ID   # 一次放行本 run
+python3 "$FLOW" --repo "$TARGET" work --once --run-id RUN_ID
+```
+
 `delegate` 不會自行把 Pi commit 合進目前分支。Claude 檢查後整合，再以新 task／新 SHA 執行 `verify`。在 base branch 直接驗證某個 commit 時，使用 `verify ... --base HEAD^` 明確指定比較起點。測試或審查失敗的 Claude commit 不會自動交給 Pi 修改；Claude 修好、重新提交後建立新的 `verify` run。
 
 以下 `submit` 是保留的獨立 coder 批次流程：
@@ -220,6 +240,9 @@ python3 "$FLOW" --repo "$TARGET" handoff RUN_ID
 ```sh
 # 只排入佇列，不呼叫模型、不 push
 python3 "$FLOW" --repo "$TARGET" submit /absolute/path/task.json
+
+# 例如資安相關工作，明確要求起點核准；submit 回傳 awaiting_approval
+python3 "$FLOW" --repo "$TARGET" submit /absolute/path/task.json --require-approval
 
 # 執行一個已排隊任務；會印出 run id
 python3 "$FLOW" --repo "$TARGET" work --once --run-id RUN_ID

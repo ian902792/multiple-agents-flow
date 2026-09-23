@@ -54,6 +54,7 @@ h1{font-size:32px;line-height:1.15;letter-spacing:-.05em;margin:0}h2{font-size:1
       <div class="guide-card"><h3>自訂 · 跨專案常用流程</h3><p>按「新增 flow」，寫清適用範圍、調整模型與 effort 並儲存。例如命名為 <code>docs-review</code>。在任一專案的 terminal 輸入 <code>/maf mode docs-review</code>；每個專案的選擇各自保存。</p></div>
       <div class="guide-card"><h3>模型升級</h3><p>主 Claude 偏好可用 <code>opus</code> 跟隨最新 Opus；自動化角色宜用固定版本，例如 <code>claude-opus-5-5</code>。Codex 以明確 ID 選型號，例如 <code>gpt-6-sol</code>。MAF agent 模型改變後，使用該訂閱路由前須重新確認。參考 <a href="https://code.claude.com/docs/en/model-config" target="_blank" rel="noopener noreferrer">Claude 模型文件</a>與 <a href="https://learn.chatgpt.com/docs/models" target="_blank" rel="noopener noreferrer">Codex 模型文件</a>。</p></div>
     </div></section>
+    <section aria-labelledby="approval-title"><h2 id="approval-title">任務核准：只在起點與例外時打擾你</h2><p class="guide-lead">小任務依照你已提出的需求直接做；較大或敏感的任務先由 Claude 列出目標、可修改路徑、測試指令、模型角色、修復次數與發布動作。你確認一次後，同一個 run 會自動完成實作、測試、獨立 review 與範圍內的修復。</p><div class="guide-grid"><div class="guide-card"><h3>何時停在起點？</h3><p>敏感檔案、過寬的路徑、shell 測試、手動風險的獨立 coder 任務，或明確加上 <code>--require-approval</code> 時，run 會顯示 <code>awaiting_approval</code>。先看完整 <code>status RUN_ID</code>；確認後使用 <code>/maf approve RUN_ID</code> 或 CLI <code>approve RUN_ID</code>。若對話中已核准同一份具體計畫，不需再問一次。</p></div><div class="guide-card"><h3>何時再問你？</h3><p>需求衝突、權限或資安風險需要決定時，run 停在 <code>needs_human/replan</code>，不會自行重試。範圍或測試要改時建立新任務；普通測試失敗和可修的 review 問題會在既定修復次數內自動處理。核准本機執行不代表允許 push 或合併。</p></div></div><p class="helper">主 Claude 對話由 <code>/maf</code> skill 遵守這項約定；MAF CLI 只約束它啟動的子任務。Flow Studio 負責設定 flow，不提供任務核准按鈕。</p></section>
     <section aria-labelledby="herdr-title"><h2 id="herdr-title">可選整合 · Herdr</h2><label class="check"><input id="herdr-enabled" type="checkbox">啟用 MAF 的 Herdr 整合</label><div class="actions"><button class="secondary" id="save-settings" type="button">儲存整合設定</button></div><div class="guide-grid"><div class="guide-card"><h3>關閉（預設）</h3><p>在一般 terminal 執行 <code>work</code>，用 <code>progress</code>／<code>/maf status</code> 看狀態；不建立 Herdr workspace，也不更新 pane 標題。</p></div><div class="guide-card"><h3>啟用</h3><p>在 Herdr pane 執行 <code>herdr</code>，會建立不搶焦點的 supervisor workspace，持續處理佇列並更新來源 pane 的進度標題。等待不耗模型 token；仍需在 terminal 查阻塞與結果。未在 Herdr 內時，操作會拒絕。</p></div></div><p class="helper">此開關只允許整合，儲存時不會建立 workspace 或啟動 worker。啟用後仍須明確輸入 <code>python3 "$FLOW" --repo "$TARGET" herdr</code>；停用後不再接受新的 pane 回報。</p></section>
     <section id="guide" aria-labelledby="guide-title"><h2 id="guide-title">安裝與使用指南</h2><p class="guide-lead">MAF 把日常開發留在 Claude；Pi 只接範圍清楚的任務，Codex 只在手動規畫或獨立審查時啟動。短任務上下文、程式測試與對應同一 commit 的 review，讓交接更精簡，也較容易追查結果；實際 token 用量仍取決於任務與模型。</p>
       <div class="pipeline" aria-label="工作流程"><span>Claude 主對話</span><b>→</b><span>可選：Pi 小任務</span><b>→</b><span>程式測試</span><b>→</b><span>Codex 獨立 review</span><b>→</b><span>同一 commit 的證據</span></div>
@@ -72,6 +73,7 @@ python3 "$FLOW" --repo "$TARGET" doctor</pre><button class="secondary copy-guide
       <tr><td><code>/maf</code></td><td>查看目前 mode 與進度</td><td>模式、角色、阻塞摘要；未初始化時提示 setup</td></tr>
       <tr><td><code>/maf setup quick</code></td><td>初始化專案政策並選 flow</td><td>專案設定路徑、doctor 結果與待確認事項</td></tr>
       <tr><td><code>/maf mode [名稱]</code></td><td>查看或切換本專案後續任務的 flow</td><td>所選 mode、可用名稱、角色模型與 billing 狀態</td></tr>
+      <tr><td><code>/maf approve RUN_ID</code></td><td>確認已檢視的凍結計畫並放行一次</td><td>run ID、<code>queued</code> 與核准時間；範圍變更時拒絕</td></tr>
       <tr><td><code>/maf delegate 需求</code></td><td>把明確小任務交 Pi</td><td>run ID、工作與驗證狀態、阻塞或 handoff</td></tr>
       <tr><td><code>/maf verify 需求</code></td><td>驗證 Claude 已 commit 的 HEAD</td><td>run ID、測試與審查對應 SHA、結果</td></tr>
       <tr><td><code>/maf handoff RUN_ID</code></td><td>讀已驗證任務的交接</td><td>精確 SHA、測試、審查與後續動作</td></tr>
@@ -92,9 +94,10 @@ python3 "$FLOW" --repo "$TARGET" doctor</pre><button class="secondary copy-guide
       <tr><td><code>doctor</code></td><td>檢查 CLI／登入與訂閱確認紀錄</td><td>各角色問題陣列、billing 問題；有問題時非零代碼</td></tr>
       <tr><td><code>confirm-billing --no-overage</code></td><td>記錄人已核對現有訂閱</td><td><code>{"confirmed": true, ...}</code></td></tr>
       <tr><td><code>plan --goal-file FILE [--mode NAME]</code></td><td>手動只讀規畫</td><td>計畫文字與私有結果路徑</td></tr>
-      <tr><td><code>submit TASK.json [--mode NAME]</code></td><td>排入獨立 coder 任務</td><td>run JSON，含 ID 與狀態</td></tr>
-      <tr><td><code>delegate TASK.json [--mode NAME]</code></td><td>排入 Pi 小任務</td><td>run JSON，含 ID 與狀態</td></tr>
-      <tr><td><code>verify TASK.json [--mode NAME]</code></td><td>排入目前 commit 的測試與審查</td><td>run JSON，含 ID 與 source SHA</td></tr>
+      <tr><td><code>submit TASK.json [--mode NAME] [--require-approval]</code></td><td>排入獨立 coder 任務</td><td>run JSON，含 ID、<code>queued</code> 或 <code>awaiting_approval</code></td></tr>
+      <tr><td><code>delegate TASK.json [--mode NAME] [--require-approval]</code></td><td>排入 Pi 小任務</td><td>run JSON，含 ID、狀態與核准原因</td></tr>
+      <tr><td><code>verify TASK.json [--mode NAME] [--require-approval]</code></td><td>排入目前 commit 的測試與審查</td><td>run JSON，含 ID、source SHA 與狀態</td></tr>
+      <tr><td><code>approve RUN_ID</code></td><td>放行一次已檢視的任務範圍</td><td>run JSON，狀態變成 <code>queued</code></td></tr>
       <tr><td><code>work [--once] [--run-id ID]</code></td><td>處理佇列</td><td>處理結果或無可執行任務的訊息</td></tr>
       <tr><td><code>status [RUN_ID]</code></td><td>列摘要或完整單一 run</td><td>run 陣列或單一 run JSON</td></tr>
       <tr><td><code>progress [--json|--watch]</code></td><td>讀進度，可選 JSON／持續監看</td><td>階段、SHA、阻塞、下一步；JSON 不含 transcript</td></tr>
@@ -104,12 +107,13 @@ python3 "$FLOW" --repo "$TARGET" doctor</pre><button class="secondary copy-guide
       <tr><td><code>merge RUN_ID</code></td><td>已授權時合併或核對結果</td><td>合併狀態或政策阻塞</td></tr>
       <tr><td><code>herdr</code></td><td>開關開啟且在 Herdr pane 時啟動 supervisor</td><td>workspace ID、worker pane ID、主任務 pane ID</td></tr>
       </tbody></table></div><p class="helper">發布／合併的其他旗標與任務 JSON 格式見 README。選 mode 和儲存 flow 都不呼叫模型；<code>plan</code>、<code>work</code> 才可能啟動 agent。</p></div>
-      <div class="guide-step"><h3>範例 · 開關與切換</h3><pre id="example-code">python3 "$FLOW" settings                 # {"herdr_enabled": false}
+      <div class="guide-step"><h3>範例 · 開關、切換與核准</h3><pre id="example-code">python3 "$FLOW" settings                 # {"herdr_enabled": false}
 python3 "$FLOW" settings herdr on        # {"herdr_enabled": true}
 python3 "$FLOW" --repo "$TARGET" mode quick
 # Claude terminal: /maf mode planned
 # Claude terminal: /maf-plan 設計跨模組重構
-# Claude terminal: /maf mode docs-review</pre><button class="secondary copy-guide" data-copy="example-code" type="button">複製範例</button></div>
+# Claude terminal: /maf mode docs-review
+# 若 run 回傳 awaiting_approval：/maf status RUN_ID → 確認 → /maf approve RUN_ID</pre><button class="secondary copy-guide" data-copy="example-code" type="button">複製範例</button></div>
       <ul class="small-list"><li>flow 只影響新任務；已提交任務保留原本模型快照。</li><li>切換 flow 不呼叫模型，也不會替你切換目前 Claude 對話。</li><li>測試由程式執行，獨立審查必須對應同一個精確 commit SHA；未驗證的 agent 自述不算完成。</li></ul>
     </section>
   </main>

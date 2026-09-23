@@ -37,10 +37,12 @@ def parser():
     p.add_argument("--mode", help="Use this mode or named flow for this task only")
     p.add_argument("--publish", action="store_true", help="Authorize pushing this task branch and creating a draft PR")
     p.add_argument("--auto-merge", action="store_true", help="Authorize low-risk merge if all policy/GitHub gates pass")
+    p.add_argument("--require-approval", action="store_true", help="Hold execution for one plan/scope approval")
     for name in ("delegate", "verify"):
         p = commands.add_parser(name, help="Queue Pi work or verify the current committed Claude work")
         p.add_argument("task", type=Path)
         p.add_argument("--mode", help="Use this mode or named flow for this task only")
+        p.add_argument("--require-approval", action="store_true", help="Hold execution for one plan/scope approval")
         if name == "verify":
             p.add_argument("--base", help="Exact ancestor ref to compare with HEAD; default is merge-base with base branch")
     p = commands.add_parser("work", help="Process queued work; waits consume no model tokens")
@@ -50,6 +52,8 @@ def parser():
     p.add_argument("--planner-pane", metavar="PANE_ID", help="Inside Herdr: update the main task pane while this worker runs")
     p = commands.add_parser("status", help="Print local run states, or one run's full evidence")
     p.add_argument("run_id", nargs="?")
+    p = commands.add_parser("approve", help="Approve one frozen task scope, tests and repair budget before execution")
+    p.add_argument("run_id")
     p = commands.add_parser("handoff", help="Show compact, exact-SHA evidence for a verified run")
     p.add_argument("run_id")
     p = commands.add_parser("progress", help="Read-only terminal summary of every run; no lock, no model calls")
@@ -212,10 +216,13 @@ def main(argv=None):
                         plan(repo, config, args.goal_file)
                         return
                     elif args.action == "submit":
-                        result = core.submit(repo, core.read_json(args.task), args.publish, args.auto_merge, args.mode)
+                        result = core.submit(repo, core.read_json(args.task), args.publish, args.auto_merge, args.mode,
+                                             require_approval=args.require_approval)
                     elif args.action in ("delegate", "verify"):
                         result = core.submit(repo, core.read_json(args.task), mode=args.mode, kind=args.action,
-                                             base_ref=getattr(args, "base", None))
+                                             base_ref=getattr(args, "base", None), require_approval=args.require_approval)
+                    elif args.action == "approve":
+                        result = core.approve(repo, args.run_id)
                     elif args.action == "resume":
                         result = core.resume(repo, args.run_id, args.acknowledge_stopped, args.after)
                     else:

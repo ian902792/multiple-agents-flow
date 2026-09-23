@@ -68,6 +68,8 @@ class FlowTests(unittest.TestCase):
         self.task["risk"] = "manual"
         self.task["tests"][0][-1] += "; print('NOISY_TEST_OUTPUT')"
         run = core.submit(self.repo, self.task)
+        self.assertEqual(run["status"], "awaiting_approval")
+        run = core.approve(self.repo, run["id"])
         snapshots, prompts = [], []
         def agent(role, prompt, cwd, log, timeout):
             saved = core.load(self.repo, run["id"])
@@ -109,6 +111,7 @@ class FlowTests(unittest.TestCase):
             core.execute(self.repo, new)
         agent.assert_not_called()
         core.confirm_billing(self.repo, selected)
+        new = core.approve(self.repo, new["id"])
         core.billing_check(self.repo, self.config)  # Confirming one mode does not revoke another.
         core.select_mode(self.repo, "economy")
         with patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
@@ -125,6 +128,56 @@ class FlowTests(unittest.TestCase):
             core.verified(self.repo, new)
         with self.assertRaises(core.FlowError):
             core.billing_check(self.repo, core.execution_config(self.repo, "opus-sol")[1])
+
+    def test_sensitive_task_waits_for_one_scope_approval(self):
+        task = dict(self.task, paths=["AGENTS.md"])
+        run = core.submit(self.repo, task)
+        self.assertEqual(run["status"], "awaiting_approval")
+        self.assertTrue(run["approval"]["reasons"])
+        with patch.object(core.agents, "run_agent") as agent:
+            core.work(self.repo, once=True, run_id=run["id"])
+            with self.assertRaisesRegex(core.FlowError, "awaits approval"):
+                core.execute(self.repo, run)
+        agent.assert_not_called()
+        run = core.approve(self.repo, run["id"])
+        self.assertEqual(run["status"], "queued")
+        with self.assertRaises(core.FlowError):
+            core.approve(self.repo, run["id"])
+        (Path(run["worktree"]) / "AGENTS.md").write_text("Unapproved edit")
+        with patch.object(core.agents, "run_agent") as agent, self.assertRaisesRegex(core.FlowError, "Worktree changed"):
+            core.execute(self.repo, run)
+        agent.assert_not_called()
+        (Path(run["worktree"]) / "AGENTS.md").unlink()
+        run["task"]["tests"] = [["true"]]
+        with patch.object(core.agents, "run_agent") as agent, self.assertRaisesRegex(core.FlowError, "scope"):
+            core.execute(self.repo, run)
+        agent.assert_not_called()
+
+        shell_task = dict(self.task, id="shell-check", tests=[["bash", "-c", "true"]])
+        self.assertEqual(core.submit(self.repo, shell_task)["status"], "awaiting_approval")
+
+    def test_escalations_stop_without_an_automatic_repair(self):
+        run = core.submit(self.repo, self.task)
+        with patch.object(core.agents, "run_agent", return_value={"status": "ok", "text": "MAF_NEEDS_HUMAN: unclear permission change", "usage": None, "detail": ""}) as agent:
+            core.execute(self.repo, run)
+        self.assertEqual(agent.call_count, 1)
+        self.assertEqual((run["status"], run["stage"]), ("needs_human", "replan"))
+        with self.assertRaisesRegex(core.FlowError, "new approved task"):
+            core.resume(self.repo, run["id"], True)
+
+        next_run = core.submit(self.repo, dict(self.task, id="review-risk"))
+        def security_review(role, prompt, cwd, log, timeout):
+            if role["access"] == "edit":
+                return self.fake_agent(role, prompt, cwd, log, timeout)
+            return {"status": "ok", "text": json.dumps({"decision": "changes_requested",
+                    "head_sha": core.git(cwd, "rev-parse", "HEAD"), "risk": "manual",
+                    "summary": "Security concern", "findings": ["Permission scope unclear"]}),
+                    "usage": None, "detail": ""}
+        with patch.object(core.agents, "run_agent", side_effect=security_review) as agent:
+            core.execute(self.repo, next_run)
+        self.assertEqual(agent.call_count, 2)
+        self.assertEqual((next_run["status"], next_run["stage"]), ("needs_human", "replan"))
+        self.assertEqual(next_run["repairs"], 0)
 
     def test_named_flow_selects_models_without_changing_project_policy(self):
         before = (self.repo / ".maf.json").read_bytes()
@@ -359,10 +412,13 @@ class FlowTests(unittest.TestCase):
 
     def test_repair_budget_is_bounded(self):
         self.task["tests"] = [[sys.executable, "-c", "raise SystemExit(1)"]]
+        self.task["risk"] = "manual"
         run = core.submit(self.repo, self.task)
+        run = core.approve(self.repo, run["id"])
         with patch.object(core.agents, "doctor_role", return_value=[]), patch.object(core.agents, "run_agent", side_effect=self.fake_agent) as agent:
             core.process(self.repo, run)
         self.assertEqual(run["status"], "needs_human")
+        self.assertIsNotNone(run["approval"]["approved_at"])
         self.assertEqual(agent.call_count, self.config["max_repairs"] + 1)
 
     def test_test_command_cannot_mutate_verified_tree(self):
@@ -458,7 +514,7 @@ class FlowTests(unittest.TestCase):
         self.assertTrue(core.matches("docs/deep/a.md", ["docs/**/*.md"]))
         self.assertTrue(core.matches("docs/a.md", ["docs/**/*.md"]))
         for name in ("secrets", "payments", "orders", "deployments", "policies"):
-            self.assertIsNotNone(github.PROTECTED_WORDS.search(f"docs/usage/{name}.md"))
+            self.assertIsNotNone(core.SENSITIVE_WORDS.search(f"docs/usage/{name}.md"))
 
     def test_corrupt_attestation_and_run_are_reported(self):
         core.atomic(self.repo / ".maf-local.json", None)
