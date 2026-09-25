@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MAF 上手導覽</title>
 <meta name="description" content="multiple-agents-flow 新手導覽：用動畫看主 Agent 如何委派小任務、測試與審查，以及 Herdr 觀看模式。">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#EE6238">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Huninn&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -63,7 +66,7 @@ button{font-family:inherit}
 .nav{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:saturate(1.4) blur(12px);-webkit-backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid color-mix(in srgb,var(--line) 60%,transparent);padding-top:env(safe-area-inset-top,0px)}
 .nav .wrap{display:flex;align-items:center;gap:18px;height:60px}
 .brand{display:flex;align-items:center;gap:10px;font-family:var(--display);font-size:20px;color:var(--ink);text-decoration:none}
-.mark{width:30px;height:30px;border-radius:10px;background:var(--accent);display:grid;place-items:center;color:#fff;font:600 13px var(--mono)}
+.mark{width:30px;height:30px;border-radius:9px;display:block}
 .nav ul{list-style:none;display:flex;gap:4px;margin:0 0 0 auto;padding:0}
 .nav ul a{display:block;padding:6px 12px;border-radius:999px;color:var(--muted);text-decoration:none;font-size:14px}
 .nav ul a:hover{background:var(--bg2);color:var(--ink)}
@@ -298,7 +301,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-bet
 <body>
 <nav class="nav" aria-label="主要">
   <div class="wrap">
-    <a class="brand" href="#top"><span class="mark">maf</span>multiple-agents-flow</a>
+    <a class="brand" href="#top"><img class="mark" src="favicon.svg" width="30" height="30" alt="">multiple-agents-flow</a>
     <ul>
       <li><a href="#demo">示範</a></li>
       <li><a href="#why">特色</a></li>
