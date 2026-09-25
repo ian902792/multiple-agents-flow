@@ -225,6 +225,18 @@ section.block{padding-block:56px}
 .mini .m{background:var(--accent-soft);color:var(--accent-ink)}
 .mini .col{display:grid;grid-template-rows:1fr 1fr;gap:4px;background:transparent;padding:0;place-items:stretch}
 .mini .col div{background:var(--term);color:var(--t-ink);font-family:var(--mono);font-size:11px}
+.planpair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:820px){.planpair{grid-template-columns:1fr}}
+.duo{display:flex;align-items:center;gap:12px}
+.duo .arrow{flex:1;min-width:20px;height:2px;background:repeating-linear-gradient(90deg,var(--line) 0 6px,transparent 6px 11px);position:relative}
+.duo .arrow::after{content:"";position:absolute;right:-2px;top:-4px;border:5px solid transparent;border-left:7px solid var(--line)}
+.who{display:grid;line-height:1.35;min-width:0}.who b{font-weight:500}.who span{font-size:12.5px;color:var(--muted)}
+.cmdtag{justify-self:start;font:600 13px var(--mono);background:var(--ink);color:var(--bg);padding:4px 10px;border-radius:8px}
+.planflow{list-style:none;margin:16px 0 0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;counter-reset:p}
+@media (max-width:820px){.planflow{grid-template-columns:1fr 1fr}}
+.planflow li{counter-increment:p;background:var(--surface);border-radius:18px;box-shadow:var(--shadow);padding:14px 16px;font-size:14px;color:var(--muted)}
+.planflow li::before{content:counter(p);display:block;font:20px var(--display);color:var(--accent-ink);margin-bottom:4px}
+.planflow b{display:block;color:var(--ink);font-weight:500}
 .snip{position:relative;background:var(--term);color:var(--t-ink);border-radius:14px;padding:12px 64px 12px 14px;font:12.5px/1.65 var(--mono);white-space:pre-wrap;word-break:break-all;margin:0}
 .copy{position:absolute;top:8px;right:8px;font-size:12px;background:var(--term2);color:var(--t-ink);border:0;border-radius:8px;padding:4px 10px;cursor:pointer}
 
@@ -278,6 +290,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-bet
     <a class="brand" href="#top"><span class="mark">maf</span>multiple-agents-flow</a>
     <ul>
       <li><a href="#demo">示範</a></li>
+      <li><a href="#plan">規畫</a></li>
       <li><a href="#herdr">Herdr</a></li>
       <li><a href="#setup">安裝</a></li>
       <li><a href="#flows">Flow</a></li>
@@ -358,6 +371,33 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-bet
     </div>
   </section>
 
+  <section class="block" id="plan">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="kicker">大任務先規畫</span>
+        <h2>用 maf-plan 請另一家的強模型先想清楚</h2>
+        <p>需求大、牽涉多個模組，或你自己還沒想清楚時，先輸入一次 maf-plan。規畫者一定和主對話不同家，只讀、不改檔，換一雙眼睛抓出主對話自己看不見的假設。</p>
+      </div>
+      <div class="planpair">
+        <div class="card">
+          <span class="cmdtag">/maf-plan 需求</span>
+          <div class="duo"><span class="av main">主</span><span class="who"><b>Claude 主對話</b><span>quick、planned 等</span></span><span class="arrow" aria-hidden="true"></span><span class="av rev">規</span><span class="who"><b>Codex GPT-6 Astra</b><span>high effort，只讀</span></span></div>
+        </div>
+        <div class="card hl">
+          <span class="cmdtag">$maf-plan 需求</span>
+          <div class="duo"><span class="av main">主</span><span class="who"><b>Codex 主對話</b><span>codex-pi</span></span><span class="arrow" aria-hidden="true"></span><span class="av rev">規</span><span class="who"><b>Claude Opus 5.5</b><span>可改 Fable 5.1，只讀</span></span></div>
+        </div>
+      </div>
+      <ol class="planflow">
+        <li><b>你手動呼叫</b>只有你輸入 maf-plan 才會規畫，選到 planned 也不會自動啟動。</li>
+        <li><b>另一家模型規畫</b>交回依賴順序、介面約定、風險與可執行的驗收命令。</li>
+        <li><b>你確認一次</b>主 Agent 整理範圍、測試與風險給你看；計畫本身不授權任何執行。</li>
+        <li><b>主 Agent 接手</b>照確認的範圍實作，明確的小任務再委派出去。</li>
+      </ol>
+      <p class="fine">規畫者和主對話是同一家時，MAF 會拒絕執行。在 Flow Studio 的「規畫 Agent」可以切換工具與模型，例如把 Codex 對話的規畫者改成 <code>claude-fable-5-1</code>。</p>
+    </div>
+  </section>
+
   <section class="block" id="herdr">
     <div class="wrap">
       <div class="sec-head">
@@ -413,7 +453,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-bet
           <pre class="snip">git clone https://github.com/ian902792/multiple-agents-flow.git
 cd multiple-agents-flow
 python3 flow.py install-skills<button class="copy" type="button">複製</button></pre>
-          <p>會註冊全域的 Claude <code>/maf</code>、<code>/maf-plan</code> 與 Codex <code>maf</code>。裝完記得重開主對話。</p>
+          <p>會註冊全域的 Claude <code>/maf</code>、<code>/maf-plan</code> 與 Codex <code>$maf</code>、<code>$maf-plan</code>。裝完記得重開主對話。</p>
         </div></li>
         <li class="step"><div class="card">
           <h3>選預設 flow</h3>
@@ -453,11 +493,11 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
           <div class="say">maf 改用 quick-antigravity。<button class="copy" type="button">複製</button></div></div>
         <div class="card flow"><h3>planned</h3>
           <div class="chain"><span class="av rev">規</span><i>→</i><span class="av main">主</span><i>→</i><span class="av pi">Pi</span><span>Codex 規畫，Claude 實作</span></div>
-          <p>中大型需求。只有你手動輸入 <code>/maf-plan</code> 才會請 Codex 規畫。</p>
+          <p>中大型需求。先手動輸入 <code>/maf-plan</code> 請 Codex 規畫，Claude 實作。</p>
           <div class="say">maf 改用 planned，先整理需求。<button class="copy" type="button">複製</button></div></div>
         <div class="card flow"><h3>codex-pi</h3>
           <div class="chain"><span class="av main">主</span><i>→</i><span class="av pi">Pi</span><span>Codex GPT-6 Sol 為主</span></div>
-          <p>以 Codex 為主對話，可選 Claude Opus 5.5 審查。Codex 的預設。</p>
+          <p>以 Codex 為主對話；<code>$maf-plan</code> 由 Claude Opus 5.5 規畫，可選 Claude 審查。Codex 的預設。</p>
           <div class="say">maf 改用 codex-pi。<button class="copy" type="button">複製</button></div></div>
       </div>
       <p class="fine">獨立審查預設關閉，要在 Flow Studio 勾選。開啟後，審查者必須和主對話來自不同工具。</p>
@@ -506,7 +546,7 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
           <pre class="snip">/maf status
 /maf mode quick-antigravity
 /maf-plan 把會員系統拆成可驗收的小任務<button class="copy" type="button">複製</button></pre>
-          <p class="note">在 Codex 裡把 <code>/maf</code> 換成 <code>$maf</code>；<code>/maf-plan</code> 只有 Claude 有。</p>
+          <p class="note">在 Codex 裡把 <code>/maf</code> 換成 <code>$maf</code>，<code>/maf-plan</code> 換成 <code>$maf-plan</code>。</p>
         </div>
       </div>
     </div>

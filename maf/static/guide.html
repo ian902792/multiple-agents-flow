@@ -24,7 +24,7 @@ details{background:#fff;border:1px solid #dce4f0;border-radius:9px;padding:17px 
   <p class="lead">MAF 讓你留在 Claude 或 Codex 的開發對話中。平常直接描述需求，主 Agent 會依 flow 處理委派、測試與進度；畫面只設定常用 flow。定義一次，就能在每個已有首個 commit 的 Git 專案使用。</p>
   <section aria-labelledby="why"><h2 id="why">設計理念</h2><div class="grid">
     <div class="card"><h3>主對話保持短而清楚</h3><p>Claude 或 Codex 處理日常開發與整合；路徑清楚、可單獨驗收的小工作，才交給 Pi 或 Antigravity。獨立任務最多可同時跑三個。</p></div>
-    <div class="card"><h3>規畫由你決定</h3><p>大型任務需要 Codex 規畫時，才手動輸入 <code>/maf-plan</code>。選到 planned flow 不會自動啟動規畫模型。</p></div>
+    <div class="card"><h3>規畫由你決定</h3><p>大型任務先手動輸入 <code>/maf-plan</code>（Codex 用 <code>$maf-plan</code>），請另一家的強模型規畫：Claude 對話交給 Codex，Codex 對話交給 Claude Opus 5.5 或 Fable 5.1。MAF 不會自動啟動規畫。</p></div>
     <div class="card"><h3>證據對準同一個 commit</h3><p>MAF 在獨立 worktree 執行你指定的測試。審查可選：未勾選時結果是 <code>tested</code>；勾選且審查通過才是 <code>verified</code>。</p></div>
     <div class="card"><h3>少打擾，仍保留控制權</h3><p>普通小任務在既定範圍內自動往下做；範圍敏感或需求不明時先請你核准一次，風險或權限問題才再次停下。發布與合併要另外授權。</p></div>
   </div></section>
@@ -51,7 +51,7 @@ python3 flow.py --repo /path/to/project --main codex doctor</pre><p><code>doctor
     <details open><summary>給人：可選的直接控制</summary><div class="table-wrap"><table><thead><tr><th>指令</th><th>何時使用</th><th>你會看到</th></tr></thead><tbody>
       <tr><td><code>/maf status</code> 或 <code>$maf status</code></td><td>想直接查看目前 flow 與進度</td><td>任務階段、阻塞、下一步</td></tr>
       <tr><td><code>/maf mode 名稱</code> 或 <code>$maf mode 名稱</code></td><td>想手動切換單一專案的 flow；<code>default</code> 回到全域設定</td><td>目前模式、角色與帳單確認狀態</td></tr>
-      <tr><td><code>/maf-plan 需求</code></td><td>大型任務由你決定呼叫 Codex 規畫</td><td>計畫與私有結果路徑，不自動執行</td></tr>
+      <tr><td><code>/maf-plan 需求</code></td><td>大型任務由你決定，請另一家的強模型規畫（Codex 用 <code>$maf-plan</code>）</td><td>計畫與私有結果路徑，不自動執行</td></tr>
       <tr><td><code>/model</code>、<code>/effort</code></td><td>在 Claude 中切換目前對話模型與 effort；Codex 請用其模型選單或 CLI 設定</td><td>目前 session 的新設定</td></tr>
     </tbody></table></div></details>
     <details><summary>給主 Agent：依需求自動執行的 MAF 指令</summary><p>安裝 skill 後，Claude 或 Codex 會在需要時使用這些操作。你不用逐條輸入；範圍核准、發布與合併仍由你決定。下列以 Claude 的 <code>/maf</code> 寫法表示；Codex 使用 <code>$maf</code>。</p><div class="table-wrap"><table><thead><tr><th>指令</th><th>用途</th><th>主要輸出</th></tr></thead><tbody>

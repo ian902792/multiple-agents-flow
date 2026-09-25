@@ -4,7 +4,7 @@
 
 第一次使用？先看[動畫新手導覽](https://ian902792.github.io/multiple-agents-flow/)（原始檔在 `site/index.html`）。
 
-日常流程是：**主 Agent 開發 → 可選 Pi 或 Antigravity 小任務 → 測試 → 可選獨立審查**。你平常只要在主對話描述需求；Agent 會使用 MAF skill 處理委派與驗證。要指揮 MAF 時，**以「maf」開頭**，例如「maf 改用 quick」「maf 狀態」，避免 agent 把 flow、mode 等常見字誤會成 CI 或 Claude Code 自己的模式。Claude 主導的大型任務，只有在你手動輸入 `/maf-plan` 時才會先請 Codex 規畫。工具使用現有訂閱，不會偷偷改用付費 API。
+日常流程是：**主 Agent 開發 → 可選 Pi 或 Antigravity 小任務 → 測試 → 可選獨立審查**。你平常只要在主對話描述需求；Agent 會使用 MAF skill 處理委派與驗證。要指揮 MAF 時，**以「maf」開頭**，例如「maf 改用 quick」「maf 狀態」，避免 agent 把 flow、mode 等常見字誤會成 CI 或 Claude Code 自己的模式。大型任務建議先輸入 `/maf-plan`（Codex 用 `$maf-plan`），請**另一家的強模型**先規畫；它只在你手動呼叫時執行。工具使用現有訂閱，不會偷偷改用付費 API。
 
 ## 先了解三個詞
 
@@ -29,7 +29,7 @@ cd multiple-agents-flow
 python3 flow.py install-skills
 ```
 
-`install-skills` 註冊全域的 Claude `/maf`、`/maf-plan` 及 Codex `maf` skill。執行 `python3 flow.py ui` 會開啟只監聽本機的設定頁；「說明與理念」在另一頁。若主對話已經開著，請重新開一個 session，讓它載入 skill。
+`install-skills` 註冊全域的 Claude `/maf`、`/maf-plan` 及 Codex `$maf`、`$maf-plan` skill。執行 `python3 flow.py ui` 會開啟只監聽本機的設定頁；「說明與理念」在另一頁。若主對話已經開著，請重新開一個 session，讓它載入 skill。
 
 **2. 設定全域預設一次：**用 Flow Studio 選 flow 並按「設為全域預設」，會依 flow 的主對話工具設定 Claude 或 Codex 的預設，彼此獨立。也可在 MAF 專案 terminal 輸入：
 
@@ -60,13 +60,24 @@ python3 flow.py --main codex confirm-billing --no-overage
 | --- | --- | --- |
 | **日常小任務** | 「maf 改用 quick，請完成這項修改。」 | Claude 實作；明確的小工作可交 Pi。 |
 | **Gemini 小任務** | 「maf 改用 quick-antigravity。」 | 明確的小工作可交 Antigravity Gemini 3.8 Flash High。 |
-| **中大型任務** | 「maf 改用 planned，先整理需求。」 | 只有你手動輸入 `/maf-plan 需求` 才會請 Codex 規畫；Claude 負責後續實作、整合與驗證。 |
-| **Codex 主導** | 「maf 改用 codex-pi，請完成這項修改。」 | Codex 實作，明確小任務交 Pi；可選 Claude Opus 5.5 審查，預設關閉。 |
+| **中大型任務** | 「maf 改用 planned，先整理需求。」 | 先手動輸入 `/maf-plan 需求` 請 Codex 規畫；Claude 負責後續實作、整合與驗證。 |
+| **Codex 主導** | 「maf 改用 codex-pi，請完成這項修改。」 | Codex 實作，明確小任務交 Pi；`$maf-plan` 由 Claude Opus 5.5 規畫；可選 Claude Opus 5.5 審查，預設關閉。 |
 | **自己的工作方式** | 「maf 改用我的 flow。」 | 先在 Flow Studio 儲存命名 flow，設為全域預設或於單一專案選用。 |
 
 `planned` 只設定角色及提醒；**選到它不會自動啟動 Planner**。Pi 與 Antigravity 適合路徑明確、可獨立驗收的小任務。委派完成後，主 Agent 仍需檢查並整合變更，再驗證整合後的新 commit。要回全域預設，可對主 Agent 說「maf 改回全域預設」，或使用對應的 `maf mode default` 指令。切到尚未確認訂閱的角色組合時，先核對供應商設定，再從 MAF 資料夾執行 `python3 flow.py --repo /path/to/project confirm-billing --no-overage`。
 
-**指令分工：**Claude 對話中可用 `/maf status`、`/maf mode` 和手動 `/maf-plan`；Codex 中用 `$maf status`、`$maf mode`。委派、驗證、交接等是主 Agent 依需求使用的工作指令，平常不必逐條輸入。畫面儲存的主模型只是偏好，**不會切換目前 session**；請在所用 CLI／App 內切換。完整用途與輸出見 Flow Studio 的「說明與理念」頁。
+**指令分工：**Claude 對話中可用 `/maf status`、`/maf mode` 和手動 `/maf-plan`；Codex 中用 `$maf status`、`$maf mode` 和手動 `$maf-plan`。委派、驗證、交接等是主 Agent 依需求使用的工作指令，平常不必逐條輸入。畫面儲存的主模型只是偏好，**不會切換目前 session**；請在所用 CLI／App 內切換。完整用途與輸出見 Flow Studio 的「說明與理念」頁。
+
+### 大型任務：先用 maf-plan 請另一個強模型規畫
+
+需求大、牽涉多個模組，或你自己也還沒想清楚時，先輸入 `/maf-plan 需求`（Codex 輸入 `$maf-plan 需求`）。MAF 會請**與主對話不同家**的強模型，只讀地規畫一次：
+
+| 主對話 | 規畫者（預設） | 可改成 |
+| --- | --- | --- |
+| Claude（`quick`、`planned` 等） | Codex GPT-6 Astra，high effort | 其他 Codex 模型 |
+| Codex（`codex-pi`） | Claude Opus 5.5，high effort | Claude Fable 5.1 等 Claude 模型 |
+
+規畫者會交回依賴順序、介面約定、風險、可執行的驗收命令，以及可以直接委派的小任務草稿。換一家模型規畫，能抓到主對話自己看不見的假設。計畫只是建議，**不會自動執行**；主 Agent 會把範圍、測試與風險整理給你確認一次，再開始實作。規畫者若和主對話是同一家，MAF 會拒絕執行。可在 Flow Studio 的「規畫 Agent」切換工具與模型。
 
 ### 同時交給多個小任務 Agent
 

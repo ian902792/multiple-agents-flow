@@ -101,9 +101,11 @@ def launch_herdr(repo):
             "note": "Supervisor persists independently of planner chat. Ctrl-C stops new work and waits for active delegates to finish."}
 
 
-def plan(repo, config, goal_file):
-    core.billing_check(repo, config)
+def plan(repo, config, goal_file, main_runtime="claude"):
     role = config["roles"]["planner"]
+    if role["runtime"] == main_runtime:
+        raise core.FlowError("Planner must use a different runtime from the main chat; pick a flow whose planner is another agent.")
+    core.billing_check(repo, config)
     goal = goal_file.read_text()
     if not goal.strip() or len(goal) > 50000:
         raise core.FlowError("Goal must be nonempty and at most 50,000 characters.")
@@ -241,7 +243,7 @@ def main(argv=None):
                         core.confirm_billing(repo, config)
                         result = {"confirmed": True, "warning": "Human attestation only; provider billing settings remain authoritative."}
                     elif args.action == "plan":
-                        plan(repo, config, args.goal_file)
+                        plan(repo, config, args.goal_file, args.main)
                         return
                     elif args.action == "submit":
                         result = core.submit(repo, core.read_json(args.task), args.publish, args.auto_merge, args.mode,

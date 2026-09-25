@@ -21,6 +21,8 @@ def templates():
     antigravity["coder"] = {"runtime": "antigravity", "provider": "google-account",
                              "model": "gemini-3.8-flash-high", "access": "edit", "effort": "high"}
     codex = deepcopy(roles)
+    codex["planner"] = {"runtime": "claude", "provider": "claude-subscription",
+                        "model": "claude-opus-5-5", "access": "read", "effort": "high"}
     codex["reviewer"] = {"runtime": "claude", "provider": "claude-subscription",
                          "model": "claude-opus-5-5", "access": "read", "effort": "high", "enabled": False}
     return {
@@ -30,7 +32,7 @@ def templates():
                     "manual_plan": True, "main": {"runtime": "claude", "model": "claude-opus-5-5", "effort": "high"}, "roles": planned},
         "quick-antigravity": {"description": "小任務：Claude 主對話開發；明確小工作交 Antigravity Gemini Flash。",
                               "manual_plan": False, "main": {"runtime": "claude", "model": "claude-opus-5-5", "effort": "medium"}, "roles": antigravity},
-        "codex-pi": {"description": "Codex 主對話開發；明確小任務交 Pi，獨立 Claude 審查可選。",
+        "codex-pi": {"description": "Codex 主對話開發；明確小任務交 Pi；手動 $maf-plan 由 Claude 規畫，獨立 Claude 審查可選。",
                      "manual_plan": False, "main": {"runtime": "codex", "model": "gpt-6-sol", "effort": "high"}, "roles": codex},
     }
 
