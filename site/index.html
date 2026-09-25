@@ -235,6 +235,10 @@ section.block{padding-block:56px}
 .why .card{gap:8px}
 .why h3{font-size:18px}
 .why p{font-size:14.5px;color:var(--muted)}
+.pair{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:820px){.pair{grid-template-columns:1fr}}
+.pair>*{min-width:0}
+.pair .card p{font-size:14.5px;color:var(--muted)}
 .limits{margin-top:16px;background:var(--bg2);border-radius:20px;padding:18px 22px;display:grid;gap:8px}
 .limits p{font-size:14.5px;color:var(--muted)}
 .limits b{color:var(--ink);font-weight:500}
@@ -400,6 +404,30 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-bet
         <div class="card"><span class="tag">第二雙眼</span><h3>規畫與審查一定換一家</h3><p>Claude 對話交給 Codex 規畫，Codex 對話交給 Claude；同一家的組合會被擋下，避免同一種盲點。</p></div>
         <div class="card"><span class="tag">並行</span><h3>同時跑但不互相踩到</h3><p>最多 3 件，只限標記獨立、檔案不重疊、從同一個 commit 出發的任務，其餘照順序。</p></div>
         <div class="card"><span class="tag">輕巧</span><h3>留在對話，讀得完</h3><p>不必切到另一個管理介面，主 Agent 透過 skill 在背後委派與驗證。只用 Python 標準庫，沒有常駐服務或資料庫。</p></div>
+      </div>
+      <div class="sec-head" style="margin:48px 0 0">
+        <h3 style="font-size:24px">和同一家的子 agent 怎麼分工</h3>
+        <p>Claude Code、Codex 內建的子 agent 和 MAF 不是二選一：子 agent 幫主對話省上下文，MAF 幫你省額度，並且不相信 agent 自己的說法。</p>
+      </div>
+      <div class="pair">
+        <div class="card">
+          <span class="tag">同一家的子 agent</span>
+          <ul class="ticks">
+            <li>零設定，說一句就開始，還能帶著對話脈絡。</li>
+            <li>和主對話用同一份訂閱額度。</li>
+            <li>完成與否看它回報的文字；範圍靠 prompt 約束，session 結束就消失。</li>
+          </ul>
+          <p><b>最適合</b>：搜尋、探索、讀大量檔案後回報摘要，以及改幾行的小事。</p>
+        </div>
+        <div class="card hl">
+          <span class="tag">MAF</span>
+          <ul class="ticks">
+            <li>小任務走別家訂閱，主對話額度只花在判斷與整合。</li>
+            <li>規畫與審查一定換一家，避免同一種盲點。</li>
+            <li>測試由 supervisor 自己跑並綁定 commit；範圍凍結，中斷後可恢復。</li>
+          </ul>
+          <p><b>最適合</b>：要改程式、有測試可驗收、想省額度，或需要跨家規畫與審查的工作。</p>
+        </div>
       </div>
       <div class="limits">
         <p><b>也要知道的限制</b></p>
