@@ -534,7 +534,7 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
           <li><b>一次只派現在就能驗收的任務</b>下一件常取決於上一件交接裡的 <code>UNVERIFIED</code> 存疑項。</li>
           <li><b>委派前先 commit</b>MAF 從乾淨的 HEAD 開始，不會替你 stash 或 reset。</li>
           <li><b>整合後要再驗證一次</b>cherry-pick 會產生新的 SHA，舊證據不能套到新 commit。</li>
-          <li><b>tested、verified 都不等於已 push</b>發布和合併要另外明確授權，而且必須開啟獨立審查。</li>
+          <li><b>tested、verified 都不等於已 push</b>要 push、開 PR 或合併，開頭說一次就涵蓋整批任務；自己的 repo 可以在提示詞設定成驗證通過就自動合併。</li>
           <li><b>只在你信任的 repository 使用</b>工作樹不是安全沙箱，測試會執行你核准的命令。</li>
         </ul>
         <div class="list">

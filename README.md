@@ -99,7 +99,7 @@ Flow Studio 可複製 flow，切換主對話、小任務與審查工具，設定
 
 一般小任務照你的需求直接做。對敏感、範圍較大或需求不明的任務，Claude 先提出可檢查的計畫；你確認一次後，MAF 會在核准範圍內接續測試、可選審查與有限次修正。只有需求有誤、資安或權限風險、額度不足等情況，才停下來請你決定。
 
-`/maf status` 會顯示目前的任務與下一步。常見狀態是 `awaiting_approval`（等待你檢視範圍）、`running`、`tested`、`verified`、`waiting_quota`、`needs_human`。核准本機執行**不等於**允許 push 或合併；這兩項需要另外明確授權，且 MAF 發布／自動合併仍要求獨立審查。詳見[指令與恢復流程](docs/CLI.md#核准阻塞與恢復)。
+`/maf status` 會顯示目前的任務與下一步。常見狀態是 `awaiting_approval`（等待你檢視範圍）、`running`、`tested`、`verified`、`waiting_quota`、`needs_human`。核准本機執行**不等於**允許 push 或合併。要 push、開 PR 或合併，開頭說一次就能涵蓋整批任務，例如「全部驗證通過後直接開 PR 並合併」；也可以在[提示詞](docs/AGENT-INSTRUCTIONS.md#選用自己的-repo-自動合併)設定成自己的 repo 預設自動合併。MAF 批次指令的 `--auto-merge` 另有更保守的政策，仍要求獨立審查。詳見[指令與恢復流程](docs/CLI.md#核准阻塞與恢復)。
 
 ## 可選：在 Herdr 觀看 agent 進度
 
@@ -118,7 +118,7 @@ python3 "$FLOW" --repo "$TARGET" herdr
 
 - 只使用你已確認的訂閱路線；額度或登入不明時會停止，不會改用 API 計費。
 - 只在你信任的 repository 使用。工作樹不是安全沙箱，專案測試會執行你核准的命令。
-- 預設只做到本機驗證；發布 PR 或合併需要額外明確授權。
+- 預設只做到本機驗證。要 push、開 PR 或合併，說一次就涵蓋整批任務；自己的 repo 可在提示詞設定成預設自動合併。
 - Antigravity 使用 `agy` 的 Google 帳號登入、`--sandbox` 與受限權限；MAF 拒絕 API key 路由或預先放行工具。`doctor` 會查詢模型清單，但**不會呼叫模型**。授權／額度不明時停止。
 - 並行只用於明確標記為獨立的窄範圍 Pi／Antigravity delegate；其他任務依序執行。
 
