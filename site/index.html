@@ -257,6 +257,7 @@ section.block{padding-block:56px}
 .step::before{content:counter(s);width:48px;height:48px;border-radius:16px;background:var(--surface);box-shadow:var(--shadow);display:grid;place-items:center;font:22px var(--display);color:var(--accent-ink);position:relative;z-index:1}
 .step .card{padding:20px}
 .step p{font-size:14.5px;color:var(--muted)}
+.kw{display:inline-block;font:700 .88em var(--mono);color:#fff;background:var(--accent);padding:0 7px;border-radius:6px;margin-right:4px;letter-spacing:.02em}
 .say{position:relative;background:var(--bg2);border-radius:14px;padding:12px 64px 12px 14px;font-size:14.5px}
 .say .copy{background:var(--surface);color:var(--ink)}
 
@@ -501,7 +502,7 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
         </div></li>
         <li class="step"><div class="card">
           <h3>在專案裡直接說</h3>
-          <div class="say">maf：請按目前 flow 完成這項修改。路徑與驗收明確的小工作可以委派；完成後測試已提交的變更，告訴我結果與 commit SHA。<button class="copy" type="button">複製</button></div>
+          <div class="say"><span class="kw">maf</span>請按目前 flow 完成這項修改。路徑與驗收明確的小工作可以委派；完成後測試已提交的變更，告訴我結果與 commit SHA。<button class="copy" type="button">複製</button></div>
           <p>接下來就是上面示範的流程。想先檢查環境，可以跑 <code>python3 flow.py --repo 專案路徑 doctor</code>，它不會呼叫模型。</p>
         </div></li>
       </ol>
@@ -519,19 +520,19 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
         <div class="card flow"><h3>quick</h3>
           <div class="chain"><span class="av main">主</span><i>→</i><span class="av pi">Pi</span><span>Claude Opus 5.5 → DeepSeek V4.1 Flash</span></div>
           <p>日常小改動。Claude 的原始預設。</p>
-          <div class="say">maf 改用 quick。<button class="copy" type="button">複製</button></div></div>
+          <div class="say"><span class="kw">maf</span>改用 quick。<button class="copy" type="button">複製</button></div></div>
         <div class="card flow"><h3>quick-antigravity</h3>
           <div class="chain"><span class="av main">主</span><i>→</i><span class="av agy">AG</span><span>Claude Opus 5.5 → Gemini 3.8 Flash High</span></div>
           <p>小任務改用 Google 帳號的 Antigravity 額度。</p>
-          <div class="say">maf 改用 quick-antigravity。<button class="copy" type="button">複製</button></div></div>
+          <div class="say"><span class="kw">maf</span>改用 quick-antigravity。<button class="copy" type="button">複製</button></div></div>
         <div class="card flow"><h3>planned</h3>
           <div class="chain"><span class="av rev">規</span><i>→</i><span class="av main">主</span><i>→</i><span class="av pi">Pi</span><span>Codex 規畫，Claude 實作</span></div>
           <p>中大型需求。先手動輸入 <code>/maf-plan</code> 請 Codex 規畫，Claude 實作。</p>
-          <div class="say">maf 改用 planned，先整理需求。<button class="copy" type="button">複製</button></div></div>
+          <div class="say"><span class="kw">maf</span>改用 planned，先整理需求。<button class="copy" type="button">複製</button></div></div>
         <div class="card flow"><h3>codex-pi</h3>
           <div class="chain"><span class="av main">主</span><i>→</i><span class="av pi">Pi</span><span>Codex GPT-6 Sol 為主</span></div>
           <p>以 Codex 為主對話；<code>$maf-plan</code> 由 Claude Opus 5.5 規畫，可選 Claude 審查。Codex 的預設。</p>
-          <div class="say">maf 改用 codex-pi。<button class="copy" type="button">複製</button></div></div>
+          <div class="say"><span class="kw">maf</span>改用 codex-pi。<button class="copy" type="button">複製</button></div></div>
       </div>
       <p class="fine">獨立審查預設關閉，要在 Flow Studio 勾選。開啟後，審查者必須和主對話來自不同工具。</p>
     </div>
@@ -562,7 +563,7 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
       </div>
       <div class="two">
         <ul class="tips">
-          <li><b>指揮 MAF 時以「maf」開頭</b>例如「maf 改用 quick」「maf 狀態」。flow、mode、planned 都是常見字，沒有 maf 開頭，agent 可能誤會成 CI 或 Claude Code 自己的 plan mode。</li>
+          <li><b>指揮 MAF 時以「maf」開頭</b>例如「<span class="kw">maf</span>改用 quick」「<span class="kw">maf</span>狀態」。flow、mode、planned 都是常見字，沒有 maf 開頭，agent 可能誤會成 CI 或 Claude Code 自己的 plan mode。</li>
           <li><b>委派後讓它跑完</b>中途插話會讓主 Agent 停下來重新核對，白耗額度。臨時想法先記下來。</li>
           <li><b>一次只派現在就能驗收的任務</b>下一件常取決於上一件交接裡的 <code>UNVERIFIED</code> 存疑項。</li>
           <li><b>委派前先 commit</b>MAF 從乾淨的 HEAD 開始，不會替你 stash 或 reset。</li>
@@ -572,9 +573,9 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
         </ul>
         <div class="list">
           <h3>常用說法（以 maf 開頭）</h3>
-          <div class="say">maf 同時處理 1. 補 docs/install.md 安裝範例；2. 補 docs/faq.md 常見問題；3. 補 docs/troubleshooting.md 疑難排解，各自驗收。<button class="copy" type="button">複製</button></div>
-          <div class="say">maf 這件的驗收重點是：重新整理後仍保持登入。<button class="copy" type="button">複製</button></div>
-          <div class="say">maf 改回全域預設。<button class="copy" type="button">複製</button></div>
+          <div class="say"><span class="kw">maf</span>同時處理 1. 補 docs/install.md 安裝範例；2. 補 docs/faq.md 常見問題；3. 補 docs/troubleshooting.md 疑難排解，各自驗收。<button class="copy" type="button">複製</button></div>
+          <div class="say"><span class="kw">maf</span>這件的驗收重點是：重新整理後仍保持登入。<button class="copy" type="button">複製</button></div>
+          <div class="say"><span class="kw">maf</span>改回全域預設。<button class="copy" type="button">複製</button></div>
           <h3 style="margin-top:8px">對話指令</h3>
           <pre class="snip">/maf status
 /maf mode quick-antigravity
@@ -773,7 +774,9 @@ async function apply(ev,animate,g){
   if(ev.s!==undefined)setTrack(ev.s,ev.block);
   if(ev.st)setChip(ev.st);
   if(ev.t==="you"||ev.t==="ai"){
-    const m=el("div","msg "+ev.t),a=el("span","av sm "+(ev.t==="you"?"you":"main"),ev.t==="you"?"你":"主"),b=el("div","bubble",ev.x);
+    const m=el("div","msg "+ev.t),a=el("span","av sm "+(ev.t==="you"?"you":"main"),ev.t==="you"?"你":"主"),b=el("div","bubble");
+    const kw=ev.t==="you"&&/^maf[：\s]/.test(ev.x);
+    if(kw){b.appendChild(el("span","kw","maf"));b.appendChild(document.createTextNode(ev.x.slice(3).replace(/^[：\s]+/,"")))}else b.textContent=ev.x;
     if(ev.code)b.appendChild(el("pre","",ev.code));
     m.append(a,b);chat.appendChild(m);bottom(chat);
   }else if(ev.t==="tool"){
@@ -838,7 +841,7 @@ if(!reduce&&"IntersectionObserver" in window){
 }
 
 document.querySelectorAll(".copy").forEach(b=>b.addEventListener("click",()=>{
-  const box=b.parentElement,text=[...box.childNodes].filter(n=>n!==b).map(n=>n.textContent).join("").trim();
+  const box=b.parentElement,text=[...box.childNodes].filter(n=>n!==b).map(n=>n.textContent).join("").trim().replace(/^maf(?=\S)/,"maf ");
   const reset=()=>setTimeout(()=>b.textContent="複製",1400);
   const fallback=()=>{const r=document.createRange();r.selectNodeContents(box);const s=getSelection();s.removeAllRanges();s.addRange(r);b.textContent="已選取";reset()};
   try{navigator.clipboard.writeText(text).then(()=>{b.textContent="已複製";reset()},fallback)}catch(e){fallback()}
