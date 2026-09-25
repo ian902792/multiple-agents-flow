@@ -293,6 +293,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(flow["roles"]["coder"]["runtime"], "pi")
         self.assertEqual(flow["roles"]["reviewer"]["model"], "claude-opus-5-5")
         self.assertFalse(flow["roles"]["reviewer"]["enabled"])
+        self.assertEqual((flow["roles"]["planner"]["runtime"], flow["roles"]["planner"]["model"]), ("claude", "claude-opus-5-5"))
         flow["roles"]["reviewer"]["enabled"] = True
         flows.save("codex-with-review", flow)
         self.assertEqual(core.execution_config(self.repo, "codex-with-review", "codex")[1]["roles"]["reviewer"]["runtime"], "claude")
@@ -504,7 +505,18 @@ class FlowTests(unittest.TestCase):
             self.assertEqual((path / "SKILL.md").resolve().parents[2] / "flow.py",
                              Path(__file__).resolve().parents[1] / "flow.py")
         self.assertEqual(paths, [home / ".agents/skills/maf", home / ".claude/skills/maf"])
-        self.assertTrue((home / ".claude/skills/maf-plan/SKILL.md").is_file())
+        for host in (".agents", ".claude"):
+            self.assertTrue((home / host / "skills/maf-plan/SKILL.md").is_file())
+        self.assertTrue((home / ".agents/skills/maf-plan/agents/openai.yaml").is_file())
+
+    def test_planner_must_differ_from_main_chat(self):
+        goal = Path(self.config_temp.name) / "goal.md"
+        goal.write_text("Plan docs.\n")
+        config = core.execution_config(self.repo, "quick", "claude")[1]
+        with patch.object(cli.agents, "run_agent") as agent:
+            with self.assertRaisesRegex(core.FlowError, "different runtime"):
+                cli.plan(self.repo, config, goal, "codex")
+        agent.assert_not_called()
 
     def test_skill_registration_refuses_conflicts_and_redirected_parents(self):
         home = Path(self.config_temp.name) / "home"

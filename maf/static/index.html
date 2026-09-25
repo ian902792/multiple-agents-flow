@@ -51,7 +51,7 @@ details{border-top:1px solid #e2e8f1;margin-top:24px;padding-top:18px}summary{cu
       </section>
       <details><summary>規畫、Herdr 與匯入匯出</summary>
         <label class="check"><input id="manual-plan" type="checkbox"><span>大型任務提醒我手動使用 /maf-plan<small>MAF 不會自行啟動規畫。</small></span></label>
-        <div class="role-row" data-role="planner"><div><div class="role-name">規畫 Agent</div><div class="role-route"></div></div><label><span class="field-label">Model</span><input class="model-input" aria-label="規畫 model" spellcheck="false"></label><label><span class="field-label">Effort</span><select class="effort-select" aria-label="規畫 effort"></select></label></div>
+        <div class="role-row" data-role="planner"><div><label class="field-label" for="planner-runtime">規畫 Agent（須與主對話不同）</label><select class="effort-select" id="planner-runtime" aria-label="規畫 Agent"><option value="codex">Codex</option><option value="claude">Claude</option></select><div class="role-route"></div></div><label><span class="field-label">Model</span><input class="model-input" aria-label="規畫 model" spellcheck="false"></label><label><span class="field-label">Effort</span><select class="effort-select" aria-label="規畫 effort"></select></label></div>
         <label class="check"><input id="herdr-enabled" type="checkbox"><span>啟用 Herdr 觀察 pane<small>允許在 Herdr 啟動 supervisor、顯示 Agent pane；勾選本身不啟動任務。</small></span></label>
         <button class="secondary" id="save-settings" type="button" style="margin-top:12px">儲存 Herdr 設定</button>
         <div class="actions"><button class="secondary" id="export-flow" type="button">匯出 JSON</button><button class="secondary" id="import-flow" type="button">匯入 JSON</button><input id="import-file" type="file" accept="application/json,.json" hidden></div>
@@ -67,9 +67,11 @@ details{border-top:1px solid #e2e8f1;margin-top:24px;padding-top:18px}summary{cu
 const token="__MAF_TOKEN__";
 const el=id=>document.getElementById(id);
 let snapshot=null,currentName="",draft=null;
-const suggestedModels={claude:["claude-opus-5-5","sonnet","haiku"],codex:["gpt-6-sol","gpt-6-astra","gpt-6-luna"],pi:["deepseek-v4.1-flash"],hermes:["deepseek-v4.1-flash"],antigravity:["gemini-3.8-flash-high","gemini-3.8-flash-medium"]};
+const suggestedModels={claude:["claude-opus-5-5","claude-fable-5-1","sonnet","haiku"],codex:["gpt-6-sol","gpt-6-astra","gpt-6-luna"],pi:["deepseek-v4.1-flash"],hermes:["deepseek-v4.1-flash"],antigravity:["gemini-3.8-flash-high","gemini-3.8-flash-medium"]};
 const coderRoutes={pi:["opencode-go","deepseek-v4.1-flash","medium"],antigravity:["google-account","gemini-3.8-flash-high","high"],claude:["claude-subscription","claude-opus-5-5","medium"],codex:["chatgpt","gpt-6-sol","medium"],hermes:["opencode-go","deepseek-v4.1-flash","medium"]};
 const mainDefaults={claude:["claude-opus-5-5","medium"],codex:["gpt-6-sol","high"]};
+const plannerRoutes={codex:["chatgpt","gpt-6-astra","high"],claude:["claude-subscription","claude-opus-5-5","high"]};
+function setPlanner(runtime){const [provider,model,effort]=plannerRoutes[runtime];draft.roles.planner={runtime,provider,model,access:"read",effort}}
 async function api(path,body){
   const response=await fetch(path,{method:body?"POST":"GET",headers:{"X-MAF-Token":token,...(body?{"Content-Type":"application/json"}:{})},body:body?JSON.stringify(body):undefined});
   const value=await response.json();if(!response.ok)throw Error(value.error||"操作失敗");return value;
@@ -110,7 +112,7 @@ function draw(){
   document.querySelector('[data-role="reviewer"]').hidden=!el("review-enabled").checked;
   drawModelLists();
   for(const row of document.querySelectorAll(".role-row")){
-    const role=draft.roles[row.dataset.role];if(row.dataset.role==="coder"||row.dataset.role==="reviewer")el(row.dataset.role+"-runtime").value=role.runtime;
+    const role=draft.roles[row.dataset.role];if(row.dataset.role!=="main")el(row.dataset.role+"-runtime").value=role.runtime;
     row.querySelector(".role-route").textContent=role.runtime+" / "+role.provider;
     row.querySelector(".model-input").value=role.model;row.querySelector(".model-input").setAttribute("list","models-"+role.runtime);
     drawEfforts(row.querySelector(":scope > label > .effort-select"),role.runtime,role.effort);
@@ -127,7 +129,9 @@ el("save-flow").addEventListener("click",()=>persist());
 el("set-default").addEventListener("click",()=>persist(true));
 el("main-runtime").addEventListener("change",()=>{
   const runtime=el("main-runtime").value;draft=collect().flow;
-  [draft.main.model,draft.main.effort]=mainDefaults[runtime];draw();message("已切換主對話工具，儲存後生效。");
+  [draft.main.model,draft.main.effort]=mainDefaults[runtime];
+  if(draft.roles.planner.runtime===runtime)setPlanner(runtime==="claude"?"codex":"claude");
+  draw();message("已切換主對話工具；規畫 Agent 會維持與主對話不同。儲存後生效。");
 });
 el("coder-runtime").addEventListener("change",()=>{
   const runtime=el("coder-runtime").value,previous=draft.roles.coder.runtime;draft=collect().flow;
@@ -140,6 +144,10 @@ el("reviewer-runtime").addEventListener("change",()=>{
   const runtime=el("reviewer-runtime").value;draft=collect().flow;
   const [provider,model,effort]=coderRoutes[runtime];draft.roles.reviewer={runtime,provider,model,access:"read",effort,enabled:true};
   draw();message("已切換審查工具，儲存後生效。");
+});
+el("planner-runtime").addEventListener("change",()=>{
+  draft=collect().flow;setPlanner(el("planner-runtime").value);draw();
+  message(draft.roles.planner.runtime===draft.main.runtime?"規畫 Agent 與主對話相同時，maf-plan 會拒絕執行。":"已切換規畫工具，儲存後生效。",draft.roles.planner.runtime===draft.main.runtime);
 });
 el("review-enabled").addEventListener("change",()=>{draft=collect().flow;draw();message(el("review-enabled").checked?"審查已啟用，儲存後生效。":"審查已關閉，儲存後只跑測試。")});
 el("save-settings").addEventListener("click",async()=>{try{snapshot=await api("/api/settings",{herdr_enabled:el("herdr-enabled").checked});message("Herdr 設定已儲存。")}catch(error){message(error.message,true)}});

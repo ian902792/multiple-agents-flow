@@ -7,8 +7,10 @@ description: Operate multiple-agents-flow (MAF) from the main coding chat. Use w
 
 Stay in the current conversation. Its agent is the main developer for ordinary
 tasks. Select a flow whose `main.runtime` matches that agent; do not silently
-switch the human to another chat. Never call the Codex planner automatically:
-only the human's explicit `/maf-plan` invocation may do that. Follow the user's language.
+switch the human to another chat. Never call the planner automatically:
+only the human's explicit `/maf-plan` (Claude) or `$maf-plan` (Codex) invocation may
+do that. The planner is always a different agent from the main chat. For a large or
+unclear task, suggest the human run it once; do not run it yourself. Follow the user's language.
 
 `maf` is the anchor word. "maf 改用 quick", "maf 狀態" or "maf 同時處理…" address
 MAF. Without it, generic words such as flow, mode, quick, planned or default are NOT

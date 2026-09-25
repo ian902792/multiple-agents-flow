@@ -61,7 +61,7 @@ python3 "$FLOW" --repo "$TARGET" doctor
 
 Flow Studio 用 `python3 "$FLOW" ui` 開啟，僅監聽 `127.0.0.1`。設定頁儲存全域 flow、Claude／Codex 各自的預設 flow、獨立審查開關與 Herdr 開關；安裝、指令及設計理念在獨立的 `/guide` 頁。專案覆寫仍在 terminal 使用 `mode NAME` 切換，並依 `--main` 分開保存。小任務與審查 Agent 可在畫面切換工具；新模型 ID 可直接輸入，建議清單不等於模型可用性檢查。主對話模型是偏好記錄，目前 session 仍須在 Claude 或 Codex 自身切換。
 
-大型需求若要先規畫，由你明確執行 `/maf-plan 需求`，或直接呼叫 CLI：
+大型需求若要先規畫，由你明確執行 `/maf-plan 需求`（Codex 為 `$maf-plan 需求`），或直接呼叫 CLI。規畫者是所選 flow 的 `planner` 角色，必須與 `--main` 不同：Claude 主對話預設用 Codex GPT-6 Astra，`codex-pi` 預設用 Claude Opus 5.5，可在 Flow Studio 改成 Claude Fable 5.1 等模型。
 
 ```sh
 python3 "$FLOW" --repo "$TARGET" plan --mode planned --goal-file /private/path/goal.md

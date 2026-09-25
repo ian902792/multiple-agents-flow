@@ -5,7 +5,7 @@ Herdr is opt-in and runs a persistent ordinary supervisor command in an explicit
 Native agent CLIs run as bounded subprocesses, with structured output captured to private logs.
 Independent Pi or Antigravity delegates can occupy up to three execution lanes; planner/coder/reviewer are independently configured roles.
 The economy preset uses Astra for optional planning and Pi/DeepSeek for coding, with one repair. The opus-sol preset uses Claude Opus 5.5 coding and a configured Codex Sol reviewer. Independent review is disabled until explicitly enabled in the selected flow.
-Claude is the main developer. Only the manually invoked `/maf-plan` skill calls the read-only Codex planner.
+The main chat is the developer. Only the manually invoked `/maf-plan` (Claude) or `$maf-plan` (Codex) skill calls the read-only planner, and `plan` refuses a planner whose runtime equals `--main` (Claude main: Codex planner; `codex-pi`: Claude Opus 5.5 planner).
 
 ## Files and ownership
 
@@ -18,7 +18,7 @@ Claude is the main developer. Only the manually invoked `/maf-plan` skill calls 
 - `maf/ui.py` and `maf/static/index.html`: loopback-only flow, default and integration settings editor; `maf/static/guide.html` separately explains setup, commands and design. No project mode switching or run control.
 - `maf/skills.py`: one-time user-wide Claude/Codex discovery links; refuses conflicting skills and redirected parents.
 - `skills/maf/SKILL.md`: shared main-chat workflow, referenced by both hosts using relative symlinks.
-- `skills/maf-plan/SKILL.md`: Claude manual-only planner entrypoint.
+- `skills/maf-plan/SKILL.md`: manual-only planner entrypoint for both hosts; `agents/openai.yaml` disables implicit Codex invocation.
 - `tests/`: stdlib unittest, fake subprocesses and temporary Git repositories, no model charges.
 - `README.md`: human-oriented Traditional Chinese overview and quickstart.
 - `docs/CLI.md`: direct commands, task format, approval and recovery reference.
@@ -96,7 +96,7 @@ consuming other queued tasks. Interrupted stages are never implicitly replayed. 
 sets the Pi/Antigravity delegate limit from 1 to 3 (default 3). The skill uses explicit IDs after delegation.
 Selection changes still use the repository writer lock.
 `install-skills` registers one shared skill in the user's `~/.agents/skills/maf` and `~/.claude/skills/maf`,
-plus manual-only `~/.claude/skills/maf-plan`. Global commands, including default-flow billing confirmation, work outside a Git repository; `mode` remains per repository.
+plus manual-only `maf-plan` in both `~/.agents/skills` and `~/.claude/skills`. Global commands, including default-flow billing confirmation, work outside a Git repository; `mode` remains per repository.
 Execution: awaiting_approval (when required) -> queued -> coding -> testing -> `tested` when review is off, or reviewing -> `verified` when review is on. Publishing requires the latter.
 The frozen task/config/mode/kind/source SHA/publication flags are hashed at submit. Sensitive/broad edit
 paths, shell tests and manual-risk batch runs wait for `approve RUN_ID`; callers can explicitly request the
