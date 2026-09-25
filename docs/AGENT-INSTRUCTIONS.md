@@ -24,3 +24,13 @@
 這段提示詞不會替代 MAF 的任務快照、核准與精確 SHA 驗證。它也不會自動安裝 CLI、登入供應商或啟用 Herdr。Claude 主對話的模型仍由你在 Claude terminal 用 `/model`、`/effort` 切換。
 
 專案的 `AGENTS.md` 若要提供給不同使用者，建議只保留「遵守 mode、需要時使用 maf skill、`/maf-plan` 必須手動呼叫」等通用約定。MAF 自己啟動的 Codex Planner／Reviewer 使用受限的非互動模式，**不會靠專案 `AGENTS.md` 設定其模型或審查權限**；這些角色由 flow 與 MAF 政策決定。
+
+## Codex 當主對話
+
+Codex 主對話可選內建 `codex-pi` flow，平常直接描述需求即可。Codex 的 `maf` skill 會傳入 `--main codex`，自動使用 Codex 自己的全域預設與專案 mode；Claude 對話使用 `--main claude`，兩者互不覆蓋。若要在 Codex 的個人或專案 `AGENTS.md` 提醒它主動委派，可加入：
+
+```md
+- 在已安裝 MAF skill 的 Git 專案，依 Codex 主對話的 flow 工作；不要為了切換主 Agent 修改全域預設。
+- 明確、獨立、可驗收的小任務可交由 Pi；主對話負責整合並驗證目前 commit。
+- 獨立審查只在 flow 啟用時使用；`codex-pi` 的 Claude Opus 5.5 審查預設關閉。
+```

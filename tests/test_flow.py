@@ -66,6 +66,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(github.risk_reasons(run), [])
         self.assertEqual((self.repo / "README.md").read_text(), "Before\n")
         self.assertEqual([a["role"] for a in run["agents"]], ["coder", "reviewer"])
+        self.assertEqual(core.handoff(self.repo, run)["coder_notes"], "Done")
         tampered = copy.deepcopy(run)
         tampered["review"] = {}
         with self.assertRaises(core.FlowError):
@@ -286,6 +287,53 @@ class FlowTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             flows.save("invalid-pi-effort", flow)
 
+    def test_codex_main_flow_keeps_claude_review_optional_and_independent(self):
+        flow = flows.templates()["codex-pi"]
+        self.assertEqual(flow["main"], {"runtime": "codex", "model": "gpt-6-sol", "effort": "high"})
+        self.assertEqual(flow["roles"]["coder"]["runtime"], "pi")
+        self.assertEqual(flow["roles"]["reviewer"]["model"], "claude-opus-5-5")
+        self.assertFalse(flow["roles"]["reviewer"]["enabled"])
+        flow["roles"]["reviewer"]["enabled"] = True
+        flows.save("codex-with-review", flow)
+        self.assertEqual(core.execution_config(self.repo, "codex-with-review", "codex")[1]["roles"]["reviewer"]["runtime"], "claude")
+        flow["roles"]["reviewer"]["runtime"] = "codex"
+        flow["roles"]["reviewer"]["provider"] = "chatgpt"
+        with self.assertRaises(core.FlowError):
+            flows.save("self-review", flow)
+
+    def test_main_chats_keep_separate_defaults_and_project_modes(self):
+        self.assertEqual(core.execution_config(self.repo, main_runtime="codex")[0], "codex-pi")
+        flows.set_default("planned")
+        flows.set_default("codex-pi")
+        self.assertEqual(flows.settings()["default_flow"], "planned")
+        self.assertEqual(flows.settings()["codex_default_flow"], "codex-pi")
+        core.select_mode(self.repo, "quick", "claude")
+        core.select_mode(self.repo, "codex-pi", "codex")
+        self.assertEqual(core.execution_config(self.repo, main_runtime="claude")[0], "quick")
+        self.assertEqual(core.execution_config(self.repo, main_runtime="codex")[0], "codex-pi")
+        with self.assertRaises(core.FlowError):
+            core.select_mode(self.repo, "quick", "codex")
+        core.select_mode(self.repo, "default", "codex")
+        self.assertEqual(core.execution_config(self.repo, main_runtime="claude")[0], "quick")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            cli.main(["--repo", str(self.repo), "--main", "codex", "mode"])
+        self.assertEqual(json.loads(output.getvalue())["mode"], "codex-pi")
+
+    def test_codex_main_can_verify_with_claude_reviewer(self):
+        flow = flows.templates()["codex-pi"]
+        flow["roles"]["reviewer"]["enabled"] = True
+        flows.save("codex-reviewed", flow)
+        core.select_mode(self.repo, "codex-reviewed", "codex")
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        core.confirm_billing(self.repo, core.execution_config(self.repo, main_runtime="codex")[1])
+        (self.repo / "README.md").write_text("After\n")
+        core.git(self.repo, "add", "README.md")
+        core.git(self.repo, "commit", "-qm", "Codex implementation")
+        run = core.submit(self.repo, self.task, kind="verify", base_ref="HEAD^", main_runtime="codex")
+        self.assertEqual(run["config"]["roles"]["reviewer"]["runtime"], "claude")
+
     def test_claude_commit_verify_and_pi_delegate_bind_exact_sha(self):
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")
@@ -475,7 +523,8 @@ class FlowTests(unittest.TestCase):
     def test_invalid_tasks(self):
         for field, value in [("id", "../escape"), ("paths", ["../a"]), ("paths", ["/tmp/a"]),
                              ("paths", [".git/config"]), ("tests", []), ("tests", ["pytest"]),
-                             ("risk", "safe"), ("independent", "yes")]:
+                             ("risk", "safe"), ("independent", "yes"), ("acceptance_why", " "),
+                             ("acceptance_why", 1)]:
             with self.subTest(field=field, value=value):
                 task = dict(self.task, **{field: value})
                 with self.assertRaises(core.FlowError):

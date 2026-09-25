@@ -20,42 +20,44 @@ details{background:#fff;border:1px solid #dce4f0;border-radius:9px;padding:17px 
 <header class="top"><div class="brand">Flow Studio</div><nav aria-label="頁面"><a href="/">← 設定</a><a href="/guide" aria-current="page">說明與理念</a></nav></header>
 <main>
   <p class="eyebrow">multiple-agents-flow</p>
-  <h1>Claude 主導，其他 Agent 在需要時接手</h1>
-  <p class="lead">MAF 讓你留在 Claude 的開發對話中。平常直接描述需求，主 Claude 會依 flow 處理委派、測試與進度；畫面只設定常用 flow。定義一次，就能在每個已有首個 commit 的 Git 專案使用。</p>
+  <h1>留在主對話，讓其他 Agent 接手小工作</h1>
+  <p class="lead">MAF 讓你留在 Claude 或 Codex 的開發對話中。平常直接描述需求，主 Agent 會依 flow 處理委派、測試與進度；畫面只設定常用 flow。定義一次，就能在每個已有首個 commit 的 Git 專案使用。</p>
   <section aria-labelledby="why"><h2 id="why">設計理念</h2><div class="grid">
-    <div class="card"><h3>主對話保持短而清楚</h3><p>Claude 處理日常開發與整合；路徑清楚、可單獨驗收的小工作，才交給 Pi 或 Antigravity。獨立任務最多可同時跑三個。</p></div>
+    <div class="card"><h3>主對話保持短而清楚</h3><p>Claude 或 Codex 處理日常開發與整合；路徑清楚、可單獨驗收的小工作，才交給 Pi 或 Antigravity。獨立任務最多可同時跑三個。</p></div>
     <div class="card"><h3>規畫由你決定</h3><p>大型任務需要 Codex 規畫時，才手動輸入 <code>/maf-plan</code>。選到 planned flow 不會自動啟動規畫模型。</p></div>
     <div class="card"><h3>證據對準同一個 commit</h3><p>MAF 在獨立 worktree 執行你指定的測試。審查可選：未勾選時結果是 <code>tested</code>；勾選且審查通過才是 <code>verified</code>。</p></div>
     <div class="card"><h3>少打擾，仍保留控制權</h3><p>普通小任務在既定範圍內自動往下做；範圍敏感或需求不明時先請你核准一次，風險或權限問題才再次停下。發布與合併要另外授權。</p></div>
   </div></section>
   <section aria-labelledby="start"><h2 id="start">三步開始</h2><div class="steps">
-    <div class="step"><span class="number">1</span><div><h3>在電腦上安裝一次</h3><p>需要 Python 3.11+、Git、Claude Code，以及所選 flow 使用的 agent CLI。工具只需下載與註冊一次。</p><pre>git clone https://github.com/ian902792/multiple-agents-flow.git
+    <div class="step"><span class="number">1</span><div><h3>在電腦上安裝一次</h3><p>需要 Python 3.11+、Git、Claude Code 或 Codex，以及所選 flow 使用的 agent CLI。工具只需下載與註冊一次。</p><pre>git clone https://github.com/ian902792/multiple-agents-flow.git
 cd multiple-agents-flow
 python3 flow.py install-skills
-python3 flow.py ui</pre><p><code>install-skills</code> 會回傳 Claude／Codex skill 路徑。重新開啟 Claude session 後，主 Claude 就能使用 MAF skill。</p></div></div>
-    <div class="step"><span class="number">2</span><div><h3>選擇全域預設</h3><p>回到<a href="/">設定頁</a>，選小任務工具與模型；需要獨立審查時再勾選並選審查 Agent，按「儲存並設為全域預設」。新專案不用執行 <code>init</code>。要切換主 Claude session 到 Opus 5.5，請在 Claude 中輸入 <code>/model claude-opus-5-5</code>；畫面的主模型欄位是偏好記錄。</p></div></div>
+python3 flow.py ui</pre><p><code>install-skills</code> 會回傳 Claude／Codex skill 路徑。重新開啟主對話後就能使用 MAF skill。</p></div></div>
+    <div class="step"><span class="number">2</span><div><h3>選擇全域預設</h3><p>回到<a href="/">設定頁</a>，選主對話、小任務工具與模型；需要獨立審查時再勾選並選審查 Agent，按「儲存並設為全域預設」。Claude 與 Codex 各有自己的全域預設，Agent 送出任務時會自動選自己的 flow；同時開啟兩個主對話也不會互相覆蓋。畫面的主模型欄位是偏好記錄；目前 session 仍需在所用 CLI／App 內切換。</p></div></div>
     <div class="step"><span class="number">3</span><div><h3>確認訂閱後開始工作</h3><p>先向供應商確認所選模型包含於現有訂閱、沒有額外付費用量。MAF 不會代你更改帳單設定；更換使用中的模型路由時要重新確認。</p><pre>python3 flow.py confirm-billing --no-overage
-python3 flow.py --repo /path/to/project doctor</pre><p><code>doctor</code> 只檢查 CLI、登入與確認紀錄，不呼叫模型。檢查完成後，在 Claude 專案對話中直接描述要做的工作。</p></div></div>
+python3 flow.py --main codex confirm-billing --no-overage
+python3 flow.py --repo /path/to/project --main codex doctor</pre><p><code>doctor</code> 只檢查 CLI、登入與確認紀錄，不呼叫模型。檢查完成後，在主 Agent 的專案對話中直接描述要做的工作。</p></div></div>
   </div></section>
-  <section aria-labelledby="flows"><h2 id="flows">不同 flow 怎麼用？</h2><div class="table-wrap"><table><thead><tr><th>Flow</th><th>適合</th><th>你可以對 Claude 說</th></tr></thead><tbody>
+  <section aria-labelledby="flows"><h2 id="flows">不同 flow 怎麼用？</h2><div class="table-wrap"><table><thead><tr><th>Flow</th><th>適合</th><th>你可以對主 Agent 說</th></tr></thead><tbody>
     <tr><td><code>quick</code></td><td>日常開發；小任務可交 Pi。</td><td>「這個專案改用 quick，請完成這項修改。」</td></tr>
     <tr><td><code>quick-antigravity</code></td><td>日常開發；小任務可交 Gemini 3.8 Flash High。</td><td>「這個專案改用 quick-antigravity；獨立的小工作可交給 Gemini。」</td></tr>
     <tr><td><code>planned</code></td><td>較大任務；你決定是否手動請 Codex 規畫。</td><td>「這個專案改用 planned。」需要 Codex 規畫時再由你輸入 <code>/maf-plan 需求</code>。</td></tr>
+    <tr><td><code>codex-pi</code></td><td>Codex 主導，Pi 執行明確小任務；Claude Opus 5.5 審查可選、預設關閉。</td><td>在 Codex 對話說「這個專案改用 codex-pi，請完成這項修改。」</td></tr>
     <tr><td>自訂名稱</td><td>把常用的角色／模型組合儲存於設定頁。</td><td>「這個專案改用我的 flow。」或「改回全域預設 flow。」</td></tr>
-  </tbody></table></div><p style="margin-top:12px">只需要一種工作方式時，在設定頁將它設為全域預設，之後不用逐案選 mode。切換只影響新任務，已開始的任務保留原模型。審查核取方塊是每個 flow 各自的設定。</p></section>
-  <section aria-labelledby="daily"><h2 id="daily">一個日常例子</h2><p>在 Claude 專案對話中直接說：</p><pre>這個專案用 quick-antigravity。請補上 docs/install.md 的安裝範例，
-只修改該檔；完成後執行適合的測試、整合變更並回報結果。</pre><p>Claude 會依 flow 準備任務範圍、測試與必要的委派。你會收到結果狀態、測試、commit SHA 和需要你處理的阻塞。未勾選獨立審查時結果是 <code>tested</code>；勾選且通過審查才是 <code>verified</code>。兩者都不表示已 push 或合併。</p><p class="callout">三件互不依賴的小事，可在同一則需求中列出各自的檔案與驗收方式。MAF 最多同時執行三件；Claude 負責整合，並檢查整合後的新 commit。</p></section>
-  <section aria-labelledby="commands"><h2 id="commands">指令與輸出：誰需要用？</h2><p>平常直接描述需求即可。下面是你可能主動使用的少數指令；主 Claude 的工作指令與 Python CLI 放在進階區。</p>
+  </tbody></table></div><p style="margin-top:12px">Claude 與 Codex 各自沿用其全域預設，之後不用逐案選 mode。同一專案的兩個主對話也分開記錄 mode；切換只影響該 Agent 的新任務，已開始的任務保留原模型。審查核取方塊是每個 flow 各自的設定。</p></section>
+  <section aria-labelledby="daily"><h2 id="daily">一個日常例子</h2><p>在 Codex 專案對話中直接說：</p><pre>這個專案用 codex-pi。請補上 docs/install.md 的安裝範例，
+只修改該檔；完成後執行適合的測試、整合變更並回報結果。</pre><p>Codex 會依 flow 準備任務範圍、測試與必要的委派。你會收到結果狀態、測試、commit SHA 和需要你處理的阻塞。未勾選獨立審查時結果是 <code>tested</code>；勾選且通過審查才是 <code>verified</code>。兩者都不表示已 push 或合併。</p><p class="callout">三件互不依賴的小事，可在同一則需求中列出各自的檔案與驗收方式。MAF 最多同時執行三件；主 Agent 負責整合，並檢查整合後的新 commit。</p></section>
+  <section aria-labelledby="commands"><h2 id="commands">指令與輸出：誰需要用？</h2><p>平常直接描述需求即可。Claude 用 <code>/maf</code>，Codex 用 <code>$maf</code> skill；下面是你可能主動使用的少數指令，Agent 的工作指令與 Python CLI 放在進階區。</p>
     <details open><summary>給人：可選的直接控制</summary><div class="table-wrap"><table><thead><tr><th>指令</th><th>何時使用</th><th>你會看到</th></tr></thead><tbody>
-      <tr><td><code>/maf</code>、<code>/maf status</code></td><td>想直接查看目前 flow 與進度</td><td>任務階段、阻塞、下一步</td></tr>
-      <tr><td><code>/maf mode [名稱|default]</code></td><td>想手動切換單一專案的 flow</td><td>目前模式、角色與帳單確認狀態</td></tr>
+      <tr><td><code>/maf status</code> 或 <code>$maf status</code></td><td>想直接查看目前 flow 與進度</td><td>任務階段、阻塞、下一步</td></tr>
+      <tr><td><code>/maf mode 名稱</code> 或 <code>$maf mode 名稱</code></td><td>想手動切換單一專案的 flow；<code>default</code> 回到全域設定</td><td>目前模式、角色與帳單確認狀態</td></tr>
       <tr><td><code>/maf-plan 需求</code></td><td>大型任務由你決定呼叫 Codex 規畫</td><td>計畫與私有結果路徑，不自動執行</td></tr>
-      <tr><td><code>/model</code>、<code>/effort</code></td><td>切換目前 Claude 對話的模型與 effort</td><td>Claude session 的新設定</td></tr>
+      <tr><td><code>/model</code>、<code>/effort</code></td><td>在 Claude 中切換目前對話模型與 effort；Codex 請用其模型選單或 CLI 設定</td><td>目前 session 的新設定</td></tr>
     </tbody></table></div></details>
-    <details><summary>給主 Claude：依需求自動執行的 MAF 指令</summary><p>安裝 skill 後，Claude 會在需要時使用這些操作。你不用逐條輸入；範圍核准、發布與合併仍由你決定。上方的狀態與 mode 指令，Claude 也能替你使用。</p><div class="table-wrap"><table><thead><tr><th>指令</th><th>用途</th><th>主要輸出</th></tr></thead><tbody>
+    <details><summary>給主 Agent：依需求自動執行的 MAF 指令</summary><p>安裝 skill 後，Claude 或 Codex 會在需要時使用這些操作。你不用逐條輸入；範圍核准、發布與合併仍由你決定。下列以 Claude 的 <code>/maf</code> 寫法表示；Codex 使用 <code>$maf</code>。</p><div class="table-wrap"><table><thead><tr><th>指令</th><th>用途</th><th>主要輸出</th></tr></thead><tbody>
       <tr><td><code>/maf setup [名稱]</code></td><td>檢查專案是否就緒；可選擇覆寫 flow</td><td>doctor 問題與待確認事項</td></tr>
       <tr><td><code>/maf delegate 需求</code></td><td>把明確小任務交所選 Agent</td><td>run ID、<code>tested</code>／<code>verified</code> 或阻塞</td></tr>
-      <tr><td><code>/maf verify 需求</code></td><td>測試已提交的 Claude 修改；依設定決定是否審查</td><td>run ID、測試與可選審查結果</td></tr>
+      <tr><td><code>/maf verify 需求</code></td><td>測試已提交的主 Agent 修改；依設定決定是否審查</td><td>run ID、測試與可選審查結果</td></tr>
       <tr><td><code>/maf handoff RUN_ID</code></td><td>讀取完成任務的證據</td><td>commit SHA、測試、可選 review</td></tr>
       <tr><td><code>/maf approve RUN_ID</code></td><td>你確認具體範圍後才放行</td><td>更新後的 run 與 <code>queued</code> 狀態</td></tr>
       <tr><td><code>/maf resume RUN_ID</code></td><td>診斷並恢復中斷任務</td><td>阻塞原因與新狀態</td></tr>
@@ -80,7 +82,7 @@ python3 flow.py --repo /path/to/project doctor</pre><p><code>doctor</code> 只�
     </tbody></table></div></details>
   </section>
   <section aria-labelledby="more"><h2 id="more">權限、模型與 Herdr</h2><div class="grid">
-    <div class="card"><h3>模型設定</h3><p>Flow Studio 管理 MAF 子任務角色。主 Claude 模型由你在 Claude terminal 用 <code>/model</code>、<code>/effort</code> 改；Opus 5.5 可選 <code>claude-opus-5-5</code>。新模型是否可用，以自己的 CLI 與訂閱為準。</p></div>
+    <div class="card"><h3>模型設定</h3><p>Flow Studio 管理主對話偏好與 MAF 子任務角色，但不切換目前 session。Claude 在 terminal 用 <code>/model</code>、<code>/effort</code>；Codex 用自己的模型選單或 CLI 設定。新模型是否可用，以自己的 CLI 與訂閱為準。</p></div>
     <div class="card"><h3>遇到風險</h3><p>一般任務持續執行；敏感範圍、權限、安全或需求衝突會停在 <code>awaiting_approval</code> 或 <code>needs_human</code>。已核准的範圍內測試與修復不逐步打擾你。</p></div>
     <div class="card"><h3>Antigravity</h3><p>選用 Gemini 前先以 <code>agy models</code> 檢查模型清單，再核對訂閱。MAF 使用已登入帳號、CLI sandbox 與受限權限；測試由 MAF supervisor 執行。</p></div>
     <div class="card"><h3>Herdr</h3><p>設定頁可啟用觀察 pane。接著在 Herdr pane 執行 <code>python3 flow.py --repo /path/to/project herdr</code>；Agent 工作時開 pane，完成後關閉。關閉整合時 MAF 仍能正常運作。</p></div>

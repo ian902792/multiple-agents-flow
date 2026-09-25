@@ -1,13 +1,13 @@
 # 指令參考
 
-這份文件是主 Claude skill 與維護者的詳細指令參考。一般使用者可先看 [README](../README.md)，直接在 Claude Code 描述需求；不必逐條輸入委派、驗證或交接指令。需要手動查詢進度、切換 flow 或規畫時，再使用相應的對話指令。
+這份文件是主 Agent skill 與維護者的詳細指令參考。一般使用者可先看 [README](../README.md)，直接在 Claude Code 或 Codex 描述需求；不必逐條輸入委派、驗證或交接指令。需要手動查詢進度、切換 flow 或規畫時，再使用相應的對話指令。
 
 以下範例先設定工具與目標專案的路徑。目標必須是已有第一個 commit 的 Git repository；`--repo` 放在子命令前。
 
 ```sh
 FLOW=/absolute/path/multiple-agents-flow/flow.py
 TARGET=/absolute/path/your-project
-python3 "$FLOW" --repo "$TARGET" status
+python3 "$FLOW" --repo "$TARGET" --main codex mode
 ```
 
 ## 指令一覽
@@ -17,9 +17,9 @@ python3 "$FLOW" --repo "$TARGET" status
 | `install-skills` | 全域註冊 Claude／Codex skills 一次；回傳安裝路徑。 |
 | `ui` | 開啟本機 Flow Studio；印出本機網址。 |
 | `flows`、`flow-save FILE` | 列出或匯入全域命名 flow；回傳 flow JSON。 |
-| `settings [herdr on\|off]`、`settings default-flow NAME` | 查詢或變更全域 Herdr 開關與新專案預設 flow；回傳設定 JSON。 |
+| `settings [herdr on\|off]`、`settings default-flow NAME` | 查詢或變更全域 Herdr 開關與 Claude／Codex 各自的新專案預設 flow；回傳設定 JSON。 |
 | `init [--preset NAME]` | 可選：建立專案專用 `.maf.json` 政策，不覆寫既有檔案；回傳路徑。 |
-| `mode [NAME\|default]` | 查詢或覆寫本專案後續任務的 flow；`default` 清除覆寫。 |
+| `mode [NAME\|default]` | 查詢或覆寫此主 Agent 在本專案後續任務的 flow；`default` 清除覆寫。 |
 | `doctor` | 檢查 CLI、登入與訂閱確認紀錄，不呼叫模型；有問題時非零結束。 |
 | `confirm-billing --no-overage` | 在任意目錄確認全域預設 flow 的模型路由；若加 `--repo` 則確認該專案目前 mode。 |
 | `plan --goal-file FILE [--mode NAME]` | 只讀規畫，印出建議與私有結果路徑；不排入任務。 |
@@ -34,18 +34,21 @@ python3 "$FLOW" --repo "$TARGET" status
 | `publish RUN_ID`、`merge RUN_ID` | 在已有授權下發布或核對 PR、合併結果。 |
 | `herdr` | 在 Herdr pane 內啟動背景 supervisor；回傳 workspace／pane ID。 |
 
-在專案外也能使用 `install-skills`、`ui`、`flows`、`flow-save`、`settings`、全域 `confirm-billing`。其餘指令操作指定 repository。更多參數可用 `python3 "$FLOW" --help` 及 `python3 "$FLOW" 子命令 --help` 查看。
+在專案外也能使用 `install-skills`、`ui`、`flows`、`flow-save`、`settings`、全域 `confirm-billing`。其餘指令操作指定 repository。從 Codex 主對話呼叫時，在子命令前加 `--main codex`；Claude 用預設的 `--main claude`。MAF 依此選擇各自的全域預設與專案 mode，無須改寫共享設定。更多參數可用 `python3 "$FLOW" --help` 及 `python3 "$FLOW" 子命令 --help` 查看。
 
 ## 初次設定
 
 ```sh
 python3 "$FLOW" install-skills
 python3 "$FLOW" settings default-flow quick-antigravity  # 或 quick，保留 Pi
+python3 "$FLOW" settings default-flow codex-pi           # Codex 的預設，與 Claude 分開
 python3 "$FLOW" confirm-billing --no-overage              # 在供應商核對後，全域確認一次
+python3 "$FLOW" --main codex confirm-billing --no-overage
 python3 "$FLOW" --repo "$TARGET" doctor
+python3 "$FLOW" --repo "$TARGET" --main codex doctor
 ```
 
-全域 skill 與 flow 只需設定一次。新 Git 專案不需要 `.maf.json` 或 `mode`；預設沿用全域 flow。MAF 會優先以本機 `main`、`master` 作為 base branch，否則使用目前分支。若要指定 base branch、保護路徑或 timeout，才在該專案執行 `init` 並編輯 `.maf.json`；可把它納入版本控制。`mode configured` 使用其角色設定；`mode default` 清除本專案的 mode 覆寫。
+全域 skill 與 flow 只需設定一次。新 Git 專案不需要 `.maf.json` 或 `mode`；Claude 與 Codex 各自沿用全域預設。MAF 會優先以本機 `main`、`master` 作為 base branch，否則使用目前分支。若要指定 base branch、保護路徑或 timeout，才在該專案執行 `init` 並編輯 `.maf.json`；可把它納入版本控制。`mode configured` 使用其角色設定；`mode default` 只清除目前主 Agent 的專案覆寫。
 
 在供應商控制台確認登入、模型包含在現有訂閱、沒有啟用額外付費用量，且 OpenCode Go 的 **Use balance** 關閉後，再記錄確認：
 
@@ -56,7 +59,7 @@ python3 "$FLOW" --repo "$TARGET" doctor
 
 `doctor` 不發模型請求，因此不能證明模型實際可用；選用 Antigravity 時會用 `agy models` 檢查該 ID 是否列在帳號模型清單。`confirm-billing` 是人的確認紀錄，按角色模型組合全域儲存，不會替你修改或限制供應商帳單設定。舊版專案內的確認紀錄不再使用；升級後須重新確認一次。模型／路由改變後須重新核對；切回已確認的相同組合不需重複確認。已為某專案選另一個 mode 時，使用 `--repo "$TARGET" confirm-billing --no-overage` 確認該組合。
 
-Flow Studio 用 `python3 "$FLOW" ui` 開啟，僅監聽 `127.0.0.1`。設定頁儲存全域 flow、預設 flow、獨立審查開關與 Herdr 開關；安裝、指令及設計理念在獨立的 `/guide` 頁。專案覆寫仍在 terminal 使用 `mode NAME` 切換。小任務與審查 Agent 可在畫面切換工具；新模型 ID 可直接輸入，建議清單不等於模型可用性檢查。主 Claude 偏好預設為 `claude-opus-5-5`，目前對話仍需在 Claude 使用 `/model claude-opus-5-5`、`/effort` 切換。
+Flow Studio 用 `python3 "$FLOW" ui` 開啟，僅監聽 `127.0.0.1`。設定頁儲存全域 flow、Claude／Codex 各自的預設 flow、獨立審查開關與 Herdr 開關；安裝、指令及設計理念在獨立的 `/guide` 頁。專案覆寫仍在 terminal 使用 `mode NAME` 切換，並依 `--main` 分開保存。小任務與審查 Agent 可在畫面切換工具；新模型 ID 可直接輸入，建議清單不等於模型可用性檢查。主對話模型是偏好記錄，目前 session 仍須在 Claude 或 Codex 自身切換。
 
 大型需求若要先規畫，由你明確執行 `/maf-plan 需求`，或直接呼叫 CLI：
 
@@ -81,11 +84,11 @@ Planner 只回傳建議與私有結果檔，不會自動排隊或執行計畫。
 }
 ```
 
-`tests` 是一個或多個 argv 陣列，須換成該專案真正能驗收需求、已核准執行的命令；不要用空檢查。路徑是相對專案根目錄的精確檔案或 glob；`*` 不跨目錄，`**` 可跨多層。風險可用 `manual`、`docs`、`style`、`tests`；不確定時選 `manual`。Pi／Antigravity delegate 可額外使用布林欄位 `"independent": true`，明確表示它不依賴其他任務或共用測試資源；未標記時依序執行。任務以已提交的 HEAD 建立 worktree，開始前需檢查工作樹。
+`tests` 是一個或多個 argv 陣列，須換成該專案真正能驗收需求、已核准執行的命令；不要用空檢查。路徑是相對專案根目錄的精確檔案或 glob；`*` 不跨目錄，`**` 可跨多層。風險可用 `manual`、`docs`、`style`、`tests`；不確定時選 `manual`。Pi／Antigravity delegate 可額外使用布林欄位 `"independent": true`，明確表示它不依賴其他任務或共用測試資源；未標記時依序執行。可選字串 `acceptance_why` 寫出這些測試要保住的真正目的（例如「重新整理後仍保持登入」），coder 與 reviewer 都會看到，reviewer 會檢查測試是否真的斷言到它。`handoff` 另回傳 `coder_notes`：coder 最後回覆中的 `UNVERIFIED:` 存疑項，驗收時必讀。任務以已提交的 HEAD 建立 worktree，開始前需檢查工作樹。
 
 網站專案可把既有的 Playwright 等 E2E 命令列入 `tests`；MAF 執行該命令，並依退出碼判定。若審查需要看截圖，須在任務說明指定輸出位置與可讀圖的 reviewer；測試產物也應由目標專案忽略，避免污染乾淨工作樹檢查。
 
-**驗證 Claude 已做的工作：**
+**驗證主 Agent 已做的工作：**
 
 ```sh
 python3 "$FLOW" --repo "$TARGET" verify /private/path/task.json --mode quick
@@ -93,7 +96,7 @@ python3 "$FLOW" --repo "$TARGET" work --once --run-id RUN_ID
 python3 "$FLOW" --repo "$TARGET" handoff RUN_ID
 ```
 
-`verify` 只針對乾淨的目前 HEAD 跑測試，不啟動新 coder。flow 的獨立審查預設關閉；開啟後才會呼叫非 Claude reviewer。測試通過時，關閉審查的 run 為 `tested`，開啟並通過審查的 run 為 `verified`。預設與 base branch 的共同祖先比較；若直接在 base branch 驗證單一 commit，可明確加 `--base HEAD^`。來源 commit 一旦改變，舊證據不能套用到新 SHA，應重新建立 verify run。
+`verify` 只針對乾淨的目前 HEAD 跑測試，不啟動新 coder。flow 的獨立審查預設關閉；開啟後才會呼叫與主 Agent 不同的 reviewer。Codex 主導且啟用審查時，可用 Claude Opus 5.5。測試通過時，關閉審查的 run 為 `tested`，開啟並通過審查的 run 為 `verified`。預設與 base branch 的共同祖先比較；若直接在 base branch 驗證單一 commit，可明確加 `--base HEAD^`。來源 commit 一旦改變，舊證據不能套用到新 SHA，應重新建立 verify run。
 
 **委派 Pi／Antigravity 小任務：**
 
@@ -103,7 +106,7 @@ python3 "$FLOW" --repo "$TARGET" work --once --run-id RUN_ID
 python3 "$FLOW" --repo "$TARGET" handoff RUN_ID
 ```
 
-所選小任務 Agent 在獨立 worktree 工作；MAF 不會自動把結果合進 Claude 的分支。Claude 檢查並整合後，對新的整合 commit 再執行 `verify`。Agent 不負責執行 shell 驗收測試；測試由 supervisor 執行。
+所選小任務 Agent 在獨立 worktree 工作；MAF 不會自動把結果合進主 Agent 的分支。主 Agent 檢查並整合後，對新的整合 commit 再執行 `verify`。Agent 不負責執行 shell 驗收測試；測試由 supervisor 執行。
 
 ### 多個 Pi／Antigravity 任務並行
 
