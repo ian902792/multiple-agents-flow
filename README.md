@@ -89,11 +89,11 @@ Flow Studio 可複製 flow，切換主對話、小任務與審查工具，設定
 
 **使用建議**：委派後讓它跑完，中途插話會讓主 Agent 停下來重新核對、白耗額度；臨時想法先記下，有新決定再說。一次只派現在就能驗收的任務，下一件常取決於上一件 `handoff` 裡的存疑項。
 
-## 想讓 Claude 自動遵循這套流程
+## 想讓主對話自動使用 MAF
 
-安裝 skill 後，你仍可決定是否讓 Claude 在一般開發需求中**主動**套用 MAF。把[可複製的個人提示詞](docs/AGENT-INSTRUCTIONS.md)放進 `~/.claude/CLAUDE.md`，就不必在每個專案重貼。這份規則保留你的偏好：Claude 主導、小工作才交所選的小任務 Agent、大型任務的 Codex 規畫只由你手動啟動。
+安裝 skill 後，主 Agent 只在你提到 maf 時使用它。想讓它在一般開發中**主動**委派與驗證，把[六行提示詞](docs/AGENT-INSTRUCTIONS.md)貼進 `~/.claude/CLAUDE.md`（Codex 用 `~/.codex/AGENTS.md`）。提示詞只說何時委派、為什麼委派，操作細節留在只在需要時載入的 skill，讓每輪對話少花 token。
 
-提示詞是行為指引，不是權限機制。人工核准仍由你確認，MAF 程式會檢查凍結的任務範圍與驗證證據。團隊共享的規範可放在專案 `AGENTS.md`；詳細載入方式與檢查步驟也寫在[提示詞文件](docs/AGENT-INSTRUCTIONS.md)。
+提示詞是行為指引，不是權限機制。人工核准仍由你確認，MAF 程式會檢查凍結的任務範圍與驗證證據。
 
 ## 核准與進度
 
