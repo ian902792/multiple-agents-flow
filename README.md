@@ -31,7 +31,7 @@ python3 flow.py install-skills
 
 `install-skills` 註冊全域的 Claude `/maf`、`/maf-plan` 及 Codex `$maf`、`$maf-plan` skill。執行 `python3 flow.py ui` 會開啟只監聽本機的設定頁；「說明與理念」在另一頁。若主對話已經開著，請重新開一個 session，讓它載入 skill。
 
-**2. 設定全域預設一次：**用 Flow Studio 選 flow 並按「設為全域預設」，會依 flow 的主對話工具設定 Claude 或 Codex 的預設，彼此獨立。也可在 MAF 專案 terminal 輸入：
+**2. 設定全域預設一次**：用 Flow Studio 選 flow 並按「設為全域預設」，會依 flow 的主對話工具設定 Claude 或 Codex 的預設，彼此獨立。也可在 MAF 專案 terminal 輸入：
 
 ```sh
 python3 flow.py settings default-flow quick-antigravity
@@ -48,7 +48,7 @@ python3 flow.py --main codex confirm-billing --no-overage
 
 這份確認按模型角色組合**全域記錄一次**；換新模型或路由時須再次確認。兩行分別確認 Claude 與 Codex 預設的子任務路由；若路由相同，第二次不會重複要求。MAF 不會代你更改供應商帳單設定。
 
-**3. 在任何 Git 專案開始工作：**不用 `init`，也不用每專案重新安裝 skill。照常在 Claude 或 Codex 對話描述工作，例如：
+**3. 在任何 Git 專案開始工作**：不用 `init`，也不用每專案重新安裝 skill。照常在 Claude 或 Codex 對話描述工作，例如：
 
 > maf：請按目前 flow 完成這項修改。路徑與驗收明確的小工作可以委派；完成後測試已提交的變更，告訴我結果與 commit SHA。
 
@@ -66,7 +66,7 @@ python3 flow.py --main codex confirm-billing --no-overage
 
 `planned` 只設定角色及提醒；**選到它不會自動啟動 Planner**。Pi 與 Antigravity 適合路徑明確、可獨立驗收的小任務。委派完成後，主 Agent 仍需檢查並整合變更，再驗證整合後的新 commit。要回全域預設，可對主 Agent 說「maf 改回全域預設」，或使用對應的 `maf mode default` 指令。切到尚未確認訂閱的角色組合時，先核對供應商設定，再從 MAF 資料夾執行 `python3 flow.py --repo /path/to/project confirm-billing --no-overage`。
 
-**指令分工：**Claude 對話中可用 `/maf status`、`/maf mode` 和手動 `/maf-plan`；Codex 中用 `$maf status`、`$maf mode` 和手動 `$maf-plan`。委派、驗證、交接等是主 Agent 依需求使用的工作指令，平常不必逐條輸入。畫面儲存的主模型只是偏好，**不會切換目前 session**；請在所用 CLI／App 內切換。完整用途與輸出見 Flow Studio 的「說明與理念」頁。
+**指令分工**：Claude 對話中可用 `/maf status`、`/maf mode` 和手動 `/maf-plan`；Codex 中用 `$maf status`、`$maf mode` 和手動 `$maf-plan`。委派、驗證、交接等是主 Agent 依需求使用的工作指令，平常不必逐條輸入。畫面儲存的主模型只是偏好，**不會切換目前 session**；請在所用 CLI／App 內切換。完整用途與輸出見 Flow Studio 的「說明與理念」頁。
 
 ### 大型任務：先用 maf-plan 請另一個強模型規畫
 
@@ -87,7 +87,7 @@ python3 flow.py --main codex confirm-billing --no-overage
 
 Flow Studio 可複製 flow，切換主對話、小任務與審查工具，設定各角色 model／effort，並把新輸入的模型 ID 加入建議清單。畫面不會切換目前對話的模型；Claude 可用 `/model`、`/effort`，Codex 請用其模型選單或 CLI 設定。新模型是否可用，仍要以你自己的 CLI 與訂閱確認。
 
-**使用建議：**委派後讓它跑完，中途插話會讓主 Agent 停下來重新核對、白耗額度；臨時想法先記下，有新決定再說。一次只派現在就能驗收的任務，下一件常取決於上一件 `handoff` 裡的存疑項。
+**使用建議**：委派後讓它跑完，中途插話會讓主 Agent 停下來重新核對、白耗額度；臨時想法先記下，有新決定再說。一次只派現在就能驗收的任務，下一件常取決於上一件 `handoff` 裡的存疑項。
 
 ## 想讓 Claude 自動遵循這套流程
 

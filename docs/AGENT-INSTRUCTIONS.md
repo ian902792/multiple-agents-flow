@@ -4,9 +4,9 @@
 
 ## 放在哪裡
 
-- **自己的所有專案：**貼到 `~/.claude/CLAUDE.md`。這是建議的預設做法，不必逐一修改 repository。
-- **與團隊共享：**把通用規則放在專案的 `AGENTS.md`。避免把個人模型、訂閱或絕對路徑提交進 Git。
-- **檢查是否載入：**開新的 Claude 對話後使用 `/context`。Claude Code 對 `AGENTS.md` 的載入會受版本、設定及專案是否已有 `CLAUDE.md` 影響；詳見 [Claude Code 文件](https://code.claude.com/docs/en/memory)。
+- **自己的所有專案**：貼到 `~/.claude/CLAUDE.md`。這是建議的預設做法，不必逐一修改 repository。
+- **與團隊共享**：把通用規則放在專案的 `AGENTS.md`。避免把個人模型、訂閱或絕對路徑提交進 Git。
+- **檢查是否載入**：開新的 Claude 對話後使用 `/context`。Claude Code 對 `AGENTS.md` 的載入會受版本、設定及專案是否已有 `CLAUDE.md` 影響；詳見 [Claude Code 文件](https://code.claude.com/docs/en/memory)。
 
 ## 可直接複製的個人提示詞
 
