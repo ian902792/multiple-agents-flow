@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MAF 上手導覽</title>
+<meta name="description" content="multiple-agents-flow 新手導覽：用動畫看主 Agent 如何委派小任務、測試與審查，以及 Herdr 觀看模式。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Huninn&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  color-scheme:light;
+  --bg:#F2F6F3; --bg2:#E6EEE9; --surface:#FFFFFF; --ink:#15302A; --muted:#5B6F69; --line:#D6E1DB;
+  --accent:#EE6238; --accent-ink:#B5401C; --accent-soft:#FDE5DA;
+  --ok:#2B8654; --ok-soft:#DCF0E3; --ver:#5A4ED3; --ver-soft:#E7E4FB;
+  --warn:#B97205; --warn-soft:#FBEED2; --bad:#C3362C; --bad-soft:#FADFDB;
+  --r-you:#15302A; --r-main:#EE6238; --r-pi:#2B8654; --r-agy:#2F74D0; --r-rev:#5A4ED3;
+  --shadow:0 1px 2px rgba(21,48,42,.06),0 10px 30px -12px rgba(21,48,42,.18);
+  --term:#18221F; --term2:#212D2A; --t-ink:#D9E6E1; --t-dim:#7E948D; --t-cmd:#8FE0CF; --t-ok:#7FD79C; --t-warn:#F4B75A; --t-bad:#FF8C82;
+  --display:"Huninn","Arial Rounded MT Bold","Noto Sans TC",system-ui,sans-serif;
+  --body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0E1917; --bg2:#13211E; --surface:#172623; --ink:#E5EFEB; --muted:#9BB0A9; --line:#263D37;
+    --accent:#FF875F; --accent-ink:#FF9D7B; --accent-soft:#3B2218;
+    --ok:#6FD39A; --ok-soft:#153024; --ver:#A79DFF; --ver-soft:#252249;
+    --warn:#F2B44A; --warn-soft:#382A10; --bad:#FF8078; --bad-soft:#3A1B19;
+    --r-you:#CFE3DB; --r-main:#FF875F; --r-pi:#6FD39A; --r-agy:#76A9F0; --r-rev:#A79DFF;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px -14px rgba(0,0,0,.6);
+    --term:#0B1311; --term2:#131E1B;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0E1917; --bg2:#13211E; --surface:#172623; --ink:#E5EFEB; --muted:#9BB0A9; --line:#263D37;
+  --accent:#FF875F; --accent-ink:#FF9D7B; --accent-soft:#3B2218;
+  --ok:#6FD39A; --ok-soft:#153024; --ver:#A79DFF; --ver-soft:#252249;
+  --warn:#F2B44A; --warn-soft:#382A10; --bad:#FF8078; --bad-soft:#3A1B19;
+  --r-you:#CFE3DB; --r-main:#FF875F; --r-pi:#6FD39A; --r-agy:#76A9F0; --r-rev:#A79DFF;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px -14px rgba(0,0,0,.6);
+  --term:#0B1311; --term2:#131E1B;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{scroll-behavior:smooth;scroll-padding-top:80px}
+body{margin:0;background:var(--bg);color:var(--ink);font:15.5px/1.8 var(--body);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding-inline:20px}
+h1,h2,h3{font-family:var(--display);font-weight:400;margin:0;text-wrap:balance;line-height:1.3;letter-spacing:.01em}
+h1{font-size:clamp(34px,5.6vw,58px);line-height:1.18}
+h2{font-size:clamp(26px,3.6vw,38px)}
+h3{font-size:20px}
+p{margin:0}
+code{font-family:var(--mono);font-size:.86em;background:var(--bg2);padding:1px 6px;border-radius:6px}
+a{color:var(--accent-ink)}
+button{font-family:inherit}
+:focus-visible{outline:2.5px solid var(--accent);outline-offset:3px;border-radius:8px}
+
+/* nav */
+.nav{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:saturate(1.4) blur(12px);-webkit-backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid color-mix(in srgb,var(--line) 60%,transparent);padding-top:env(safe-area-inset-top,0px)}
+.nav .wrap{display:flex;align-items:center;gap:18px;height:60px}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--display);font-size:20px;color:var(--ink);text-decoration:none}
+.mark{width:30px;height:30px;border-radius:10px;background:var(--accent);display:grid;place-items:center;color:#fff;font:600 13px var(--mono)}
+.nav ul{list-style:none;display:flex;gap:4px;margin:0 0 0 auto;padding:0}
+.nav ul a{display:block;padding:6px 12px;border-radius:999px;color:var(--muted);text-decoration:none;font-size:14px}
+.nav ul a:hover{background:var(--bg2);color:var(--ink)}
+.gh{padding:7px 14px;border-radius:999px;background:var(--ink);color:var(--bg);text-decoration:none;font-size:14px;font-weight:500;white-space:nowrap}
+@media (max-width:860px){.nav ul{display:none}.gh{margin-left:auto}}
+
+/* hero */
+.hero{display:grid;grid-template-columns:1.1fr .9fr;gap:48px;align-items:center;padding-block:64px 40px}
+@media (max-width:900px){.hero{grid-template-columns:1fr;gap:36px;padding-block:40px 24px}}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:5px 12px 5px 6px;border-radius:999px;background:var(--surface);box-shadow:var(--shadow);font-size:13px;color:var(--muted)}
+.pill b{background:var(--accent-soft);color:var(--accent-ink);padding:1px 8px;border-radius:999px;font-weight:500}
+.hero-copy{display:grid;gap:20px;justify-items:start}
+.hero h1 em{font-style:normal;color:var(--accent-ink);background:linear-gradient(transparent 62%,var(--accent-soft) 62%)}
+.lede{font-size:17px;color:var(--muted);max-width:56ch}
+.cta{display:flex;flex-wrap:wrap;gap:12px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:14px;font-size:15px;font-weight:500;text-decoration:none;border:0;cursor:pointer}
+.btn.primary{background:var(--accent);color:#fff;box-shadow:0 8px 20px -8px var(--accent)}
+.btn.ghost{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+.promise{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:13.5px;color:var(--muted)}
+.promise span::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:8px;vertical-align:2px}
+
+.relay{position:relative;background:var(--surface);border-radius:28px;box-shadow:var(--shadow);padding:22px}
+.relay-h{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted);margin-bottom:12px}
+.relay ol{list-style:none;margin:0;padding:0;display:grid;gap:10px;position:relative}
+.relay ol::before{content:"";position:absolute;left:23px;top:24px;bottom:24px;border-left:2px dashed var(--line)}
+.rrow{position:relative;display:flex;align-items:center;gap:14px;height:56px;padding:0 12px 0 0;border-radius:16px;animation:hl 10s infinite}
+.rrow:nth-child(2){animation-delay:2s}.rrow:nth-child(3){animation-delay:4s}.rrow:nth-child(4){animation-delay:6s}.rrow:nth-child(5){animation-delay:8s}
+@keyframes hl{0%,18%{background:var(--bg2)}20%,100%{background:transparent}}
+.av{flex:none;width:48px;height:48px;border-radius:16px;display:grid;place-items:center;font:600 14px var(--body);color:#fff;position:relative;z-index:1}
+.av.you{background:var(--r-you);color:var(--bg)}.av.main{background:var(--r-main)}.av.pi{background:var(--r-pi)}.av.agy{background:var(--r-agy)}.av.rev{background:var(--r-rev)}
+.av.sm{width:26px;height:26px;border-radius:9px;font-size:11px}
+.rtext{display:grid;line-height:1.4}
+.rtext b{font-weight:500;font-size:15px}
+.rtext span{font-size:12.5px;color:var(--muted)}
+.ticket{position:absolute;right:12px;top:16px;padding:4px 10px;border-radius:8px;background:var(--accent-soft);color:var(--accent-ink);font:600 11.5px var(--mono);box-shadow:0 4px 10px -4px rgba(0,0,0,.2);animation:ride 10s infinite}
+@media (max-width:420px){.ticket{display:none}}
+@keyframes ride{0%,16%{transform:translateY(0)}20%,36%{transform:translateY(66px)}40%,56%{transform:translateY(132px)}60%,76%{transform:translateY(198px)}80%,96%{transform:translateY(264px)}100%{transform:translateY(0)}}
+.relay-f{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--muted)}
+
+/* sections */
+section.block{padding-block:56px}
+.sec-head{display:grid;gap:10px;margin-bottom:28px;max-width:720px}
+.kicker{font-size:13px;font-weight:700;letter-spacing:.12em;color:var(--accent-ink)}
+.sec-head p{color:var(--muted);font-size:16px}
+
+/* demo */
+.stage{background:var(--surface);border-radius:28px;box-shadow:var(--shadow);padding:22px;display:grid;gap:18px}
+.bar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.seg{display:flex;flex-wrap:wrap;gap:4px;background:var(--bg2);padding:4px;border-radius:14px}
+.seg button{border:0;background:transparent;color:var(--muted);padding:8px 14px;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer}
+.seg button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.switch{display:flex;align-items:center;gap:10px;border:0;background:var(--bg2);padding:6px 14px 6px 6px;border-radius:14px;cursor:pointer;color:var(--ink);font-size:14px;font-weight:500}
+.knob{width:44px;height:26px;border-radius:999px;background:var(--line);position:relative;transition:background .25s}
+.knob::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .25s}
+.switch[aria-checked="true"] .knob{background:var(--accent)}
+.switch[aria-checked="true"] .knob::after{transform:translateX(18px)}
+.switch small{color:var(--muted);font-weight:400}
+.desc{font-size:14.5px;color:var(--muted);background:var(--bg);border-radius:14px;padding:10px 14px}
+.desc b{color:var(--ink);font-weight:500}
+
+.track{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.node{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:12px;background:var(--bg);font-size:13px;color:var(--muted);transition:all .35s;min-width:0}
+.node .n{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:600 11px var(--mono);background:var(--line);color:var(--muted);transition:all .35s}
+.node .l{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node[data-s="done"]{background:var(--ok-soft);color:var(--ok)}
+.node[data-s="done"] .n{background:var(--ok);color:var(--surface)}
+.node[data-s="active"]{background:var(--accent-soft);color:var(--accent-ink);font-weight:700}
+.node[data-s="active"] .n{background:var(--accent);color:#fff;animation:pulse 1.4s ease-in-out infinite}
+.node[data-s="blocked"]{background:var(--bad-soft);color:var(--bad);font-weight:700}
+.node[data-s="blocked"] .n{background:var(--bad);color:#fff}
+.node[data-s="skip"]{opacity:.55;background:transparent;border:1px dashed var(--line)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 40%,transparent)}50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 0%,transparent)}}
+@media (max-width:760px){.track{grid-template-columns:repeat(3,1fr)}}
+
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.play{width:46px;height:46px;border-radius:50%;border:0;background:var(--ink);color:var(--bg);font-size:15px;cursor:pointer;display:grid;place-items:center}
+.ctl{border:0;background:var(--bg2);color:var(--ink);padding:9px 14px;border-radius:12px;font-size:13.5px;font-weight:500;cursor:pointer}
+.progress{flex:1;min-width:120px;height:6px;border-radius:999px;background:var(--bg2);overflow:hidden}
+.progress i{display:block;height:100%;width:0;background:var(--accent);border-radius:inherit;transition:width .35s}
+.status{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+
+.chip{display:inline-block;font:600 12px var(--mono);padding:3px 10px;border-radius:999px;background:var(--bg2);color:var(--muted);white-space:nowrap}
+.chip.queued,.chip.running{background:var(--warn-soft);color:var(--warn)}
+.chip.tested{background:var(--ok-soft);color:var(--ok)}
+.chip.verified{background:var(--ver-soft);color:var(--ver)}
+.chip.awaiting_approval{background:var(--warn-soft);color:var(--warn)}
+.chip.needs_human,.chip.waiting_quota{background:var(--bad-soft);color:var(--bad)}
+
+.panes{display:grid;grid-template-columns:1fr 1.2fr;gap:16px}
+@media (max-width:900px){.panes{grid-template-columns:1fr}}
+.win{border-radius:18px;overflow:hidden;display:grid;grid-template-rows:auto 1fr;min-width:0;border:1px solid var(--line)}
+.win-h{display:flex;align-items:center;gap:10px;padding:10px 14px;font-size:12.5px;min-width:0}
+.dots{display:flex;gap:6px;flex:none}.dots i{width:10px;height:10px;border-radius:50%;background:#FF6159}.dots i:nth-child(2){background:#FFBD2E}.dots i:nth-child(3){background:#28C941}
+.win-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chatwin{background:var(--bg)}
+.chatwin .win-h{background:var(--surface);border-bottom:1px solid var(--line);color:var(--muted)}
+.meta{display:none;font:600 11px var(--mono);color:var(--accent-ink);background:var(--accent-soft);padding:2px 8px;border-radius:6px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.herdr-on .meta{display:inline-block}
+.chat{height:480px;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.msg{display:flex;gap:10px;align-items:flex-start;max-width:94%;animation:rise .35s ease-out}
+.msg.you{align-self:flex-end;flex-direction:row-reverse}
+.bubble{padding:10px 14px;border-radius:16px;font-size:14px;line-height:1.7;background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.msg.you .bubble{background:var(--ink);color:var(--bg);border-bottom-right-radius:6px}
+.msg.ai .bubble{border-bottom-left-radius:6px}
+.bubble pre{margin:8px 0 0;padding:10px 12px;background:var(--bg);border-radius:10px;font:11.5px/1.6 var(--mono);white-space:pre-wrap;word-break:break-all;color:var(--ink)}
+.tool{align-self:flex-start;margin-left:36px;max-width:calc(94% - 36px);border-left:2px solid var(--line);padding:2px 0 2px 12px;font:12px/1.6 var(--mono);color:var(--muted);animation:rise .3s ease-out;word-break:break-all}
+.tool b{color:var(--ink);font-weight:600}
+.tool pre{margin:4px 0 0;white-space:pre-wrap;font:inherit;color:var(--muted);opacity:.85}
+
+.termwin{background:var(--term);border-color:transparent}
+.termwin .win-h{background:var(--term2);color:var(--t-dim)}
+.term{height:480px;overflow-y:auto;padding:14px 16px;font:12.5px/1.65 var(--mono);color:var(--t-ink);white-space:pre-wrap;word-break:break-word}
+.ln{animation:rise .2s ease-out}
+.cmd{color:var(--t-cmd)}.cmd::before{content:"❯ ";color:var(--accent)}
+.cmt{color:var(--t-dim);font-style:italic}
+.ok{color:var(--t-ok)}.warn{color:var(--t-warn)}.bad{color:var(--t-bad)}
+.caret{display:inline-block;width:.55em;height:1.1em;vertical-align:-2px;background:var(--t-cmd);animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* herdr window */
+.hwin{background:var(--term);border-color:transparent}
+.hwin .win-h{background:var(--term2);color:var(--t-dim);gap:8px}
+.htabs{display:flex;gap:6px;min-width:0;overflow:hidden}
+.htab{padding:3px 10px;border-radius:8px;font:500 11.5px var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.htab.on{background:var(--term);color:var(--t-ink)}
+.hbody{height:480px;display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#2A3834}
+@media (max-width:560px){.hbody{grid-template-columns:1fr;grid-template-rows:1fr 1fr}}
+.hpane{background:var(--term);display:grid;grid-template-rows:auto 1fr;min-height:0;min-width:0}
+.ph{padding:6px 12px;font:600 11px var(--mono);color:var(--t-dim);background:var(--term2);display:flex;gap:8px;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ph .d{width:8px;height:8px;border-radius:50%;flex:none;background:var(--t-dim)}
+.pb{overflow-y:auto;padding:10px 12px;font:11.5px/1.6 var(--mono);color:var(--t-ink);white-space:pre-wrap;word-break:break-word;min-height:0}
+.agents{display:flex;flex-direction:column;gap:1px;background:#2A3834;min-height:0}
+.agents .hpane{flex:1;animation:rise .35s ease-out}
+.agents .hpane.closing{animation:fold .45s ease-in forwards}
+@keyframes fold{to{opacity:0;flex-grow:.0001}}
+.ph .d.coder{background:var(--r-pi)}.ph .d.reviewer{background:var(--r-rev)}
+.empty{flex:1;background:var(--term);display:grid;place-content:center;gap:6px;text-align:center;padding:16px;font-size:12.5px;color:var(--t-dim)}
+.empty b{color:var(--t-ink);font-weight:500;font-size:13px}
+.closed{font:11px var(--mono);color:var(--t-dim)}
+.note{font-size:13px;color:var(--muted)}
+
+/* herdr compare */
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:820px){.compare{grid-template-columns:1fr}}
+.card{background:var(--surface);border-radius:24px;box-shadow:var(--shadow);padding:24px;display:grid;gap:14px;align-content:start}
+.card.hl{outline:2px solid var(--accent);outline-offset:-2px}
+.tag{justify-self:start;font-size:12.5px;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--bg2);color:var(--muted)}
+.card.hl .tag{background:var(--accent-soft);color:var(--accent-ink)}
+.ticks{list-style:none;margin:0;padding:0;display:grid;gap:10px;font-size:14.5px}
+.ticks li{display:grid;grid-template-columns:22px 1fr;gap:8px}
+.ticks li::before{content:"";width:18px;height:18px;margin-top:4px;border-radius:6px;background:var(--bg2)}
+.card.hl .ticks li::before{background:var(--accent-soft);box-shadow:inset 0 0 0 5px var(--accent-soft);background-color:var(--accent)}
+.mini{display:grid;grid-template-columns:1fr 1fr;gap:4px;height:120px;border-radius:14px;overflow:hidden;background:var(--line);padding:4px}
+.mini div{border-radius:10px;background:var(--bg);display:grid;place-items:center;font-size:12px;color:var(--muted);text-align:center;padding:6px}
+.mini.off{grid-template-columns:1fr}
+.mini .m{background:var(--accent-soft);color:var(--accent-ink)}
+.mini .col{display:grid;grid-template-rows:1fr 1fr;gap:4px;background:transparent;padding:0}
+.mini .col div{background:var(--term);color:var(--t-ink);font-family:var(--mono);font-size:11px}
+.snip{position:relative;background:var(--term);color:var(--t-ink);border-radius:14px;padding:12px 64px 12px 14px;font:12.5px/1.65 var(--mono);white-space:pre-wrap;word-break:break-all;margin:0}
+.copy{position:absolute;top:8px;right:8px;font-size:12px;background:var(--term2);color:var(--t-ink);border:0;border-radius:8px;padding:4px 10px;cursor:pointer}
+
+/* setup */
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:18px;counter-reset:s;position:relative}
+.steps::before{content:"";position:absolute;left:23px;top:30px;bottom:30px;border-left:2px dashed var(--line)}
+.step{display:grid;grid-template-columns:48px 1fr;gap:18px;counter-increment:s}
+.step::before{content:counter(s);width:48px;height:48px;border-radius:16px;background:var(--surface);box-shadow:var(--shadow);display:grid;place-items:center;font:22px var(--display);color:var(--accent-ink);position:relative;z-index:1}
+.step .card{padding:20px}
+.step p{font-size:14.5px;color:var(--muted)}
+.say{position:relative;background:var(--bg2);border-radius:14px;padding:12px 64px 12px 14px;font-size:14.5px}
+.say .copy{background:var(--surface);color:var(--ink)}
+
+/* flows */
+.flows{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.flow{gap:12px}
+.flow h3{font-family:var(--mono);font-size:17px}
+.chain{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.chain .av{width:30px;height:30px;border-radius:10px;font-size:11px}
+.chain i{font-style:normal;color:var(--line)}
+.flow p{font-size:14px;color:var(--muted)}
+.flow .say{font-size:13.5px}
+.fine{font-size:13.5px;color:var(--muted);margin-top:16px}
+
+/* states */
+.states{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:12px}
+.st{background:var(--surface);border-radius:18px;box-shadow:var(--shadow);padding:16px 18px;display:grid;gap:6px}
+.st p{font-size:14.5px}
+.st p.next{font-size:13.5px;color:var(--muted)}
+
+/* tips */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:820px){.two{grid-template-columns:1fr}}
+.tips{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.tips li{background:var(--surface);border-radius:16px;box-shadow:var(--shadow);padding:14px 18px;font-size:14.5px;color:var(--muted)}
+.tips b{display:block;color:var(--ink);font-weight:500;font-size:15px}
+.list{display:grid;gap:10px;align-content:start}
+
+footer{padding-block:40px 64px;color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);margin-top:24px}
+footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-between}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+<nav class="nav" aria-label="主要">
+  <div class="wrap">
+    <a class="brand" href="#top"><span class="mark">maf</span>multiple-agents-flow</a>
+    <ul>
+      <li><a href="#demo">示範</a></li>
+      <li><a href="#herdr">Herdr</a></li>
+      <li><a href="#setup">安裝</a></li>
+      <li><a href="#flows">Flow</a></li>
+      <li><a href="#states">狀態</a></li>
+      <li><a href="#tips">小技巧</a></li>
+    </ul>
+    <a class="gh" href="https://github.com/ian902792/multiple-agents-flow">GitHub</a>
+  </div>
+</nav>
+
+<main id="top">
+  <div class="wrap hero">
+    <div class="hero-copy">
+      <span class="pill"><b>新手導覽</b>五分鐘看懂，十分鐘裝好</span>
+      <h1>留在主對話，<br>把<em>小工作</em>交給別人做</h1>
+      <p class="lede">你照常在 Claude Code 或 Codex 描述需求。主 Agent 把路徑和驗收都明確的小工作，交給 Pi 或 Antigravity 在獨立工作樹完成；MAF 負責跑測試，需要時再請另一家模型審查，而且全部綁定同一個 Git commit。</p>
+      <div class="cta">
+        <a class="btn primary" href="#demo">看它怎麼運作</a>
+        <a class="btn ghost" href="#setup">開始安裝</a>
+      </div>
+      <div class="promise"><span>只用你現有的訂閱</span><span>不自動 push 或合併</span><span>額度不明就停下</span></div>
+    </div>
+    <div class="relay" aria-label="一件任務的接力流程">
+      <div class="relay-h"><span>一件任務的接力</span><span class="chip tested">tested</span></div>
+      <ol>
+        <li class="rrow"><span class="av you">你</span><span class="rtext"><b>描述需求</b><span>像平常聊天一樣說</span></span></li>
+        <li class="rrow"><span class="av main">主</span><span class="rtext"><b>主 Agent 拆成小任務</b><span>寫清楚路徑、驗收與目的</span></span></li>
+        <li class="rrow"><span class="av pi">Pi</span><span class="rtext"><b>小任務 Agent 施工</b><span>在獨立工作樹，不碰你的分支</span></span></li>
+        <li class="rrow"><span class="av rev">✓</span><span class="rtext"><b>MAF 測試，可選審查</b><span>證據綁定同一個 commit</span></span></li>
+        <li class="rrow"><span class="av main">主</span><span class="rtext"><b>整合後回報</b><span>附上 commit SHA</span></span></li>
+        <li class="ticket" aria-hidden="true">remember-me</li>
+      </ol>
+      <div class="relay-f"><span>你只在開頭和被擋下時出場</span><span>其餘自動接力</span></div>
+    </div>
+  </div>
+
+  <section class="block" id="demo">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="kicker">互動示範</span>
+        <h2>一個需求，從對話走到 commit</h2>
+        <p>選一個情境按播放。打開右上角的 Herdr 開關，可以比較勾選 Herdr 後畫面多了什麼。</p>
+      </div>
+      <div class="stage" id="stage">
+        <div class="bar">
+          <div class="seg" role="tablist" id="tabs" aria-label="示範情境"></div>
+          <button class="switch" id="herdr-toggle" type="button" role="switch" aria-checked="false"><span class="knob"></span>Herdr 觀看 <small id="herdr-state">關</small></button>
+        </div>
+        <p class="desc" id="desc"></p>
+        <ol class="track" id="track" aria-label="任務進度"></ol>
+        <div class="controls">
+          <button class="play" id="play" type="button" aria-label="播放">▶</button>
+          <button class="ctl" id="step" type="button">下一步</button>
+          <button class="ctl" id="restart" type="button">從頭</button>
+          <button class="ctl" id="speed" type="button" aria-label="播放速度">1×</button>
+          <div class="progress" aria-hidden="true"><i id="bar"></i></div>
+          <div class="status">狀態 <span class="chip" id="chip">—</span></div>
+        </div>
+        <div class="panes">
+          <div class="win chatwin">
+            <div class="win-h"><span class="dots"><i></i><i></i><i></i></span><span class="win-t" id="chat-title">Claude Code</span><span class="meta" id="meta" title="Herdr 主 pane 標題">maf 0/0 done</span></div>
+            <div class="chat" id="chat" aria-live="polite"></div>
+          </div>
+          <div class="win termwin" id="termwin">
+            <div class="win-h"><span class="dots"><i></i><i></i><i></i></span><span class="win-t">zsh — your-project · 主 Agent 代你執行</span></div>
+            <div class="term" id="term"></div>
+          </div>
+          <div class="win hwin" id="hwin" hidden>
+            <div class="win-h"><span class="dots"><i></i><i></i><i></i></span><span class="htabs"><span class="htab">your-project</span><span class="htab on">flow: your-project</span></span></div>
+            <div class="hbody">
+              <div class="hpane"><div class="ph"><span class="d"></span>supervisor · work --agent-panes</div><div class="pb" id="sup"></div></div>
+              <div class="agents" id="agents"></div>
+            </div>
+          </div>
+        </div>
+        <p class="note" id="note"></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="herdr">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="kicker">可選功能</span>
+        <h2>勾選 Herdr 之後，差在哪裡</h2>
+        <p>Herdr 是給 coding agent 用的終端機多工器。MAF 的結果不受它影響，差別在於你能不能一邊聊天、一邊看每個 agent 在做什麼。</p>
+      </div>
+      <div class="compare">
+        <div class="card">
+          <span class="tag">沒勾選（預設）</span>
+          <div class="mini off"><div>主對話<br>work 跑完才回來</div></div>
+          <ul class="ticks">
+            <li>主 Agent 在前景執行 <code>work --once</code>，跑完才繼續對話。</li>
+            <li>只看得到階段變化：coding → testing → tested。</li>
+            <li>想知道進度，就問 <code>/maf status</code>。</li>
+          </ul>
+        </div>
+        <div class="card hl">
+          <span class="tag">勾選 Herdr</span>
+          <div class="mini"><div class="m">主對話<br>pane 標題顯示進度</div><div class="col"><div>supervisor</div><div>MAF coder …</div></div></div>
+          <ul class="ticks">
+            <li>supervisor 在另一個 <code>flow: 專案名</code> workspace 背景常駐，主 Agent 只要排入任務。</li>
+            <li>每個執行中的 coder、reviewer 各開一個暫時 pane，顯示事件名稱與工具類型，結束後自動關閉。</li>
+            <li>主 pane 標題即時顯示 <code>maf 1/3 done | 2 running | …</code>。</li>
+            <li>pane 只負責顯示，不是驗證證據；也不會顯示 prompt 或完整對話。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="two" style="margin-top:16px">
+        <div class="list">
+          <p class="note">在 Herdr pane 裡開一次（全域開關，之後每個專案都能用）：</p>
+          <pre class="snip">python3 flow.py settings herdr on<button class="copy" type="button">複製</button></pre>
+        </div>
+        <div class="list">
+          <p class="note">在你的專案 pane 啟動 supervisor：</p>
+          <pre class="snip">python3 /path/to/flow.py --repo /path/to/your-project herdr<button class="copy" type="button">複製</button></pre>
+        </div>
+      </div>
+      <div class="cta" style="margin-top:18px"><button class="btn primary" id="try-herdr" type="button">在示範中打開 Herdr</button></div>
+    </div>
+  </section>
+
+  <section class="block" id="setup">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="kicker">設定一次</span>
+        <h2>四個步驟裝好</h2>
+        <p>需要 macOS 或 Linux、Python 3.11+、Git，以及 Claude Code 或 Codex。目標專案要是已有第一個 commit 的 Git repository；不必 <code>init</code>，也不用每個專案重裝。</p>
+      </div>
+      <ol class="steps">
+        <li class="step"><div class="card">
+          <h3>安裝 skill</h3>
+          <pre class="snip">git clone https://github.com/ian902792/multiple-agents-flow.git
+cd multiple-agents-flow
+python3 flow.py install-skills<button class="copy" type="button">複製</button></pre>
+          <p>會註冊全域的 Claude <code>/maf</code>、<code>/maf-plan</code> 與 Codex <code>maf</code>。裝完記得重開主對話。</p>
+        </div></li>
+        <li class="step"><div class="card">
+          <h3>選預設 flow</h3>
+          <pre class="snip">python3 flow.py ui<button class="copy" type="button">複製</button></pre>
+          <p>在 Flow Studio 選好 flow，按「設為全域預設」。也可以直接指定：<code>python3 flow.py settings default-flow quick</code></p>
+        </div></li>
+        <li class="step"><div class="card">
+          <h3>確認只用訂閱</h3>
+          <p>先到各家控制台確認模型包含在現有訂閱，額外付費用量和 OpenCode Go 的 Use balance 都已關閉，再記錄一次：</p>
+          <pre class="snip">python3 flow.py confirm-billing --no-overage<button class="copy" type="button">複製</button></pre>
+          <p>之後換模型或路由要再確認一次。MAF 不會替你改帳單設定。</p>
+        </div></li>
+        <li class="step"><div class="card">
+          <h3>在專案裡直接說</h3>
+          <div class="say">請按目前 flow 完成這項修改。路徑與驗收明確的小工作可以委派；完成後測試已提交的變更，告訴我結果與 commit SHA。<button class="copy" type="button">複製</button></div>
+          <p>接下來就是上面示範的流程。想先檢查環境，可以跑 <code>python3 flow.py --repo 專案路徑 doctor</code>，它不會呼叫模型。</p>
+        </div></li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="block" id="flows">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="kicker">選分工</span>
+        <h2>四種內建 flow</h2>
+        <p>Flow 決定主對話、小任務和審查各由誰來做。Claude 與 Codex 各有自己的預設，互不覆蓋。</p>
+      </div>
+      <div class="flows">
+        <div class="card flow"><h3>quick</h3>
+          <div class="chain"><span class="av main">主</span><i>→</i><span class="av pi">Pi</span><span>Claude Opus 5.5 → DeepSeek V4.1 Flash</span></div>
+          <p>日常小改動。Claude 的原始預設。</p>
+          <div class="say">這個專案改用 quick。<button class="copy" type="button">複製</button></div></div>
+        <div class="card flow"><h3>quick-antigravity</h3>
+          <div class="chain"><span class="av main">主</span><i>→</i><span class="av agy">AG</span><span>Claude Opus 5.5 → Gemini 3.8 Flash High</span></div>
+          <p>小任務改用 Google 帳號的 Antigravity 額度。</p>
+          <div class="say">這個專案改用 quick-antigravity。<button class="copy" type="button">複製</button></div></div>
+        <div class="card flow"><h3>planned</h3>
+          <div class="chain"><span class="av rev">規</span><i>→</i><span class="av main">主</span><i>→</i><span class="av pi">Pi</span><span>Codex 規畫，Claude 實作</span></div>
+          <p>中大型需求。只有你手動輸入 <code>/maf-plan</code> 才會請 Codex 規畫。</p>
+          <div class="say">這個專案改用 planned，先整理需求。<button class="copy" type="button">複製</button></div></div>
+        <div class="card flow"><h3>codex-pi</h3>
+          <div class="chain"><span class="av main">主</span><i>→</i><span class="av pi">Pi</span><span>Codex GPT-6 Sol 為主</span></div>
+          <p>以 Codex 為主對話，可選 Claude Opus 5.5 審查。Codex 的預設。</p>
+          <div class="say">這個專案改用 codex-pi。<button class="copy" type="button">複製</button></div></div>
+      </div>
+      <p class="fine">獨立審查預設關閉，要在 Flow Studio 勾選。開啟後，審查者必須和主對話來自不同工具。</p>
+    </div>
+  </section>
+
+  <section class="block" id="states">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="kicker">看懂狀態</span>
+        <h2>輸入 <code>/maf status</code> 會看到這些</h2>
+      </div>
+      <div class="states">
+        <div class="st"><span class="chip running">running</span><p>小任務 Agent 正在施工，或 MAF 正在跑測試。</p><p class="next">讓它跑完，不用插話。</p></div>
+        <div class="st"><span class="chip tested">tested</span><p>沒開審查，指定測試已對這個 commit 通過。</p><p class="next">可以整合；還沒 push。</p></div>
+        <div class="st"><span class="chip verified">verified</span><p>測試與獨立審查都通過同一個 commit。</p><p class="next">發 PR 或合併仍要你另外授權。</p></div>
+        <div class="st"><span class="chip awaiting_approval">awaiting_approval</span><p>範圍敏感或比較大，等你看過凍結的範圍。</p><p class="next">確認後說「放行」，只放行這一次。</p></div>
+        <div class="st"><span class="chip needs_human">needs_human</span><p>需求衝突、權限或資安問題，需要你決定。</p><p class="next">回答後，主 Agent 會建新任務，不會重跑舊的。</p></div>
+        <div class="st"><span class="chip waiting_quota">waiting_quota</span><p>訂閱額度用完或狀態不明，MAF 停住，不會改用 API。</p><p class="next">告訴主 Agent 額度什麼時候重置。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="tips">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="kicker">用得順手</span>
+        <h2>新手最常問的幾件事</h2>
+      </div>
+      <div class="two">
+        <ul class="tips">
+          <li><b>委派後讓它跑完</b>中途插話會讓主 Agent 停下來重新核對，白耗額度。臨時想法先記下來。</li>
+          <li><b>一次只派現在就能驗收的任務</b>下一件常取決於上一件交接裡的 <code>UNVERIFIED</code> 存疑項。</li>
+          <li><b>委派前先 commit</b>MAF 從乾淨的 HEAD 開始，不會替你 stash 或 reset。</li>
+          <li><b>整合後要再驗證一次</b>cherry-pick 會產生新的 SHA，舊證據不能套到新 commit。</li>
+          <li><b>tested、verified 都不等於已 push</b>發布和合併要另外明確授權，而且必須開啟獨立審查。</li>
+          <li><b>只在你信任的 repository 使用</b>工作樹不是安全沙箱，測試會執行你核准的命令。</li>
+        </ul>
+        <div class="list">
+          <h3>常用說法</h3>
+          <div class="say">同時處理 1. 補 docs/install.md 安裝範例；2. 補 docs/faq.md 常見問題；3. 補 docs/troubleshooting.md 疑難排解，各自驗收。<button class="copy" type="button">複製</button></div>
+          <div class="say">這件的驗收重點是：重新整理後仍保持登入。<button class="copy" type="button">複製</button></div>
+          <div class="say">改回全域預設 flow。<button class="copy" type="button">複製</button></div>
+          <h3 style="margin-top:8px">對話指令</h3>
+          <pre class="snip">/maf status
+/maf mode quick-antigravity
+/maf-plan 把會員系統拆成可驗收的小任務<button class="copy" type="button">複製</button></pre>
+          <p class="note">在 Codex 裡把 <code>/maf</code> 換成 <code>$maf</code>；<code>/maf-plan</code> 只有 Claude 有。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>完整指令見 <a href="https://github.com/ian902792/multiple-agents-flow/blob/main/docs/CLI.md">docs/CLI.md</a>，狀態機與安全檢查見 <a href="https://github.com/ian902792/multiple-agents-flow/blob/main/docs/IMPLEMENTATION.md">docs/IMPLEMENTATION.md</a>。</span>
+    <span>示範中的 run ID、SHA 與檔名都是範例。MIT 授權。</span>
+  </div>
+</footer>
+
+<script>
+(function(){
+const NODES=["需求","任務範圍","工作樹施工","測試","獨立審查","整合交接"];
+const P='python3 "$FLOW" --repo . ';
+const S={
+ daily:{label:"日常小任務",main:"Claude Code · quick",skip:true,
+  desc:"<b>flow：quick</b>。Claude 把一件路徑明確的小工作交給 Pi，沒開審查，結果是 <b>tested</b>。",
+  ev:[
+  {t:"you",x:"這個專案用 quick。幫登入頁加「記住我」；路徑明確的小工作可以委派，做完告訴我 commit SHA。",s:0,st:"—"},
+  {t:"ai",x:"路徑和驗收都很明確，我交給 Pi（DeepSeek V4.1 Flash）。先提交目前的工作，這是凍結的任務範圍：",code:'{\n  "id": "remember-me",\n  "title": "登入頁加「記住我」",\n  "paths": ["src/login.tsx", "src/session.ts"],\n  "tests": [["npm", "test", "--", "login"]],\n  "acceptance_why": "勾選後重新整理仍保持登入",\n  "risk": "manual"\n}',s:1},
+  {t:"cmd",x:P+"delegate /private/tmp/remember-me.json"},
+  {t:"out",x:'{\n  "id": "remember-me-3f9a1c07b2",\n  "status": "queued",\n  "branch": "maf/remember-me-3f9a1c07b2",\n  …\n}',st:"queued"},
+  {t:"cmd",x:P+"work --once --run-id remember-me-3f9a1c07b2"},
+  {t:"out",x:"[remember-me-3f9a1c07b2] coding",s:2,st:"running"},
+  {t:"cmt",x:"# Pi 在 .maf-worktrees/ 的獨立工作樹改檔，不碰你的分支"},
+  {t:"out",x:"[remember-me-3f9a1c07b2] testing",s:3},
+  {t:"out",c:"ok",x:"[remember-me-3f9a1c07b2] tested:",s:5,st:"tested"},
+  {t:"cmd",x:P+"handoff remember-me-3f9a1c07b2"},
+  {t:"out",x:'{\n  "status": "tested",\n  "head_sha": "a41c9e2…",\n  "tests": [{"argv": ["npm","test","--","login"], "exit_code": 0}],\n  "review": null,\n  "coder_notes": "… UNVERIFIED: Safari 私密模式的 cookie 行為未測"\n}'},
+  {t:"ai",x:"Pi 完成了，測試對 a41c9e2 通過。它的存疑項說 Safari 私密模式沒測，我記下來當下一件。現在把變更整合進你的分支，再對新的 commit 驗證一次。"},
+  {t:"cmd",x:P+"verify /private/tmp/remember-me.json"},
+  {t:"out",x:'{ "id": "remember-me-8d02e61f4a", "source_sha": "7b20d5f…", "status": "queued", … }',st:"queued"},
+  {t:"cmd",x:P+"work --once --run-id remember-me-8d02e61f4a"},
+  {t:"out",x:"[remember-me-8d02e61f4a] testing",s:3,st:"running"},
+  {t:"out",c:"ok",x:"[remember-me-8d02e61f4a] tested:",s:6,st:"tested"},
+  {t:"ai",x:"完成：tested @ 7b20d5f（沒開獨立審查）。只在本機，還沒 push 或合併。下一件建議補 Safari 私密模式的測試。"}
+ ]},
+ parallel:{label:"三件並行",main:"Claude Code · quick-antigravity",skip:true,
+  desc:"<b>flow：quick-antigravity</b>。三件互不依賴、檔案不重疊的文件工作，交給 Antigravity 同時跑（最多 3 件）。",
+  ev:[
+  {t:"you",x:"改用 quick-antigravity。同時處理：1. 補 docs/install.md 安裝範例；2. 補 docs/faq.md；3. 補 docs/troubleshooting.md，各自驗收。",s:0,st:"—"},
+  {t:"ai",x:"三件互不依賴、檔案不重疊，我各寫一份任務並標記 independent，交給 Antigravity 的 Gemini 3.8 Flash High 並行處理。",code:'{"id": "install-docs", "paths": ["docs/install.md"],\n "tests": [["python3", "-c", "…is_file()"]],\n "risk": "docs", "independent": true}\n（faq、troubleshooting 同樣格式）',s:1},
+  {t:"cmd",x:P+"delegate /private/tmp/install.json"},
+  {t:"out",x:'{ "id": "install-docs-5c1e0a93d4", "status": "queued", … }'},
+  {t:"cmd",x:P+"delegate /private/tmp/faq.json"},
+  {t:"out",x:'{ "id": "faq-docs-b7240e1c6f", "status": "queued", … }'},
+  {t:"cmd",x:P+"delegate /private/tmp/troubleshooting.json"},
+  {t:"out",x:'{ "id": "troubleshooting-docs-09dd4a2e71", "status": "queued", … }',st:"queued"},
+  {t:"cmd",x:P+"work --once --run-id install-docs-5c1e0a93d4 --run-id faq-docs-b7240e1c6f --run-id troubleshooting-docs-09dd4a2e71"},
+  {t:"out",x:"[install-docs-5c1e0a93d4] coding\n[faq-docs-b7240e1c6f] coding\n[troubleshooting-docs-09dd4a2e71] coding",s:2,st:"running"},
+  {t:"cmt",x:"# 三個工作樹同時施工，各自測試、各自留證據"},
+  {t:"out",x:"[faq-docs-b7240e1c6f] testing\n[install-docs-5c1e0a93d4] testing",s:3},
+  {t:"out",c:"ok",x:"[faq-docs-b7240e1c6f] tested:"},
+  {t:"out",x:"[troubleshooting-docs-09dd4a2e71] testing"},
+  {t:"out",c:"ok",x:"[install-docs-5c1e0a93d4] tested:\n[troubleshooting-docs-09dd4a2e71] tested:",s:5,st:"tested"},
+  {t:"ai",x:"三件都 tested。我逐一看過 diff 和交接內容，整合成一個 commit。並行只是縮短等待，整合後的新 commit 仍要重新驗證。"},
+  {t:"cmd",x:P+"verify /private/tmp/docs-all.json"},
+  {t:"out",x:'{ "id": "docs-all-4e81c2b0aa", "source_sha": "e19f3c7…", "status": "queued", … }',st:"queued"},
+  {t:"cmd",x:P+"work --once --run-id docs-all-4e81c2b0aa"},
+  {t:"out",x:"[docs-all-4e81c2b0aa] testing",s:3,st:"running"},
+  {t:"out",c:"ok",x:"[docs-all-4e81c2b0aa] tested:",s:6,st:"tested"},
+  {t:"ai",x:"完成：三份文件都在 e19f3c7，tested。還沒 push。"}
+ ]},
+ review:{label:"開啟審查",main:"Claude Code · quick + 審查",skip:false,
+  desc:"<b>flow：quick，並在 Flow Studio 勾選了獨立審查</b>（Codex GPT-6 Sol）。審查退回一次，修好後同一個 commit 通過，結果是 <b>verified</b>。",
+  ev:[
+  {t:"you",x:"我在 Flow Studio 勾了獨立審查。幫列表 API 加分頁參數，一樣委派。",s:0,st:"—"},
+  {t:"ai",x:"好，Pi 施工，Codex 審查。任務範圍：",code:'{\n  "id": "list-paging",\n  "paths": ["src/api/list.ts", "tests/list.test.ts"],\n  "tests": [["npm", "test", "--", "list"]],\n  "acceptance_why": "第 2 頁不會重複第 1 頁的資料",\n  "risk": "manual"\n}',s:1},
+  {t:"cmd",x:P+"delegate /private/tmp/list-paging.json"},
+  {t:"out",x:'{ "id": "list-paging-61b0f3de28", "status": "queued", … }',st:"queued"},
+  {t:"cmd",x:P+"work --once --run-id list-paging-61b0f3de28"},
+  {t:"out",x:"[list-paging-61b0f3de28] coding",s:2,st:"running"},
+  {t:"out",x:"[list-paging-61b0f3de28] testing",s:3},
+  {t:"out",x:"[list-paging-61b0f3de28] reviewing",s:4},
+  {t:"cmt",x:"# reviewer：changes_requested（low）\n#   src/api/list.ts:58 | offset 超過總數時回傳 500 | …\n# → 在同一範圍內自動修一輪"},
+  {t:"out",c:"warn",x:"[list-paging-61b0f3de28] coding",s:2},
+  {t:"out",x:"[list-paging-61b0f3de28] testing",s:3},
+  {t:"out",x:"[list-paging-61b0f3de28] reviewing",s:4},
+  {t:"out",c:"ok",x:"[list-paging-61b0f3de28] verified:",s:5,st:"verified"},
+  {t:"cmd",x:P+"handoff list-paging-61b0f3de28"},
+  {t:"out",x:'{\n  "status": "verified",\n  "head_sha": "c93e1b0…",\n  "review": {"decision": "approve", "head_sha": "c93e1b0…", "findings": []},\n  "coder_notes": "… UNVERIFIED: none"\n}'},
+  {t:"ai",x:"審查員第一輪提出 1 條：src/api/list.ts:58，offset 超過總數時回傳 500。我打開那一行確認屬實，修復輪已處理；第二輪核准的正是測試通過的 c93e1b0。"},
+  {t:"ai",x:"目前是 verified @ c93e1b0，測試與審查綁定同一個 commit。整合後我會再跑一次 verify，仍只在本機。",s:6}
+ ]},
+ blocked:{label:"被擋下時",main:"Claude Code · quick",skip:true,
+  desc:"<b>碰到敏感路徑或需求衝突</b>。先停在 <b>awaiting_approval</b> 等你看範圍；施工時發現衝突，再停在 <b>needs_human</b>。",
+  ev:[
+  {t:"you",x:"把付款頁的金額四捨五入改成無條件捨去。",s:0,st:"—"},
+  {t:"ai",x:"這涉及金額計算，我把 risk 設為 manual。任務範圍：",code:'{\n  "id": "floor-amount",\n  "paths": ["src/billing/round.ts"],\n  "tests": [["npm", "test", "--", "billing"]],\n  "risk": "manual"\n}',s:1},
+  {t:"cmd",x:P+"delegate /private/tmp/floor-amount.json"},
+  {t:"out",c:"warn",x:'{ "id": "floor-amount-2a7c91e05b", "status": "awaiting_approval", … }',st:"awaiting_approval"},
+  {t:"ai",x:"路徑含 billing，屬於敏感範圍，MAF 停在 awaiting_approval。範圍就是上面那份，只改 src/billing/round.ts。你確認後我放行這一次。"},
+  {t:"you",x:"確認，放行。"},
+  {t:"cmd",x:P+"approve floor-amount-2a7c91e05b"},
+  {t:"out",x:'{ "id": "floor-amount-2a7c91e05b", "status": "queued", … }',st:"queued"},
+  {t:"cmd",x:P+"work --once --run-id floor-amount-2a7c91e05b"},
+  {t:"out",x:"[floor-amount-2a7c91e05b] coding",s:2,st:"running"},
+  {t:"out",c:"bad",x:"[floor-amount-2a7c91e05b] needs_human: MAF_NEEDS_HUMAN: 需求說改成無條件捨去，但退款流程的測試要求四捨五入，兩者衝突。",s:2,block:true,st:"needs_human"},
+  {t:"ai",x:"施工的 Agent 發現需求衝突，自己停下來了：退款也要改成捨去嗎？這個 run 不會重跑。你決定之後，我會用新的範圍建立新任務。"}
+ ]}
+};
+const LIVE={
+  coder:["agent_start","turn_start","tool_execution_start read","tool_execution_end read","message_update","tool_execution_start edit","tool_execution_end edit","tool_execution_start read","message_end","turn_end"],
+  reviewer:["thread.started","turn.started","item.started command_execution","item.completed command_execution","item.completed reasoning","item.started command_execution","item.completed agent_message","turn.completed"]
+};
+const NOTE={
+  off:"沒勾 Herdr：主 Agent 在前景跑 <code>work --once</code>，跑完才回到對話，只看得到階段變化。右側指令由主 Agent 透過 MAF skill 執行，平常不必自己輸入。",
+  on:"勾選 Herdr：supervisor 在 <code>flow: your-project</code> workspace 背景常駐，主 Agent 只負責排入任務與讀交接。每個 coder／reviewer 會開一個暫時 pane，只顯示事件名稱與工具類型，結束後自動關閉；主對話的 pane 標題（右上角橘色）即時顯示進度。"
+};
+
+const $=id=>document.getElementById(id);
+const chat=$("chat"),term=$("term"),sup=$("sup"),agents=$("agents"),track=$("track"),chip=$("chip"),playBtn=$("play"),meta=$("meta"),stage=$("stage");
+const reduce=window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+let cur="daily",herdr=false,ops=[],idx=0,gen=0,playing=false,speed=1;
+let runs=new Map(),panes=new Map(),closedPanes=[],clock=14*3600+2*60+5,lastTool=null;
+
+NODES.forEach((n,i)=>{const li=document.createElement("li");li.className="node";li.innerHTML='<span class="n">'+(i+1)+'</span><span class="l"></span>';li.querySelector(".l").textContent=n;track.appendChild(li)});
+const nodes=[...track.children];
+Object.entries(S).forEach(([k,v])=>{const b=document.createElement("button");b.type="button";b.setAttribute("role","tab");b.textContent=v.label;b.dataset.k=k;b.addEventListener("click",()=>choose(k,true));$("tabs").appendChild(b)});
+
+function build(){
+  const ev=S[cur].ev;
+  if(!herdr)return ev.map(e=>Object.assign({},e,{dst:"term"}));
+  const out=[];let inWork=false;
+  ev.forEach((e,i)=>{
+    if(e.t==="cmd"){inWork=/ work --once/.test(e.x);if(inWork)return;out.push(Object.assign({},e,{t:"tool",x:e.x.replace(P,"flow.py ")}));return}
+    if(e.t==="out"||e.t==="cmt"){out.push(Object.assign({},e,{dst:inWork?"sup":"tool"}));return}
+    out.push(e);
+    if(i===0)out.push({t:"tool",x:"flow.py herdr",launch:true},{t:"out",dst:"tool",x:'{ "workspace": "flow: your-project", "pane": "p-sup", "planner_pane": "p-main", … }'});
+  });
+  return out;
+}
+function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!==undefined)e.textContent=txt;return e}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const bottom=b=>{b.scrollTop=b.scrollHeight};
+function setTrack(s,block){const skip=S[cur].skip;nodes.forEach((li,i)=>{let st="idle";if(s!==undefined){if(i<s)st="done";else if(i===s)st=block?"blocked":"active"}if(skip&&i===4&&st!=="active")st="skip";li.dataset.s=st})}
+function setChip(v){chip.textContent=v;chip.className="chip "+(v==="—"?"":v)}
+function hhmmss(){clock+=1+Math.floor(Math.random()*3);const h=Math.floor(clock/3600),m=Math.floor(clock/60)%60,s=clock%60;return [h,m,s].map(n=>String(n).padStart(2,"0")).join(":")}
+
+/* Herdr state: runs for the pane title, agent panes derived from supervisor lines */
+function track_runs(text,fromVerify){
+  let m=text.match(/"id": "([^"]+)"[^}]*?"status": "([^"]+)"/s)||text.match(/"id": "([^"]+)".*?"status": "([^"]+)"/s);
+  if(m){const r=runs.get(m[1])||{stage:fromVerify?"testing":"coding"};r.status=m[2];runs.set(m[1],r)}
+  text.split("\n").forEach(line=>{const k=line.match(/^\[([^\]]+)\] (\w+)/);if(!k)return;
+    const id=k[1],w=k[2],r=runs.get(id)||{stage:"coding"};
+    if(["coding","testing","reviewing"].includes(w)){r.status="running";r.stage=w}else r.status=w;
+    runs.set(id,r);if(herdr)paneFor(id,w)});
+  if(herdr)title();
+}
+function title(){
+  const rs=[...runs.entries()];const done=rs.filter(([,r])=>["tested","verified"].includes(r.status)).length;
+  const parts=["maf "+done+"/"+rs.length+" done"];
+  const att=rs.filter(([,r])=>["needs_human","awaiting_approval"].includes(r.status)).length;if(att)parts.push("!"+att+" attention");
+  const running=rs.filter(([,r])=>r.status==="running").length;if(running>1)parts.push(running+" running");
+  const act=rs.find(([,r])=>r.status==="running")||rs.find(([,r])=>r.status==="queued");
+  const task=id=>id.replace(/-[0-9a-f]{10}$/,"");
+  if(act)parts.push(act[1].status+" "+act[1].stage+" "+task(act[0]));
+  else{const b=rs.find(([,r])=>["needs_human","awaiting_approval"].includes(r.status));if(b)parts.push(b[1].status+" "+b[1].stage+" "+task(b[0]))}
+  meta.textContent=parts.join(" | ");
+}
+function paneFor(id,w){
+  const close=role=>{const k=role+" "+id,p=panes.get(k);if(!p)return;panes.delete(k);closedPanes.push("MAF "+k);
+    if(reduce||!playing)p.remove();else{p.classList.add("closing");setTimeout(()=>p.remove(),450)}setTimeout(emptyState,reduce||!playing?0:460)};
+  if(w==="coding"){close("reviewer");open("coder",id)}
+  else if(w==="reviewing"){close("coder");open("reviewer",id)}
+  else{close("coder");close("reviewer")}
+}
+function open(role,id){
+  const k=role+" "+id;if(panes.has(k))return;
+  const e=agents.querySelector(".empty");if(e)e.remove();
+  const p=el("div","hpane"),h=el("div","ph"),b=el("div","pb");
+  h.appendChild(el("span","d "+role));h.appendChild(document.createTextNode("MAF "+role+" "+id));
+  b.textContent="MAF agent events (full private log is kept for diagnosis)\n";
+  p.append(h,b);p.dataset.role=role;p.dataset.i="0";agents.appendChild(p);panes.set(k,p);
+  for(let j=0;j<2;j++)tick(p);
+}
+function tick(p){const b=p.querySelector(".pb"),list=LIVE[p.dataset.role];const i=+p.dataset.i;b.textContent+=hhmmss()+" "+list[i%list.length]+"\n";p.dataset.i=i+1;bottom(b)}
+function emptyState(){
+  if(agents.children.length)return;
+  const e=el("div","empty");e.appendChild(el("b","", "這裡會出現 agent pane"));
+  e.appendChild(el("span","","coder／reviewer 執行時各開一個，結束後自動關閉"));
+  if(closedPanes.length){const c=el("span","closed","已關閉："+closedPanes.slice(-3).join("、"));e.appendChild(c)}
+  agents.appendChild(e);
+}
+setInterval(()=>{if(playing&&!reduce)panes.forEach(p=>tick(p))},Math.round(520));
+
+async function apply(ev,animate,g){
+  if(ev.s!==undefined)setTrack(ev.s,ev.block);
+  if(ev.st)setChip(ev.st);
+  if(ev.t==="you"||ev.t==="ai"){
+    const m=el("div","msg "+ev.t),a=el("span","av sm "+(ev.t==="you"?"you":"main"),ev.t==="you"?"你":"主"),b=el("div","bubble",ev.x);
+    if(ev.code)b.appendChild(el("pre","",ev.code));
+    m.append(a,b);chat.appendChild(m);bottom(chat);
+  }else if(ev.t==="tool"){
+    const t=el("div","tool");t.appendChild(el("b","","Bash "));t.appendChild(document.createTextNode(ev.x));chat.appendChild(t);lastTool=t;bottom(chat);
+    if(ev.launch){sup.textContent="$ python3 -u flow.py --repo your-project work --planner-pane p-main --agent-panes\n";title()}
+  }else if(ev.t==="cmd"){
+    const ln=el("div","ln cmd");term.appendChild(ln);
+    if(animate&&!reduce){const c=el("span","caret");
+      for(let i=1;i<=ev.x.length;i+=2){if(g!==gen||!playing)break;ln.textContent=ev.x.slice(0,i);ln.appendChild(c);bottom(term);await sleep(16/speed)}}
+    ln.textContent=ev.x;bottom(term);
+  }else{
+    const cls=ev.t==="cmt"?"cmt":(ev.c||"");
+    if(ev.dst==="tool"&&lastTool){lastTool.appendChild(el("pre","",ev.x));bottom(chat)}
+    else{const box=ev.dst==="sup"?sup:term;box.appendChild(el("div","ln "+cls,ev.x));bottom(box)}
+    const prev=ops[ops.indexOf(ev)-1]||{};
+    if(ev.t==="out")track_runs(ev.x,/verify/.test(prev.x||""));
+  }
+}
+function wait(ev){return (ev.t==="you"?1300:ev.t==="ai"?2300:ev.t==="cmd"||ev.t==="tool"?600:ev.t==="cmt"?1200:(ev.dst==="sup"?1500:900))/speed}
+function prog(){$("bar").style.width=(ops.length?idx/ops.length*100:0)+"%"}
+function btn(){const end=idx>=ops.length;playBtn.textContent=playing?"❚❚":(end?"↺":"▶");playBtn.setAttribute("aria-label",playing?"暫停":end?"重播":"播放")}
+function clear(){
+  chat.innerHTML="";term.innerHTML="";sup.textContent="";agents.innerHTML="";
+  runs=new Map();panes=new Map();closedPanes=[];lastTool=null;clock=14*3600+2*60+5;meta.textContent="maf 0/0 done";
+  ops=build();idx=0;setTrack(undefined);setChip("—");prog();emptyState();
+}
+function renderAll(){gen++;playing=false;clear();ops.forEach(e=>apply(e,false,gen));idx=ops.length;prog();btn()}
+async function play(){
+  if(idx>=ops.length)clear();
+  playing=true;const g=++gen;btn();
+  while(idx<ops.length){
+    const ev=ops[idx++];prog();
+    await apply(ev,true,g);
+    if(g!==gen||!playing)break;
+    await sleep(wait(ev));
+    if(g!==gen||!playing)break;
+  }
+  if(g===gen){playing=false;btn()}
+}
+function restart(){gen++;playing=false;clear();if(reduce)renderAll();else play()}
+function setHerdr(on){
+  herdr=on;const t=$("herdr-toggle");t.setAttribute("aria-checked",on);$("herdr-state").textContent=on?"開":"關";
+  stage.classList.toggle("herdr-on",on);$("termwin").hidden=on;$("hwin").hidden=!on;$("note").innerHTML=NOTE[on?"on":"off"];
+}
+function choose(k,autoplay){
+  cur=k;document.querySelectorAll("#tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.k===k?"true":"false"));
+  $("desc").innerHTML=S[k].desc;$("chat-title").textContent=S[k].main;
+  if(autoplay)restart();else renderAll();
+}
+playBtn.addEventListener("click",()=>{if(playing){playing=false;btn()}else play()});
+$("step").addEventListener("click",()=>{if(idx>=ops.length)clear();gen++;playing=false;apply(ops[idx++],false,gen);prog();btn()});
+$("restart").addEventListener("click",restart);
+$("speed").addEventListener("click",e=>{speed=speed===1?2:speed===2?3:1;e.currentTarget.textContent=speed+"×"});
+$("herdr-toggle").addEventListener("click",()=>{setHerdr(!herdr);restart()});
+$("try-herdr").addEventListener("click",()=>{if(!herdr)setHerdr(true);if(cur==="blocked")choose("parallel",false);$("demo").scrollIntoView({behavior:reduce?"auto":"smooth"});setTimeout(restart,reduce?0:500)});
+
+setHerdr(false);choose("daily",false);
+if(!reduce&&"IntersectionObserver" in window){
+  let started=false;
+  const io=new IntersectionObserver(es=>{if(!started&&es[0].isIntersecting){started=true;io.disconnect();restart()}},{threshold:.3});
+  io.observe(stage);
+}
+
+document.querySelectorAll(".copy").forEach(b=>b.addEventListener("click",()=>{
+  const box=b.parentElement,text=[...box.childNodes].filter(n=>n!==b).map(n=>n.textContent).join("").trim();
+  const reset=()=>setTimeout(()=>b.textContent="複製",1400);
+  const fallback=()=>{const r=document.createRange();r.selectNodeContents(box);const s=getSelection();s.removeAllRanges();s.addRange(r);b.textContent="已選取";reset()};
+  try{navigator.clipboard.writeText(text).then(()=>{b.textContent="已複製";reset()},fallback)}catch(e){fallback()}
+}));
+})();
+</script>
+</body>
+</html>

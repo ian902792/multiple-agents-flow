@@ -2,6 +2,8 @@
 
 **留在你習慣的 Claude Code 或 Codex 對話，讓其他 agent 接手明確的小工作。** MAF（multiple-agents-flow）會替子任務建立獨立工作樹、執行專案測試；你也可以選擇讓另一個 agent 審查同一個 Git commit。不必為每個專案重裝工具。
 
+第一次使用？先看[動畫新手導覽](https://ian902792.github.io/multiple-agents-flow/)（原始檔在 `site/index.html`）。
+
 日常流程是：**主 Agent 開發 → 可選 Pi 或 Antigravity 小任務 → 測試 → 可選獨立審查**。你平常只要在主對話描述需求；Agent 會使用 MAF skill 處理委派與驗證。Claude 主導的大型任務，只有在你手動輸入 `/maf-plan` 時才會先請 Codex 規畫。工具使用現有訂閱，不會偷偷改用付費 API。
 
 ## 先了解三個詞
