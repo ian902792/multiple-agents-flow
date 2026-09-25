@@ -39,11 +39,11 @@ python3 flow.py --main codex confirm-billing --no-overage
 python3 flow.py --repo /path/to/project --main codex doctor</pre><p><code>doctor</code> 只檢查 CLI、登入與確認紀錄，不呼叫模型。檢查完成後，在主 Agent 的專案對話中直接描述要做的工作。</p></div></div>
   </div></section>
   <section aria-labelledby="flows"><h2 id="flows">不同 flow 怎麼用？</h2><div class="table-wrap"><table><thead><tr><th>Flow</th><th>適合</th><th>你可以對主 Agent 說</th></tr></thead><tbody>
-    <tr><td><code>quick</code></td><td>日常開發；小任務可交 Pi。</td><td>「這個專案改用 quick，請完成這項修改。」</td></tr>
-    <tr><td><code>quick-antigravity</code></td><td>日常開發；小任務可交 Gemini 3.8 Flash High。</td><td>「這個專案改用 quick-antigravity；獨立的小工作可交給 Gemini。」</td></tr>
-    <tr><td><code>planned</code></td><td>較大任務；你決定是否手動請 Codex 規畫。</td><td>「這個專案改用 planned。」需要 Codex 規畫時再由你輸入 <code>/maf-plan 需求</code>。</td></tr>
-    <tr><td><code>codex-pi</code></td><td>Codex 主導，Pi 執行明確小任務；Claude Opus 5.5 審查可選、預設關閉。</td><td>在 Codex 對話說「這個專案改用 codex-pi，請完成這項修改。」</td></tr>
-    <tr><td>自訂名稱</td><td>把常用的角色／模型組合儲存於設定頁。</td><td>「這個專案改用我的 flow。」或「改回全域預設 flow。」</td></tr>
+    <tr><td><code>quick</code></td><td>日常開發；小任務可交 Pi。</td><td>「maf 改用 quick，請完成這項修改。」</td></tr>
+    <tr><td><code>quick-antigravity</code></td><td>日常開發；小任務可交 Gemini 3.8 Flash High。</td><td>「maf 改用 quick-antigravity；獨立的小工作可交給 Gemini。」</td></tr>
+    <tr><td><code>planned</code></td><td>較大任務；你決定是否手動請 Codex 規畫。</td><td>「maf 改用 planned。」需要 Codex 規畫時再由你輸入 <code>/maf-plan 需求</code>。</td></tr>
+    <tr><td><code>codex-pi</code></td><td>Codex 主導，Pi 執行明確小任務；Claude Opus 5.5 審查可選、預設關閉。</td><td>在 Codex 對話說「maf 改用 codex-pi，請完成這項修改。」</td></tr>
+    <tr><td>自訂名稱</td><td>把常用的角色／模型組合儲存於設定頁。</td><td>「maf 改用我的 flow。」或「maf 改回全域預設。」</td></tr>
   </tbody></table></div><p style="margin-top:12px">Claude 與 Codex 各自沿用其全域預設，之後不用逐案選 mode。同一專案的兩個主對話也分開記錄 mode；切換只影響該 Agent 的新任務，已開始的任務保留原模型。審查核取方塊是每個 flow 各自的設定。</p></section>
   <section aria-labelledby="daily"><h2 id="daily">一個日常例子</h2><p>在 Codex 專案對話中直接說：</p><pre>這個專案用 codex-pi。請補上 docs/install.md 的安裝範例，
 只修改該檔；完成後執行適合的測試、整合變更並回報結果。</pre><p>Codex 會依 flow 準備任務範圍、測試與必要的委派。你會收到結果狀態、測試、commit SHA 和需要你處理的阻塞。未勾選獨立審查時結果是 <code>tested</code>；勾選且通過審查才是 <code>verified</code>。兩者都不表示已 push 或合併。</p><p class="callout">三件互不依賴的小事，可在同一則需求中列出各自的檔案與驗收方式。MAF 最多同時執行三件；主 Agent 負責整合，並檢查整合後的新 commit。</p></section>

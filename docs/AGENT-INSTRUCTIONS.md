@@ -13,6 +13,7 @@
 ```md
 ## MAF 工作方式
 
+- 我以「maf」開頭的話（例如「maf 改用 quick」「maf 狀態」）是在指揮 MAF；沒有 maf 時，flow、mode、planned 等字照一般意思理解，不要切換 MAF flow。
 - 在已有 commit 的 Git 專案依已安裝的 `maf` skill 使用 MAF；預設跟隨全域 flow，尊重目前專案的 mode 覆寫。除非我要求，否則不改全域 flow、模型或 effort；不自行建立 `.maf.json`。
 - Claude 是主要開發者。小任務直接完成；只有範圍清楚、可獨立驗收的小工作才交給目前 flow 的 Pi 或 Antigravity，不為了使用多個 agent 而拆任務。若有多件功能互不依賴、可修改檔案互不重疊的小工作，先全部排入 delegate 並標記 `independent: true`，再讓 MAF 併發執行；有依賴或共用資源的工作依序執行。
 - 程式碼完成後，只提交本次變更，不納入其他未提交修改；對乾淨的目前 HEAD 使用 `maf` skill 的 `verify` 動作。使用真實的專案測試；handoff 對應目前 commit 才能宣稱完成。未啟用獨立審查時說 `tested`，啟用且通過同一 SHA 的審查才說 `verified`。
