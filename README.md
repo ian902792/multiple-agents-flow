@@ -136,6 +136,6 @@ python3 "$FLOW" --repo "$TARGET" herdr
 - Antigravity 使用 `agy` 的 Google 帳號登入、`--sandbox` 與受限權限；MAF 拒絕 API key 路由或預先放行工具。`doctor` 會查詢模型清單，但**不會呼叫模型**。授權／額度不明時停止。
 - 並行只用於明確標記為獨立的窄範圍 Pi／Antigravity delegate；其他任務依序執行。
 
-需要直接使用 Python CLI、編寫任務 JSON、處理中斷或設定 PR 政策，請看[指令參考](docs/CLI.md)。想了解狀態機與安全檢查，請看[實作契約](docs/IMPLEMENTATION.md)；給 LLM 的詳細規則在[MAF skill](skills/maf/SKILL.md)，已實測與尚未實測的範圍記在[驗證紀錄](docs/VALIDATION.md)。
+需要直接使用 Python CLI、編寫任務 JSON、處理中斷或設定 PR 政策，請看[指令參考](docs/CLI.md)。想了解狀態機與安全檢查，請看[實作契約](docs/IMPLEMENTATION.md)；給 LLM 的詳細規則在[MAF skill](skills/maf/SKILL.md)，已實測與尚未實測的範圍記在[驗證紀錄](docs/VALIDATION.md)。想新增自己的 agent，請看[新增 agent adapter](docs/ADAPTERS.md)；送 PR 前請讀[參與貢獻](CONTRIBUTING.md)。
 
 專案以 [MIT](LICENSE) 授權。開發者可執行 `python3 -m unittest discover -s tests -v`。
