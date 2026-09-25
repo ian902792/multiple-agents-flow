@@ -4,7 +4,7 @@
 
 第一次使用？先看[動畫新手導覽](https://ian902792.github.io/multiple-agents-flow/)（原始檔在 `site/index.html`）。
 
-日常流程是：**主 Agent 開發 → 可選 Pi 或 Antigravity 小任務 → 測試 → 可選獨立審查**。你平常只要在主對話描述需求；Agent 會使用 MAF skill 處理委派與驗證。Claude 主導的大型任務，只有在你手動輸入 `/maf-plan` 時才會先請 Codex 規畫。工具使用現有訂閱，不會偷偷改用付費 API。
+日常流程是：**主 Agent 開發 → 可選 Pi 或 Antigravity 小任務 → 測試 → 可選獨立審查**。你平常只要在主對話描述需求；Agent 會使用 MAF skill 處理委派與驗證。要指揮 MAF 時，**以「maf」開頭**，例如「maf 改用 quick」「maf 狀態」，避免 agent 把 flow、mode 等常見字誤會成 CI 或 Claude Code 自己的模式。Claude 主導的大型任務，只有在你手動輸入 `/maf-plan` 時才會先請 Codex 規畫。工具使用現有訂閱，不會偷偷改用付費 API。
 
 ## 先了解三個詞
 
@@ -50,7 +50,7 @@ python3 flow.py --main codex confirm-billing --no-overage
 
 **3. 在任何 Git 專案開始工作：**不用 `init`，也不用每專案重新安裝 skill。照常在 Claude 或 Codex 對話描述工作，例如：
 
-> 請按目前 flow 完成這項修改。路徑與驗收明確的小工作可以委派；完成後測試已提交的變更，告訴我結果與 commit SHA。
+> maf：請按目前 flow 完成這項修改。路徑與驗收明確的小工作可以委派；完成後測試已提交的變更，告訴我結果與 commit SHA。
 
 主 Agent 的 `maf` skill 會準備任務資料，並在需要時執行委派與驗證。驗證針對已提交、乾淨的目前 commit 執行測試；若該 flow 勾選「獨立審查」，才會再呼叫 reviewer。結果為 `tested` 或 `verified`，清楚區分是否完成審查。
 
@@ -58,19 +58,19 @@ python3 flow.py --main codex confirm-billing --no-overage
 
 | 情境 | 對主 Agent 說 | 接下來 |
 | --- | --- | --- |
-| **日常小任務** | 「這個專案改用 quick，請完成這項修改。」 | Claude 實作；明確的小工作可交 Pi。 |
-| **Gemini 小任務** | 「這個專案改用 quick-antigravity。」 | 明確的小工作可交 Antigravity Gemini 3.8 Flash High。 |
-| **中大型任務** | 「這個專案改用 planned，先整理需求。」 | 只有你手動輸入 `/maf-plan 需求` 才會請 Codex 規畫；Claude 負責後續實作、整合與驗證。 |
-| **Codex 主導** | 「這個專案改用 codex-pi，請完成這項修改。」 | Codex 實作，明確小任務交 Pi；可選 Claude Opus 5.5 審查，預設關閉。 |
-| **自己的工作方式** | 「這個專案改用我的 flow。」 | 先在 Flow Studio 儲存命名 flow，設為全域預設或於單一專案選用。 |
+| **日常小任務** | 「maf 改用 quick，請完成這項修改。」 | Claude 實作；明確的小工作可交 Pi。 |
+| **Gemini 小任務** | 「maf 改用 quick-antigravity。」 | 明確的小工作可交 Antigravity Gemini 3.8 Flash High。 |
+| **中大型任務** | 「maf 改用 planned，先整理需求。」 | 只有你手動輸入 `/maf-plan 需求` 才會請 Codex 規畫；Claude 負責後續實作、整合與驗證。 |
+| **Codex 主導** | 「maf 改用 codex-pi，請完成這項修改。」 | Codex 實作，明確小任務交 Pi；可選 Claude Opus 5.5 審查，預設關閉。 |
+| **自己的工作方式** | 「maf 改用我的 flow。」 | 先在 Flow Studio 儲存命名 flow，設為全域預設或於單一專案選用。 |
 
-`planned` 只設定角色及提醒；**選到它不會自動啟動 Planner**。Pi 與 Antigravity 適合路徑明確、可獨立驗收的小任務。委派完成後，主 Agent 仍需檢查並整合變更，再驗證整合後的新 commit。要回全域預設，可對主 Agent 說「改回全域預設 flow」，或使用對應的 `maf mode default` 指令。切到尚未確認訂閱的角色組合時，先核對供應商設定，再從 MAF 資料夾執行 `python3 flow.py --repo /path/to/project confirm-billing --no-overage`。
+`planned` 只設定角色及提醒；**選到它不會自動啟動 Planner**。Pi 與 Antigravity 適合路徑明確、可獨立驗收的小任務。委派完成後，主 Agent 仍需檢查並整合變更，再驗證整合後的新 commit。要回全域預設，可對主 Agent 說「maf 改回全域預設」，或使用對應的 `maf mode default` 指令。切到尚未確認訂閱的角色組合時，先核對供應商設定，再從 MAF 資料夾執行 `python3 flow.py --repo /path/to/project confirm-billing --no-overage`。
 
 **指令分工：**Claude 對話中可用 `/maf status`、`/maf mode` 和手動 `/maf-plan`；Codex 中用 `$maf status`、`$maf mode`。委派、驗證、交接等是主 Agent 依需求使用的工作指令，平常不必逐條輸入。畫面儲存的主模型只是偏好，**不會切換目前 session**；請在所用 CLI／App 內切換。完整用途與輸出見 Flow Studio 的「說明與理念」頁。
 
 ### 同時交給多個小任務 Agent
 
-如果有幾件**互不依賴**的小工作，可以在同一則需求中列出來，例如：「同時處理 1. 補 `docs/install.md` 安裝範例；2. 補 `docs/faq.md` 常見問題；3. 補 `docs/troubleshooting.md` 疑難排解，各自驗收」。主 Agent 會先拆成不同任務、標記可並行，再一起排入；MAF 預設同時執行最多 **3 個 Pi／Antigravity delegate**。每個任務都有自己的 worktree、測試與 commit 證據；審查只在勾選時執行。編輯路徑重疊、使用通配路徑、需要人工核准，或不是同一來源 commit 的任務會等前一件完成。
+如果有幾件**互不依賴**的小工作，可以在同一則需求中列出來，例如：「maf 同時處理 1. 補 `docs/install.md` 安裝範例；2. 補 `docs/faq.md` 常見問題；3. 補 `docs/troubleshooting.md` 疑難排解，各自驗收」。主 Agent 會先拆成不同任務、標記可並行，再一起排入；MAF 預設同時執行最多 **3 個 Pi／Antigravity delegate**。每個任務都有自己的 worktree、測試與 commit 證據；審查只在勾選時執行。編輯路徑重疊、使用通配路徑、需要人工核准，或不是同一來源 commit 的任務會等前一件完成。
 
 同時執行主要縮短等待時間；小範圍委派也可減少主對話的上下文負擔，但**並行本身不保證總 token 變少**。主 Agent 仍負責逐件檢查、整合，最後驗證整合後的 commit。[CLI 範例](docs/CLI.md#任務資料與執行)說明如何指定 run ID 和調整並行上限。
 

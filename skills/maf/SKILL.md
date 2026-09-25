@@ -1,6 +1,6 @@
 ---
 name: maf
-description: Operate multiple-agents-flow from the main coding chat. Use for global or project flow selection, scoped Pi or Antigravity delegation, exact-commit verification, progress, and blocked-run recovery.
+description: Operate multiple-agents-flow (MAF) from the main coding chat. Use when the user says maf, /maf or $maf (e.g. "maf 改用 quick", "maf 狀態"), or when project instructions ask for MAF delegation and verification. Covers MAF flow/mode selection, scoped Pi or Antigravity delegation, exact-commit verification, progress and blocked-run recovery. Not for GitHub Actions workflows, git-flow, the Flow type checker, or Claude Code plan/auto/fast modes.
 ---
 
 # MAF
@@ -9,6 +9,12 @@ Stay in the current conversation. Its agent is the main developer for ordinary
 tasks. Select a flow whose `main.runtime` matches that agent; do not silently
 switch the human to another chat. Never call the Codex planner automatically:
 only the human's explicit `/maf-plan` invocation may do that. Follow the user's language.
+
+`maf` is the anchor word. "maf 改用 quick", "maf 狀態" or "maf 同時處理…" address
+MAF. Without it, generic words such as flow, mode, quick, planned or default are NOT
+a MAF request: never switch a MAF flow from them, and never map Claude Code's plan
+mode to `planned`. If intent is unclear, ask once. A name that is not listed by
+`flows` is not a flow; say so instead of guessing.
 
 ## Locate and dispatch
 

@@ -428,7 +428,7 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
         </div></li>
         <li class="step"><div class="card">
           <h3>在專案裡直接說</h3>
-          <div class="say">請按目前 flow 完成這項修改。路徑與驗收明確的小工作可以委派；完成後測試已提交的變更，告訴我結果與 commit SHA。<button class="copy" type="button">複製</button></div>
+          <div class="say">maf：請按目前 flow 完成這項修改。路徑與驗收明確的小工作可以委派；完成後測試已提交的變更，告訴我結果與 commit SHA。<button class="copy" type="button">複製</button></div>
           <p>接下來就是上面示範的流程。想先檢查環境，可以跑 <code>python3 flow.py --repo 專案路徑 doctor</code>，它不會呼叫模型。</p>
         </div></li>
       </ol>
@@ -446,19 +446,19 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
         <div class="card flow"><h3>quick</h3>
           <div class="chain"><span class="av main">主</span><i>→</i><span class="av pi">Pi</span><span>Claude Opus 5.5 → DeepSeek V4.1 Flash</span></div>
           <p>日常小改動。Claude 的原始預設。</p>
-          <div class="say">這個專案改用 quick。<button class="copy" type="button">複製</button></div></div>
+          <div class="say">maf 改用 quick。<button class="copy" type="button">複製</button></div></div>
         <div class="card flow"><h3>quick-antigravity</h3>
           <div class="chain"><span class="av main">主</span><i>→</i><span class="av agy">AG</span><span>Claude Opus 5.5 → Gemini 3.8 Flash High</span></div>
           <p>小任務改用 Google 帳號的 Antigravity 額度。</p>
-          <div class="say">這個專案改用 quick-antigravity。<button class="copy" type="button">複製</button></div></div>
+          <div class="say">maf 改用 quick-antigravity。<button class="copy" type="button">複製</button></div></div>
         <div class="card flow"><h3>planned</h3>
           <div class="chain"><span class="av rev">規</span><i>→</i><span class="av main">主</span><i>→</i><span class="av pi">Pi</span><span>Codex 規畫，Claude 實作</span></div>
           <p>中大型需求。只有你手動輸入 <code>/maf-plan</code> 才會請 Codex 規畫。</p>
-          <div class="say">這個專案改用 planned，先整理需求。<button class="copy" type="button">複製</button></div></div>
+          <div class="say">maf 改用 planned，先整理需求。<button class="copy" type="button">複製</button></div></div>
         <div class="card flow"><h3>codex-pi</h3>
           <div class="chain"><span class="av main">主</span><i>→</i><span class="av pi">Pi</span><span>Codex GPT-6 Sol 為主</span></div>
           <p>以 Codex 為主對話，可選 Claude Opus 5.5 審查。Codex 的預設。</p>
-          <div class="say">這個專案改用 codex-pi。<button class="copy" type="button">複製</button></div></div>
+          <div class="say">maf 改用 codex-pi。<button class="copy" type="button">複製</button></div></div>
       </div>
       <p class="fine">獨立審查預設關閉，要在 Flow Studio 勾選。開啟後，審查者必須和主對話來自不同工具。</p>
     </div>
@@ -489,6 +489,7 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
       </div>
       <div class="two">
         <ul class="tips">
+          <li><b>指揮 MAF 時以「maf」開頭</b>例如「maf 改用 quick」「maf 狀態」。flow、mode、planned 都是常見字，沒有 maf 開頭，agent 可能誤會成 CI 或 Claude Code 自己的 plan mode。</li>
           <li><b>委派後讓它跑完</b>中途插話會讓主 Agent 停下來重新核對，白耗額度。臨時想法先記下來。</li>
           <li><b>一次只派現在就能驗收的任務</b>下一件常取決於上一件交接裡的 <code>UNVERIFIED</code> 存疑項。</li>
           <li><b>委派前先 commit</b>MAF 從乾淨的 HEAD 開始，不會替你 stash 或 reset。</li>
@@ -497,10 +498,10 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
           <li><b>只在你信任的 repository 使用</b>工作樹不是安全沙箱，測試會執行你核准的命令。</li>
         </ul>
         <div class="list">
-          <h3>常用說法</h3>
-          <div class="say">同時處理 1. 補 docs/install.md 安裝範例；2. 補 docs/faq.md 常見問題；3. 補 docs/troubleshooting.md 疑難排解，各自驗收。<button class="copy" type="button">複製</button></div>
-          <div class="say">這件的驗收重點是：重新整理後仍保持登入。<button class="copy" type="button">複製</button></div>
-          <div class="say">改回全域預設 flow。<button class="copy" type="button">複製</button></div>
+          <h3>常用說法（以 maf 開頭）</h3>
+          <div class="say">maf 同時處理 1. 補 docs/install.md 安裝範例；2. 補 docs/faq.md 常見問題；3. 補 docs/troubleshooting.md 疑難排解，各自驗收。<button class="copy" type="button">複製</button></div>
+          <div class="say">maf 這件的驗收重點是：重新整理後仍保持登入。<button class="copy" type="button">複製</button></div>
+          <div class="say">maf 改回全域預設。<button class="copy" type="button">複製</button></div>
           <h3 style="margin-top:8px">對話指令</h3>
           <pre class="snip">/maf status
 /maf mode quick-antigravity
@@ -527,7 +528,7 @@ const S={
  daily:{label:"日常小任務",main:"Claude Code · quick",skip:true,
   desc:"<b>flow：quick</b>。Claude 把一件路徑明確的小工作交給 Pi，沒開審查，結果是 <b>tested</b>。",
   ev:[
-  {t:"you",x:"這個專案用 quick。幫登入頁加「記住我」；路徑明確的小工作可以委派，做完告訴我 commit SHA。",s:0,st:"—"},
+  {t:"you",x:"maf 改用 quick。幫登入頁加「記住我」；路徑明確的小工作可以委派，做完告訴我 commit SHA。",s:0,st:"—"},
   {t:"ai",x:"路徑和驗收都很明確，我交給 Pi（DeepSeek V4.1 Flash）。先提交目前的工作，這是凍結的任務範圍：",code:'{\n  "id": "remember-me",\n  "title": "登入頁加「記住我」",\n  "paths": ["src/login.tsx", "src/session.ts"],\n  "tests": [["npm", "test", "--", "login"]],\n  "acceptance_why": "勾選後重新整理仍保持登入",\n  "risk": "manual"\n}',s:1},
   {t:"cmd",x:P+"delegate /private/tmp/remember-me.json"},
   {t:"out",x:'{\n  "id": "remember-me-3f9a1c07b2",\n  "status": "queued",\n  "branch": "maf/remember-me-3f9a1c07b2",\n  …\n}',st:"queued"},
@@ -549,7 +550,7 @@ const S={
  parallel:{label:"三件並行",main:"Claude Code · quick-antigravity",skip:true,
   desc:"<b>flow：quick-antigravity</b>。三件互不依賴、檔案不重疊的文件工作，交給 Antigravity 同時跑（最多 3 件）。",
   ev:[
-  {t:"you",x:"改用 quick-antigravity。同時處理：1. 補 docs/install.md 安裝範例；2. 補 docs/faq.md；3. 補 docs/troubleshooting.md，各自驗收。",s:0,st:"—"},
+  {t:"you",x:"maf 改用 quick-antigravity，同時處理：1. 補 docs/install.md 安裝範例；2. 補 docs/faq.md；3. 補 docs/troubleshooting.md，各自驗收。",s:0,st:"—"},
   {t:"ai",x:"三件互不依賴、檔案不重疊，我各寫一份任務並標記 independent，交給 Antigravity 的 Gemini 3.8 Flash High 並行處理。",code:'{"id": "install-docs", "paths": ["docs/install.md"],\n "tests": [["python3", "-c", "…is_file()"]],\n "risk": "docs", "independent": true}\n（faq、troubleshooting 同樣格式）',s:1},
   {t:"cmd",x:P+"delegate /private/tmp/install.json"},
   {t:"out",x:'{ "id": "install-docs-5c1e0a93d4", "status": "queued", … }'},
@@ -575,7 +576,7 @@ const S={
  review:{label:"開啟審查",main:"Claude Code · quick + 審查",skip:false,
   desc:"<b>flow：quick，並在 Flow Studio 勾選了獨立審查</b>（Codex GPT-6 Sol）。審查退回一次，修好後同一個 commit 通過，結果是 <b>verified</b>。",
   ev:[
-  {t:"you",x:"我在 Flow Studio 勾了獨立審查。幫列表 API 加分頁參數，一樣委派。",s:0,st:"—"},
+  {t:"you",x:"maf：我在 Flow Studio 勾了獨立審查。幫列表 API 加分頁參數，一樣委派。",s:0,st:"—"},
   {t:"ai",x:"好，Pi 施工，Codex 審查。任務範圍：",code:'{\n  "id": "list-paging",\n  "paths": ["src/api/list.ts", "tests/list.test.ts"],\n  "tests": [["npm", "test", "--", "list"]],\n  "acceptance_why": "第 2 頁不會重複第 1 頁的資料",\n  "risk": "manual"\n}',s:1},
   {t:"cmd",x:P+"delegate /private/tmp/list-paging.json"},
   {t:"out",x:'{ "id": "list-paging-61b0f3de28", "status": "queued", … }',st:"queued"},
@@ -596,7 +597,7 @@ const S={
  blocked:{label:"被擋下時",main:"Claude Code · quick",skip:true,
   desc:"<b>碰到敏感路徑或需求衝突</b>。先停在 <b>awaiting_approval</b> 等你看範圍；施工時發現衝突，再停在 <b>needs_human</b>。",
   ev:[
-  {t:"you",x:"把付款頁的金額四捨五入改成無條件捨去。",s:0,st:"—"},
+  {t:"you",x:"maf：把付款頁的金額四捨五入改成無條件捨去。",s:0,st:"—"},
   {t:"ai",x:"這涉及金額計算，我把 risk 設為 manual。任務範圍：",code:'{\n  "id": "floor-amount",\n  "paths": ["src/billing/round.ts"],\n  "tests": [["npm", "test", "--", "billing"]],\n  "risk": "manual"\n}',s:1},
   {t:"cmd",x:P+"delegate /private/tmp/floor-amount.json"},
   {t:"out",c:"warn",x:'{ "id": "floor-amount-2a7c91e05b", "status": "awaiting_approval", … }',st:"awaiting_approval"},
