@@ -225,6 +225,16 @@ section.block{padding-block:56px}
 .mini .m{background:var(--accent-soft);color:var(--accent-ink)}
 .mini .col{display:grid;grid-template-rows:1fr 1fr;gap:4px;background:transparent;padding:0;place-items:stretch}
 .mini .col div{background:var(--term);color:var(--t-ink);font-family:var(--mono);font-size:11px}
+.why{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media (max-width:900px){.why{grid-template-columns:1fr 1fr}}
+@media (max-width:560px){.why{grid-template-columns:1fr}}
+.why>*{min-width:0}
+.why .card{gap:8px}
+.why h3{font-size:18px}
+.why p{font-size:14.5px;color:var(--muted)}
+.limits{margin-top:16px;background:var(--bg2);border-radius:20px;padding:18px 22px;display:grid;gap:8px}
+.limits p{font-size:14.5px;color:var(--muted)}
+.limits b{color:var(--ink);font-weight:500}
 .planpair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media (max-width:820px){.planpair{grid-template-columns:1fr}}
 .duo{display:flex;align-items:center;gap:12px}
@@ -290,6 +300,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-bet
     <a class="brand" href="#top"><span class="mark">maf</span>multiple-agents-flow</a>
     <ul>
       <li><a href="#demo">示範</a></li>
+      <li><a href="#why">特色</a></li>
       <li><a href="#plan">規畫</a></li>
       <li><a href="#herdr">Herdr</a></li>
       <li><a href="#setup">安裝</a></li>
@@ -367,6 +378,28 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-bet
           </div>
         </div>
         <p class="note" id="note"></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="why">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="kicker">為什麼選 MAF</span>
+        <h2>多 agent 的做法很多，MAF 最在意兩件事</h2>
+        <p>宣稱完成時有沒有證據，以及會不會意外花錢。和 prompt 型 skill、同一家的子 agent、並行工作樹管理工具、按用量計費的 API 框架相比，差別在這裡：</p>
+      </div>
+      <div class="why">
+        <div class="card"><span class="tag">證據</span><h3>完成綁定同一個 commit</h3><p>測試與可選審查都要對同一個 SHA 通過；commit 一變，舊證據就作廢。不會把「agent 說做完了」當成做完。</p></div>
+        <div class="card"><span class="tag">程式把關</span><h3>不靠模型自律</h3><p>可修改的路徑排入時就凍結，越界就停；中斷後不會自動重跑，額度或登入不明時停下。</p></div>
+        <div class="card"><span class="tag">成本</span><h3>只用現有訂閱</h3><p>拒絕 API key 路由，額度用完就停，不會改用按量計費繼續跑。</p></div>
+        <div class="card"><span class="tag">第二雙眼</span><h3>規畫與審查一定換一家</h3><p>Claude 對話交給 Codex 規畫，Codex 對話交給 Claude；同一家的組合會被擋下，避免同一種盲點。</p></div>
+        <div class="card"><span class="tag">並行</span><h3>同時跑但不互相踩到</h3><p>最多 3 件，只限標記獨立、檔案不重疊、從同一個 commit 出發的任務，其餘照順序。</p></div>
+        <div class="card"><span class="tag">輕巧</span><h3>留在對話，讀得完</h3><p>不必切到另一個管理介面，主 Agent 透過 skill 在背後委派與驗證。只用 Python 標準庫，沒有常駐服務或資料庫。</p></div>
+      </div>
+      <div class="limits">
+        <p><b>也要知道的限制</b></p>
+        <p>概念比 prompt 型 skill 多，上手要花一點時間；只支援 Claude、Codex、Pi、Antigravity、Hermes 等訂閱路線；工作樹不是安全沙箱，只在信任的 repo 使用；並行上限 3 件，只支援 macOS／Linux。已實測與尚未實測的範圍記在 <a href="https://github.com/ian902792/multiple-agents-flow/blob/main/docs/VALIDATION.md">驗證紀錄</a>。</p>
       </div>
     </div>
   </section>
