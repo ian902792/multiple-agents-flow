@@ -66,6 +66,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(github.risk_reasons(run), [])
         self.assertEqual((self.repo / "README.md").read_text(), "Before\n")
         self.assertEqual([a["role"] for a in run["agents"]], ["coder", "reviewer"])
+        self.assertEqual(core.handoff(self.repo, run)["coder_notes"], "Done")
         tampered = copy.deepcopy(run)
         tampered["review"] = {}
         with self.assertRaises(core.FlowError):
@@ -522,7 +523,8 @@ class FlowTests(unittest.TestCase):
     def test_invalid_tasks(self):
         for field, value in [("id", "../escape"), ("paths", ["../a"]), ("paths", ["/tmp/a"]),
                              ("paths", [".git/config"]), ("tests", []), ("tests", ["pytest"]),
-                             ("risk", "safe"), ("independent", "yes")]:
+                             ("risk", "safe"), ("independent", "yes"), ("acceptance_why", " "),
+                             ("acceptance_why", 1)]:
             with self.subTest(field=field, value=value):
                 task = dict(self.task, **{field: value})
                 with self.assertRaises(core.FlowError):

@@ -111,7 +111,8 @@ a new task and approval. Approval is for local execution only; publication and
 merge still require their own explicit authorization.
 
 Prepare private task JSON with `id`, `title`, `instructions`, `paths`, `tests`,
-`risk`, and optional boolean `independent`, as described below. Keep it outside the Git worktree. Before
+`risk`, optional boolean `independent`, and optional `acceptance_why` (the real purpose the tests
+must protect, so passing tests that assert nothing are caught), as described below. Keep it outside the Git worktree. Before
 `delegate` or `verify`, commit the current work and ensure the tree is fully
 clean; these commands snapshot exact HEAD. Do not stash or reset user changes.
 Read `mode` first. Follow the selected global or project flow; do not switch
@@ -141,6 +142,10 @@ permission or requirements finding as manual risk, stop and report the concrete
 question. Do not resume that run; settle the issue and submit a new scoped task.
 Ordinary test/review failures use the configured repair budget automatically.
 
+Read `coder_notes` (the coder's `UNVERIFIED:` items) before integrating; they often name the next task.
+Reviewers misread code: open each review finding's path:line and confirm it before acting; state a
+one-line reason for any finding you reject.
+
 Only claim completion if `handoff` succeeds for the current exact commit.
 When review is off, report `tested` and do not claim independent review. When
 enabled and approved on the same SHA, report `verified`. Publish/auto-merge
@@ -155,7 +160,7 @@ SHA; submit a new verify run. Never auto-publish or merge a delegated run.
 2. Read only relevant source and project instructions. Make one bounded task per
    independently verifiable change. Reuse the current conversation's plan.
 3. Generate JSON with exactly `id`, `title`, `instructions`, `paths`, `tests`,
-   `risk`. ID: lowercase letters/digits/hyphens, max 40 chars. Paths: narrow,
+   `risk`, plus optional `acceptance_why`. ID: lowercase letters/digits/hyphens, max 40 chars. Paths: narrow,
    relative edit scopes. Tests: nonempty argv arrays of trusted, approved project
    commands. Risk defaults `manual`; it controls merge eligibility, never the
    reviewer model. No dummy tests to satisfy the schema.

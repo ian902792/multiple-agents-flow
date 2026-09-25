@@ -82,6 +82,8 @@ never under `.git`, because native agent safety modes correctly deny edits there
 Task JSON: `id`, `title`, `instructions`, `paths` (explicit relative path/glob allowlist),
 `tests` (nonempty arrays of argv arrays), `risk` (`manual`, `docs`, `style`, `tests`), and optional
 boolean `independent` for Pi or Antigravity delegates.
+Optional `acceptance_why` states the purpose tests must protect; it reaches coder and reviewer via the task JSON.
+`handoff` also returns `coder_notes`, the tail of the coder's final reply ending in `UNVERIFIED:` items.
 Task/config snapshots pin each run. Worktrees and branches are unique; never overwrite/reuse unrelated ones.
 
 Commands: `install-skills`, `settings`, `init`, `mode`, `flows`, `flow-save`, `ui`, `doctor`, `confirm-billing`, `plan`,

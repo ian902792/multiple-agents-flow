@@ -84,7 +84,7 @@ Planner 只回傳建議與私有結果檔，不會自動排隊或執行計畫。
 }
 ```
 
-`tests` 是一個或多個 argv 陣列，須換成該專案真正能驗收需求、已核准執行的命令；不要用空檢查。路徑是相對專案根目錄的精確檔案或 glob；`*` 不跨目錄，`**` 可跨多層。風險可用 `manual`、`docs`、`style`、`tests`；不確定時選 `manual`。Pi／Antigravity delegate 可額外使用布林欄位 `"independent": true`，明確表示它不依賴其他任務或共用測試資源；未標記時依序執行。任務以已提交的 HEAD 建立 worktree，開始前需檢查工作樹。
+`tests` 是一個或多個 argv 陣列，須換成該專案真正能驗收需求、已核准執行的命令；不要用空檢查。路徑是相對專案根目錄的精確檔案或 glob；`*` 不跨目錄，`**` 可跨多層。風險可用 `manual`、`docs`、`style`、`tests`；不確定時選 `manual`。Pi／Antigravity delegate 可額外使用布林欄位 `"independent": true`，明確表示它不依賴其他任務或共用測試資源；未標記時依序執行。可選字串 `acceptance_why` 寫出這些測試要保住的真正目的（例如「重新整理後仍保持登入」），coder 與 reviewer 都會看到，reviewer 會檢查測試是否真的斷言到它。`handoff` 另回傳 `coder_notes`：coder 最後回覆中的 `UNVERIFIED:` 存疑項，驗收時必讀。任務以已提交的 HEAD 建立 worktree，開始前需檢查工作樹。
 
 網站專案可把既有的 Playwright 等 E2E 命令列入 `tests`；MAF 執行該命令，並依退出碼判定。若審查需要看截圖，須在任務說明指定輸出位置與可讀圖的 reviewer；測試產物也應由目標專案忽略，避免污染乾淨工作樹檢查。
 

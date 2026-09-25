@@ -74,6 +74,8 @@ python3 flow.py --main codex confirm-billing --no-overage
 
 Flow Studio 可複製 flow，切換主對話、小任務與審查工具，設定各角色 model／effort，並把新輸入的模型 ID 加入建議清單。畫面不會切換目前對話的模型；Claude 可用 `/model`、`/effort`，Codex 請用其模型選單或 CLI 設定。新模型是否可用，仍要以你自己的 CLI 與訂閱確認。
 
+**使用建議：**委派後讓它跑完，中途插話會讓主 Agent 停下來重新核對、白耗額度；臨時想法先記下，有新決定再說。一次只派現在就能驗收的任務，下一件常取決於上一件 `handoff` 裡的存疑項。
+
 ## 想讓 Claude 自動遵循這套流程
 
 安裝 skill 後，你仍可決定是否讓 Claude 在一般開發需求中**主動**套用 MAF。把[可複製的個人提示詞](docs/AGENT-INSTRUCTIONS.md)放進 `~/.claude/CLAUDE.md`，就不必在每個專案重貼。這份規則保留你的偏好：Claude 主導、小工作才交所選的小任務 Agent、大型任務的 Codex 規畫只由你手動啟動。
