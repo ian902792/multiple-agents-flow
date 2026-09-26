@@ -85,6 +85,12 @@ class FlowTests(unittest.TestCase):
         changed_reviewer["roles"]["reviewer"]["enabled"] = True
         with self.assertRaises(core.FlowError):
             core.billing_check(self.repo, changed_reviewer)
+        changed_effort = copy.deepcopy(config)
+        changed_effort["roles"]["coder"]["effort"] = "max"
+        core.billing_check(self.repo, changed_effort)
+        changed_effort["roles"]["coder"]["model"] = "deepseek-v4.1-pro"
+        with self.assertRaises(core.FlowError):
+            core.billing_check(self.repo, changed_effort)
         run = core.submit(self.repo, self.task)
         with patch.object(core.agents, "doctor_role", return_value=[]), patch.object(core.agents, "run_agent", side_effect=self.fake_agent) as agent:
             core.execute(self.repo, run)

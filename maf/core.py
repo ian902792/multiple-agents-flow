@@ -243,8 +243,9 @@ def review_enabled(config):
 
 
 def billing_roles(config):
-    return {name: role for name, role in config["roles"].items()
-            if name != "reviewer" or review_enabled(config)}
+    """Routes a human attests to. Effort changes how long a model thinks, not how it is billed."""
+    return {name: {key: value for key, value in role.items() if key != "effort"}
+            for name, role in config["roles"].items() if name != "reviewer" or review_enabled(config)}
 
 
 def safe_path(path):
