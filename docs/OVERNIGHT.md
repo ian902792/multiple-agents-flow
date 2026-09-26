@@ -33,6 +33,7 @@ python3 examples/overnight/demo.py
 
 ```sh
 python3 flow.py --repo 專案 plan --goal-file 需求.md          # /maf-plan 在背後做的事，印出計畫 ID 與摘要
+python3 flow.py --repo 專案 plan --from-file 計畫.json        # 或：主對話自己寫計畫（不呼叫規畫者）
 python3 flow.py --repo 專案 decide 計畫ID 1 現有政策          # 記下第 1 個問題的答案
 python3 flow.py --repo 專案 night --plan 計畫ID --approve --integrate  # 試跑、依序執行、整合並驗證，最後印出報告
 python3 flow.py --repo 專案 report                            # 早上再看一次

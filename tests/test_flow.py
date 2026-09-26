@@ -691,6 +691,21 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(plans.load(self.repo, plan_id)["goal"], "訂單功能")
         self.assertTrue((plans.directory(self.repo, plan_id) / "plan.md").is_file())
 
+    def test_main_chat_can_store_its_own_plan_without_a_planner(self):
+        written = Path(self.config_temp.name) / "plan.json"
+        written.write_text(json.dumps(self.sample_plan(), ensure_ascii=False))
+        output = io.StringIO()
+        with patch.object(cli.agents, "run_agent") as agent, contextlib.redirect_stdout(output):
+            cli.main(["--repo", str(self.repo), "plan", "--schema"])
+            cli.main(["--repo", str(self.repo), "plan", "--from-file", str(written)])
+        agent.assert_not_called()
+        self.assertIn("Return ONLY one JSON object", output.getvalue())
+        plan_id = re.search(r"# 計畫 (plan-\S+)", output.getvalue()).group(1)
+        self.assertEqual(plans.load(self.repo, plan_id)["goal"], "訂單功能")
+        written.write_text("{}")
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            cli.main(["--repo", str(self.repo), "plan", "--from-file", str(written)])
+
     def test_night_plan_waits_for_every_decision_then_preflights_and_runs(self):
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")
