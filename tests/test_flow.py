@@ -704,6 +704,26 @@ class FlowTests(unittest.TestCase):
         self.assertNotIn("Decided", runs["night-a"]["task"]["instructions"])
         self.assertEqual([p.name for p in (self.repo / ".maf-worktrees").iterdir() if p.name.startswith("preflight-")], [])
 
+    def test_night_plan_refuses_to_queue_the_same_plan_twice(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        plan = self.sample_plan()
+        plan["decisions"] = []
+        plan_id = plans.new_id()
+        plans.save(self.repo, plan_id, plan)
+        with patch.object(core.agents, "run_agent", side_effect=self.night_agent(quota={"a"})), \
+                contextlib.redirect_stdout(io.StringIO()):
+            cli.main(["--repo", str(self.repo), "night", "--plan", plan_id, "--poll", "1"])
+        first = [run for run in core.list_runs(self.repo) if run.get("plan_id") == plan_id]
+        self.assertEqual(len(first), 3)
+        a = next(run for run in first if run["task"]["id"] == "night-a")
+        core.resume(self.repo, a["id"], acknowledge=True, after="2099-01-01T00:00:00+00:00")  # Waits for a known reset.
+        errors = io.StringIO()
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(errors), contextlib.redirect_stdout(io.StringIO()):
+            cli.main(["--repo", str(self.repo), "night", "--plan", plan_id])
+        self.assertIn("已經排入", errors.getvalue())
+        self.assertEqual(len(core.list_runs(self.repo)), 3)
+
     def test_preflight_flags_passing_and_broken_acceptance_commands(self):
         plan = self.sample_plan()
         plan["decisions"] = []
