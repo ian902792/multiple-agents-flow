@@ -56,6 +56,7 @@ def parser():
     p.add_argument("--agent-panes", action="store_true", help="Inside Herdr: show each supervised agent's live output in a temporary pane")
     p = commands.add_parser("live-view", help=argparse.SUPPRESS)
     p.add_argument("file", type=Path)
+    p.add_argument("--worktree", type=Path, help=argparse.SUPPRESS)
     p = commands.add_parser("status", help="Print local run states, or one run's full evidence")
     p.add_argument("run_id", nargs="?")
     p = commands.add_parser("approve", help="Approve one frozen task scope, tests and repair budget before execution")
@@ -188,7 +189,7 @@ def main(argv=None):
         elif args.action == "handoff":
             result = core.handoff(repo, core.load(repo, args.run_id))
         elif args.action == "live-view":
-            progress.follow_live(repo, args.file)
+            progress.follow_live(repo, args.file, args.worktree)
             return
         elif args.action == "work":
             if not 1 <= args.poll <= 3600:

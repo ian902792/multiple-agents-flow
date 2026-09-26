@@ -150,7 +150,7 @@ runs. It refreshes the main pane's metadata without injecting prompts or invokin
 For each active coder/reviewer (and an explicitly invoked planner inside Herdr), MAF splits a no-focus pane
 from its own Herdr pane, labels it, and runs the private `live-view` observer. The adapter tees native
 stdout into a private live event file while retaining its bounded parser and final evidence log.
-The observer prints sanitized event names/tool types, not prompts or full transcripts. Only the pane ID
+The observer (`LiveSummary`) prints one line per tool call: the tool name, the repo-relative path it touches when that path stays inside the worktree, and seconds since the previous step, plus a done/error line. Streaming message events are skipped; prompts, model text, file contents, search patterns and shell commands are never shown. Only the pane ID
 returned by that split is closed after the role finishes; pane failures warn without replaying the agent.
 Agents still run as supervisor-owned subprocesses; Herdr's agent lifecycle display is not verification.
 Parallel Pi or Antigravity delegates can show multiple observer panes at once. A manually invoked `work` needs

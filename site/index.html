@@ -485,7 +485,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-bet
           <div class="mini"><div class="m">主對話<br>pane 標題顯示進度</div><div class="col"><div>supervisor</div><div>MAF coder …</div></div></div>
           <ul class="ticks">
             <li>supervisor 在另一個 <code>flow: 專案名</code> workspace 背景常駐，主 Agent 只要排入任務。</li>
-            <li>每個執行中的 coder、reviewer 各開一個暫時 pane，顯示事件名稱與工具類型，結束後自動關閉。</li>
+            <li>每個執行中的 coder、reviewer 各開一個暫時 pane，逐行顯示它呼叫的工具與碰到的檔案，例如 <code>edit src/login.tsx (+4s)</code>，結束後自動關閉。</li>
             <li>主 pane 標題即時顯示 <code>maf 1/3 done | 2 running | …</code>。</li>
             <li>pane 只負責顯示，不是驗證證據；也不會顯示 prompt 或完整對話。</li>
           </ul>
@@ -716,13 +716,12 @@ const S={
   {t:"ai",x:"施工的 Agent 發現需求衝突，自己停下來了：退款也要改成捨去嗎？這個 run 不會重跑。你決定之後，我會用新的範圍建立新任務。"}
  ]}
 };
-const LIVE={
-  coder:["agent_start","turn_start","tool_execution_start read","tool_execution_end read","message_update","tool_execution_start edit","tool_execution_end edit","tool_execution_start read","message_end","turn_end"],
-  reviewer:["thread.started","turn.started","item.started command_execution","item.completed command_execution","item.completed reasoning","item.started command_execution","item.completed agent_message","turn.completed"]
-};
+const LIVE={coder:["read A","grep","read B","edit A","read A","edit B","read B"],reviewer:["read A","command","read B","command","read A"]};
+const FILES={"remember-me":["src/login.tsx","src/session.ts"],"install-docs":["docs/install.md"],"faq-docs":["docs/faq.md"],
+  "troubleshooting-docs":["docs/troubleshooting.md"],"list-paging":["src/api/list.ts","tests/list.test.ts"],"floor-amount":["src/billing/round.ts"]};
 const NOTE={
   off:"沒勾 Herdr：主 Agent 在前景跑 <code>work --once</code>，跑完才回到對話，只看得到階段變化。右側指令由主 Agent 透過 MAF skill 執行，平常不必自己輸入。",
-  on:"勾選 Herdr：supervisor 在 <code>flow: your-project</code> workspace 背景常駐，主 Agent 只負責排入任務與讀交接。每個 coder／reviewer 會開一個暫時 pane，只顯示事件名稱與工具類型，結束後自動關閉；主對話的 pane 標題（右上角橘色）即時顯示進度。"
+  on:"勾選 Herdr：supervisor 在 <code>flow: your-project</code> workspace 背景常駐，主 Agent 只負責排入任務與讀交接。每個 coder／reviewer 會開一個暫時 pane，逐行顯示它呼叫的工具與碰到的檔案（例如 <code>edit src/login.tsx (+4s)</code>），不顯示 prompt、回覆或檔案內容，結束後自動關閉；主對話的 pane 標題（右上角橘色）即時顯示進度。"
 };
 
 const $=id=>document.getElementById(id);
@@ -787,11 +786,14 @@ function open(role,id){
   const e=agents.querySelector(".empty");if(e)e.remove();
   const p=el("div","hpane"),h=el("div","ph"),b=el("div","pb");
   h.appendChild(el("span","d "+role));h.appendChild(document.createTextNode("MAF "+role+" "+id));
-  b.textContent="MAF agent events (full private log is kept for diagnosis)\n";
+  b.textContent="MAF live view: tool calls and repo paths only\n";p.dataset.task=id.replace(/-[0-9a-f]{10}$/,"");
   p.append(h,b);p.dataset.role=role;p.dataset.i="0";agents.appendChild(p);panes.set(k,p);
   for(let j=0;j<2;j++)tick(p);
 }
-function tick(p){const b=p.querySelector(".pb"),list=LIVE[p.dataset.role];const i=+p.dataset.i;b.textContent+=hhmmss()+" "+list[i%list.length]+"\n";p.dataset.i=i+1;bottom(b)}
+function tick(p){
+  const b=p.querySelector(".pb"),list=LIVE[p.dataset.role],i=+p.dataset.i,files=FILES[p.dataset.task]||["src/app.py"];
+  const step=list[i%list.length].replace("A",files[0]).replace("B",files[1]||files[0]);
+  b.textContent+=hhmmss()+"  "+step+"  (+"+(1+Math.floor(Math.random()*4))+"s)\n";p.dataset.i=i+1;bottom(b)}
 function emptyState(){
   if(agents.children.length)return;
   const e=el("div","empty");e.appendChild(el("b","", "這裡會出現 agent pane"));
