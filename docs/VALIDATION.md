@@ -91,7 +91,7 @@
 
 ## Pi coder 推理強度基準測試
 
-2026-09-26 以 `bench/effort/run.py --levels off,low,medium,max --repeat 2` 實測 Pi 0.86.1 + DeepSeek V4.1 Flash（OpenCode Go 訂閱）當 coder：8 次 delegate 全部 `tested`，`low` 與 `max` 兩次皆一次通過，`off` 與 `medium` 各有一次在一輪修復後通過。第一輪嘗試因題目缺少 `.gitignore`，測試產生的 `__pycache__/` 被 MAF 視為測試留下的未追蹤檔而停在 `needs_human`；已改用 `python3 -B` 並補上 `.gitignore`。同日再以 `--task webapp`（WSGI 待辦事項網站，11 個測試）各跑 2 次：8 次全部 `tested`，`off`、`low`、`max` 皆一次通過，`medium` 有一次需一輪修復。依兩題結果，內建 Pi coder 預設由 `medium` 改為 `low`。另以 `--flow quick-antigravity` 在 `low`／`medium`／`high` 各跑兩題兩次，12 次全部 `tested`；第一次嘗試發現 agy 會拒絕 `gemini-3.8-flash-high` 搭配 `--effort low`，已改為儲存時就檢查模型與強度一致，Flow Studio 也會自動換成對應模型。完整數字見 [bench/effort/README.md](../bench/effort/README.md)。
+2026-09-26 以 `bench/effort/run.py --levels off,low,medium,max --repeat 2` 實測 Pi 0.86.1 + DeepSeek V4.1 Flash（OpenCode Go 訂閱）當 coder：8 次 delegate 全部 `tested`，`low` 與 `max` 兩次皆一次通過，`off` 與 `medium` 各有一次在一輪修復後通過。第一輪嘗試因題目缺少 `.gitignore`，測試產生的 `__pycache__/` 被 MAF 視為測試留下的未追蹤檔而停在 `needs_human`；已改用 `python3 -B` 並補上 `.gitignore`。同日再以 `--task webapp`（WSGI 待辦事項網站，11 個測試）各跑 2 次：8 次全部 `tested`，`off`、`low`、`max` 皆一次通過，`medium` 有一次需一輪修復。依兩題結果，內建 Pi coder 預設由 `medium` 改為 `low`。另以 `--flow quick-antigravity` 在 `low`／`medium`／`high` 各跑兩題兩次，12 次全部 `tested`；第一次嘗試發現 agy 會拒絕 `gemini-3.8-flash-high` 搭配 `--effort low`，已改為儲存時就檢查模型與強度一致，Flow Studio 也會自動換成對應模型。再以 `--flow quick-codex` 在 `none`／`low`／`medium`／`high` 各跑兩題三次，24 次全部 `tested`；另以一句「Reply with exactly: OK」確認 GPT-6 Luna 接受 `none`、拒絕 `minimal`。完整數字見 [bench/effort/README.md](../bench/effort/README.md)。
 
 ## 本帳號的 GitHub 限制
 

@@ -65,7 +65,7 @@ def validate_role(role) -> None:
     if profile is not None and (role["runtime"] != "hermes" or not isinstance(profile, str)
                                 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", profile)):
         raise ValueError("profile is only valid for hermes and must be a safe name")
-    efforts = {"codex": ("low", "medium", "high", "xhigh", "max"), "claude": ("low", "medium", "high", "xhigh", "max"),
+    efforts = {"codex": ("none", "low", "medium", "high", "xhigh", "max"), "claude": ("low", "medium", "high", "xhigh", "max"),
                "pi": ("off", "minimal", "low", "medium", "high", "xhigh", "max")}.get(role["runtime"], ("low", "medium", "high"))
     if role.get("effort", "medium") not in efforts:
         raise ValueError(f"{role['runtime']} effort must be one of: {', '.join(efforts)}")
