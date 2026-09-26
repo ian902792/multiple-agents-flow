@@ -20,6 +20,20 @@ MARKED = TODO.replace("- [ ] Improve docs", "- [x] Improve docs")
 
 
 class ProgressTests(unittest.TestCase):
+    def test_cache_hit_reads_each_provider_format_without_guessing(self):
+        pi = {"input": 1182, "output": 801, "cacheRead": 20224, "cacheWrite": 0}
+        claude = {"input_tokens": 10, "cache_creation_input_tokens": 15828, "cache_read_input_tokens": 66540}
+        codex = {"input_tokens": 495978, "cached_input_tokens": 438912}
+        self.assertEqual(progress.cache_hit(pi), 0.945)
+        self.assertEqual(progress.cache_hit(claude), 0.808)
+        self.assertEqual(progress.cache_hit(codex), 0.885)
+        for usage in (None, {}, {"input": 10, "output": 2}, {"input": 0, "cacheRead": 0},
+                      {"input": "10", "cacheRead": 5}, {"input_tokens": 1, "cached_input_tokens": 5}):
+            self.assertIsNone(progress.cache_hit(usage))
+        row = {"agents": [{"role": "coder", "runtime": "pi", "cache_hit": 0.945}, {"role": "reviewer", "runtime": "codex", "cache_hit": None}],
+               "status": "tested", "next": "", "attention": False, "log": ""}
+        self.assertEqual(progress.detail_lines(row), ["  cache hit: coder pi 94.5%"])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -240,6 +254,7 @@ class ProgressTests(unittest.TestCase):
         self.assertIn("login/permissions", row["next"])
         self.assertIn("--acknowledge-stopped", row["next"])
         self.assertEqual(row["agents"][0]["usage"], {"input": 10, "output": 2})
+        self.assertIsNone(row["agents"][0]["cache_hit"])
         run["repairs"] = run["config"]["max_repairs"] + 1
         self.assertIn("Repair budget exhausted", progress.row_for(self.repo, run)["next"])
         run.update(status="waiting_quota", not_before=None)

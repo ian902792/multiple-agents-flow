@@ -284,13 +284,34 @@ def row_for(repo, run):
             "complete": "yes" if valid else "no",
             "merged": "yes" if run.get("status") == "merged" else "no", "checklist": checklist,
             "created": float(run.get("created_at") or 0), "note": note,
-            "agents": [{k: attempt.get(k) for k in ("role", "runtime", "provider", "model", "status", "duration_seconds", "usage_scope", "usage")}
+            "agents": [{**{k: attempt.get(k) for k in ("role", "runtime", "provider", "model", "status", "duration_seconds", "usage_scope", "usage")},
+                        "cache_hit": cache_hit(attempt.get("usage"))}
                        for attempt in run.get("agents", [])], **diagnostics(run)}
     if run["config_hash"] != core.digest(core.config_for(repo)):
         row.update(attention=True, next="Configuration changed since submission. Do not resume/publish this run; inspect the old worker and submit a new task.")
     elif completed(run) and not valid:
         row.update(attention=True, next="Saved completion no longer has valid evidence. Inspect tests, review and worktree HEAD.")
     return row
+
+
+def cache_hit(usage):
+    """Share of prompt tokens served from the provider cache, or None when counts are missing."""
+    if not isinstance(usage, dict):
+        return None
+    count = lambda key: usage.get(key, 0) if type(usage.get(key, 0)) is int and usage.get(key, 0) >= 0 else None
+    if "cacheRead" in usage:  # Pi: input excludes cache reads and writes
+        parts = [count("cacheRead"), count("input"), count("cacheWrite")]
+    elif "cache_read_input_tokens" in usage:  # Claude: same split, different names
+        parts = [count("cache_read_input_tokens"), count("input_tokens"), count("cache_creation_input_tokens")]
+    elif "cached_input_tokens" in usage:  # Codex: input_tokens already includes cached tokens
+        parts = [count("cached_input_tokens"), count("input_tokens"), 0]
+        if None not in parts:
+            parts[1] -= parts[0]
+    else:
+        return None
+    if None in parts or parts[1] < 0 or not sum(parts):
+        return None
+    return round(parts[0] / sum(parts), 3)
 
 
 def rows(repo):
@@ -349,6 +370,9 @@ def render(rows, compact=False):
 
 def detail_lines(row):
     lines = []
+    hits = [f"{a['role']} {a['runtime']} {a['cache_hit']:.1%}" for a in row.get("agents", []) if a.get("cache_hit") is not None]
+    if hits:
+        lines.append("  cache hit: " + " | ".join(hits))
     if row["status"] == "running":
         lines.append(f"  {row['activity']} | elapsed/limit {row['elapsed']}")
     if row["next"]:

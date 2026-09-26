@@ -67,6 +67,8 @@ class FlowTests(unittest.TestCase):
         self.assertEqual((self.repo / "README.md").read_text(), "Before\n")
         self.assertEqual([a["role"] for a in run["agents"]], ["coder", "reviewer"])
         self.assertEqual(core.handoff(self.repo, run)["coder_notes"], "Done")
+        self.assertEqual(core.handoff(self.repo, run)["cache_hit"],
+                         [{"role": "coder", "runtime": "pi", "cache_hit": None}, {"role": "reviewer", "runtime": "pi", "cache_hit": None}])
         tampered = copy.deepcopy(run)
         tampered["review"] = {}
         with self.assertRaises(core.FlowError):
