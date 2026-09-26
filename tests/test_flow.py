@@ -77,6 +77,67 @@ class FlowTests(unittest.TestCase):
         with self.assertRaises(core.FlowError):
             core.verified(self.repo, tampered)
 
+    def test_tests_that_leave_children_are_cleaned_up(self):
+        pid_file = Path(self.config_temp.name) / "leftover.pid"
+        leave_child = ("import subprocess, pathlib; child = subprocess.Popen(['sleep', '60']); "
+                       f"pathlib.Path({str(pid_file)!r}).write_text(str(child.pid))")
+        self.task["tests"] = [[sys.executable, "-c", leave_child], self.task["tests"][0]]
+        self.complete()
+        pid = int(pid_file.read_text())
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            os.kill(pid, 9)
+            self.fail("a child left by a test command survived the run")
+
+    def test_orphans_inside_a_worktree_are_reaped_but_owned_processes_survive(self):
+        folder = Path(self.config_temp.name) / "worktree"
+        folder.mkdir()
+        pid_file = folder / "orphan.pid"
+        escape = ("import subprocess, pathlib; child = subprocess.Popen(['sleep', '60'], start_new_session=True); "
+                  f"pathlib.Path({str(pid_file)!r}).write_text(str(child.pid))")
+        subprocess.run([sys.executable, "-c", escape], cwd=folder, check=True)
+        orphan = int(pid_file.read_text())
+        owned = subprocess.Popen(["sleep", "60"], cwd=folder)
+        try:
+            deadline = time.time() + 3
+            while time.time() < deadline and subprocess.run(["ps", "-o", "ppid=", "-p", str(orphan)],
+                                                            capture_output=True, text=True).stdout.strip() != "1":
+                time.sleep(0.05)
+            parent = subprocess.run(["ps", "-o", "ppid=", "-p", str(orphan)], capture_output=True, text=True).stdout.strip()
+            if parent != "1":
+                self.skipTest("this platform re-parents orphans to a subreaper, not pid 1")
+            self.assertIn(orphan, core.reap_orphans(folder))
+            self.assertNotIn(owned.pid, core.reap_orphans(folder))
+            self.assertIsNone(owned.poll())
+        finally:
+            owned.kill()
+            owned.wait()
+            try:
+                os.kill(orphan, 9)
+            except ProcessLookupError:
+                pass
+
+    def test_work_on_selected_runs_exits_once_they_settle(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        run = core.submit(self.repo, self.task)
+        done = []
+        with patch.object(core.agents, "doctor_role", return_value=[]), \
+                patch.object(core.agents, "run_agent", side_effect=self.fake_agent), \
+                contextlib.redirect_stdout(io.StringIO()):
+            worker = threading.Thread(target=lambda: done.append(core.work(self.repo, poll=0.1, run_id=[run["id"]])))
+            worker.start()
+            worker.join(30)
+        self.assertFalse(worker.is_alive(), "work --run-id kept polling after its run finished")
+        self.assertEqual(core.load(self.repo, run["id"])["status"], "verified")
+        self.assertFalse(core.can_progress(self.repo, core.load(self.repo, run["id"])))
+
     def test_unchecked_review_stops_after_tests_and_cannot_publish(self):
         config = copy.deepcopy(self.config)
         config["roles"]["reviewer"]["enabled"] = False

@@ -598,6 +598,64 @@ def terminate(proc):
         proc.wait()
 
 
+def reap_group(proc):
+    """Kill whatever is left in a finished command's process group (children it never reaped)."""
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def process_cwds(pids):
+    """Working directory of each readable pid: /proc on Linux, lsof elsewhere (macOS)."""
+    if not pids:
+        return {}
+    if Path("/proc").is_dir():
+        found = {}
+        for pid in pids:
+            try:
+                found[pid] = os.readlink(f"/proc/{pid}/cwd")
+            except OSError:
+                pass
+        return found
+    try:
+        text = subprocess.run(["lsof", "-a", "-d", "cwd", "-Fpn", "-p", ",".join(map(str, pids))],
+                              capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    found, pid = {}, None
+    for line in text.splitlines():
+        if line.startswith("p"):
+            pid = int(line[1:])
+        elif line.startswith("n") and pid is not None:
+            found[pid] = line[1:]
+    return found
+
+
+def reap_orphans(folder):
+    """Kill orphaned processes still working inside folder once its agent or tests finished; returns their pids.
+
+    A coder can run tests in a process group or session MAF does not own, so killing MAF's own group misses
+    them. Only orphans (parent pid 1) are touched, so a person's shell opened in the worktree survives.
+    """
+    folder = Path(folder).resolve()
+    try:
+        listing = subprocess.run(["ps", "-A", "-o", "pid=,ppid="], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    candidates = [int(fields[0]) for fields in (line.split() for line in listing.splitlines())
+                  if len(fields) == 2 and fields[1] == "1" and fields[0].isdigit() and int(fields[0]) != os.getpid()]
+    killed = []
+    for pid, cwd in process_cwds(candidates).items():
+        try:
+            if Path(cwd).resolve().is_relative_to(folder):
+                os.kill(pid, signal.SIGKILL)
+                killed.append(pid)
+        except (OSError, ValueError):
+            pass
+    return killed
+
+
 def run_tests(run, directory):
     results = []
     for index, argv in enumerate(run["task"]["tests"]):
@@ -618,11 +676,13 @@ def run_tests(run, directory):
             except BaseException:
                 terminate(proc)
                 raise
+            reap_group(proc)
         tail = path.read_text(errors="replace")[-6000:]
         results.append({"argv": argv, "exit_code": code, "log": str(path), "tail": tail,
                         "duration_seconds": round(time.time() - run["activity"]["started_at"], 2)})
         if code:
             break
+    reap_orphans(run["worktree"])
     return results
 
 
@@ -672,7 +732,8 @@ def invoke(repo, run, role_name, prompt, agent_panes=False):
     with agent_pane(repo, f"MAF {role_name} {run['id']}", Path(run["worktree"]), live_log, agent_panes) as pane:
         result = agents.run_agent(role, prompt, Path(run["worktree"]), log, run["config"]["agent_timeout"],
                                   **({"live_log": live_log} if pane else {}))
-    run["agents"].append({"role": role_name, "runtime": role["runtime"], "model": role["model"],
+    reaped = reap_orphans(run["worktree"])
+    run["agents"].append({"reaped_orphans": len(reaped),"role": role_name, "runtime": role["runtime"], "model": role["model"],
                           "provider": role["provider"],
                           "usage_scope": "model_calls" if role["runtime"] == "pi" else "provider",
                           "duration_seconds": round(time.time() - run["activity"]["started_at"], 2),
@@ -902,17 +963,28 @@ def queue_chains(repo, chains, mode=None, main_runtime="claude", approve_all=Fal
     return runs
 
 
+def can_progress(repo, run, seen=()):
+    """True while a run can still move on without a person: queued, running, a confirmed quota reset, an
+    auto-merge PR check, or waiting on a dependency that can itself progress."""
+    status = run.get("status")
+    if status in ("queued", "running"):
+        return True
+    if status == "waiting_quota":
+        return run.get("not_before") is not None
+    if status == "pr":
+        return bool(run.get("auto_merge"))
+    if status == "waiting_dependency" and run.get("depends_on") not in seen:
+        try:
+            return can_progress(repo, load(repo, run["depends_on"]), (*seen, run["id"]))
+        except FlowError:
+            return False
+    return False
+
+
 def run_until_settled(repo, run_ids, poll=30):
     """Work through these runs one at a time until none can make progress without a person."""
-    while True:
-        work(repo, once=True, poll=poll, run_id=list(run_ids), delegate_concurrency=1)
-        runs = [load(repo, run_id) for run_id in run_ids]
-        if any(run["status"] in ("queued", "running") for run in runs):
-            continue
-        waiting = [run["not_before"] for run in runs if run["status"] == "waiting_quota" and run.get("not_before")]
-        if not waiting:
-            return runs
-        time.sleep(max(1, min(poll, min(waiting) - time.time())))
+    work(repo, poll=poll, run_id=list(run_ids), delegate_concurrency=1)
+    return [load(repo, run_id) for run_id in run_ids]
 
 
 def parallel_lightweight(run):
@@ -990,6 +1062,10 @@ def work(repo, once=False, poll=30, run_id=None, agent_panes=False, delegate_con
                 if once and not active and (run_ids is None and started or not selected and not ran_serial):
                     if not started:
                         print("No runnable tasks. Quota/ambiguous stages are never retried implicitly.")
+                    return
+                if (run_ids is not None and not once and not active and not selected and not ran_serial
+                        and not any(can_progress(repo, load(repo, run_id)) for run_id in run_ids)):
+                    print("Selected runs are finished or need a person; exiting.", flush=True)
                     return
                 if active:
                     done, _ = wait(active, timeout=poll, return_when=FIRST_COMPLETED)
