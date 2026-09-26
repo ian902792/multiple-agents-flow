@@ -1,0 +1,26 @@
+name: Release
+on:
+  push:
+    tags: ["v*.*.*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      TAG: ${{ github.ref_name }}  # Passed as data, never pasted into shell text.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tag matches maf.__version__
+        run: python3 -c 'import maf, os, sys; tag = os.environ["TAG"]; sys.exit(0 if tag == "v" + maf.__version__ else f"tag {tag} != v{maf.__version__}")'
+      - name: Offline tests (no models, no credentials)
+        run: python3 -m unittest discover -s tests
+      - name: Release notes from CHANGELOG.md
+        run: python3 scripts/changelog.py "$TAG" > notes.md
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag

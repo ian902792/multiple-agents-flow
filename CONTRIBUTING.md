@@ -24,7 +24,7 @@ python3 -m unittest discover -s tests -v
 
 開 issue 時請附上足以重現問題的資訊，缺少這些我們通常只能猜：
 
-- 你的作業系統與 Python 版本（`python3 --version`）。
+- MAF 版本（`python3 flow.py --version`）、你的作業系統與 Python 版本（`python3 --version`）。
 - `python3 flow.py --repo <專案> doctor` 的完整輸出；這個指令不會呼叫模型，可以安心貼上。
 - run ID，以及 `python3 flow.py --repo <專案> progress --json` 中與問題相關的片段。
 - 你預期會發生什麼，以及實際上發生了什麼；有錯誤訊息就整段附上。
@@ -47,6 +47,16 @@ python3 -m unittest discover -s tests -v
 - [ ] 使用者看得到的改變，已更新 `README.md`、`docs/CLI.md` 或導覽網站 `site/index.html`。
 - [ ] 規則或狀態機的改變，已更新 `docs/IMPLEMENTATION.md`。
 - [ ] 新增 adapter 時：附上 CLI 名稱與版本、使用的訂閱路線、已去除個資的真實輸出樣本，並在 `docs/VALIDATION.md` 記下是否實測。
+
+## 發布新版本
+
+版本號只寫在 `maf/__init__.py` 的 `__version__`，採用語意化版本（1.0 以前：次版號代表新功能或行為改變，修訂號代表修正）。
+
+1. 在同一個 PR 裡更新 `__version__`，並在 `CHANGELOG.md` 最上面新增該版本的段落（`## [X.Y.Z] - 日期`）；測試會檢查兩者一致。
+2. 合併進 `main`。
+3. 打上對應的 tag 並推送：`git tag vX.Y.Z && git push origin vX.Y.Z`。
+
+推送 tag 後，`Release` workflow 會確認 tag 與 `__version__` 相同、跑完測試，再以 `CHANGELOG.md` 對應段落建立 GitHub Release。
 
 ## 寫作慣例
 
