@@ -73,7 +73,7 @@ MAF 預設只做到本機驗證；push、PR、合併要你說一次，一次就�
 | --- | --- | --- | --- |
 | `quick`（Claude 預設） | Claude Opus 5.5 | Pi · DeepSeek V4.1 Flash | Codex GPT-6 Astra |
 | `quick-antigravity` | Claude Opus 5.5 | Antigravity · Gemini 3.8 Flash Low | Codex GPT-6 Astra |
-| `quick-codex` | Claude Opus 5.5 | Codex · GPT-6 Luna（最低推理） | Codex GPT-6 Astra |
+| `quick-codex` | Claude Opus 5.5 | Codex · GPT-6 Luna（推理 `none`） | Codex GPT-6 Astra |
 | `planned` | Claude Opus 5.5 | Pi · DeepSeek V4.1 Flash | Codex GPT-6 Astra，大任務先規畫 |
 | `codex-pi`（Codex 預設） | Codex GPT-6 Sol | Pi · DeepSeek V4.1 Flash | Claude Opus 5.5 |
 
