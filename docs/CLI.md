@@ -23,6 +23,7 @@ python3 "$FLOW" --repo "$TARGET" --main codex mode
 | `doctor` | 檢查 CLI、登入與訂閱確認紀錄，不呼叫模型；有問題時非零結束。 |
 | `confirm-billing --no-overage` | 在任意目錄確認全域預設 flow 的模型路由；若加 `--repo` 則確認該專案目前 mode。 |
 | `plan --goal-file FILE [--mode NAME]` | 只讀規畫：規畫者交回結構化計畫，MAF 驗證後存在私人目錄並印出計畫 ID 與中文摘要；不排入任務。 |
+| `plan --from-file FILE`／`plan --schema` | 主對話自己寫的計畫：`--schema` 印出格式，`--from-file` 驗證後存起來並印出摘要，不呼叫任何模型，也沒有第二個模型把關。 |
 | `decide PLAN_ID 題號 答案` | 記下計畫中一個問題的答案；還有未決定的問題時，`night --plan` 不會執行。 |
 | `delegate TASK.json [--depends-on RUN_ID]` | 把明確小任務排給所選 flow 的 Pi／Antigravity／Codex；回傳 run ID 與狀態。加 `--depends-on` 時等該 run `tested` 後，從它測試通過的 commit 接著做。 |
 | `verify TASK.json` | 排入目前 commit 的測試；若 flow 啟用獨立審查才呼叫 reviewer。回傳 run ID 與來源 SHA。 |

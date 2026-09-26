@@ -43,7 +43,10 @@ def parser():
     p = commands.add_parser("confirm-billing", help="Confirm model routes globally; --repo confirms its selected mode")
     p.add_argument("--no-overage", action="store_true", required=True)
     p = commands.add_parser("plan", help="Ask planner for a plan; never execute its output automatically")
-    p.add_argument("--goal-file", type=Path, required=True)
+    source = p.add_mutually_exclusive_group(required=True)
+    source.add_argument("--goal-file", type=Path, help="Ask the flow's planner agent to plan this goal")
+    source.add_argument("--from-file", type=Path, help="Store a plan the main chat wrote itself (no model call)")
+    source.add_argument("--schema", action="store_true", help="Print the plan JSON format")
     p.add_argument("--mode", help="Use this named flow's planner for this request only")
     p = commands.add_parser("submit", help="Snapshot an approved task and queue its independent worktree")
     p.add_argument("task", type=Path)
@@ -354,7 +357,14 @@ def main(argv=None):
                         core.confirm_billing(repo, config)
                         result = {"confirmed": True, "warning": "Human attestation only; provider billing settings remain authoritative."}
                     elif args.action == "plan":
-                        plan(repo, config, args.goal_file, args.main)
+                        if args.schema:
+                            print(plans.SCHEMA)
+                        elif args.from_file:
+                            structured, plan_id = plans.parse(args.from_file.read_text()), plans.new_id()
+                            plans.save(repo, plan_id, structured)
+                            print(plans.render(plan_id, structured))
+                        else:
+                            plan(repo, config, args.goal_file, args.main)
                         return
                     elif args.action == "submit":
                         result = core.submit(repo, core.read_json(args.task), args.publish, args.auto_merge, args.mode,

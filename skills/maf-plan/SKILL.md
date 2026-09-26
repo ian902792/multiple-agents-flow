@@ -18,6 +18,12 @@ Studio). A second, independent model catches assumptions the main chat shares
 with itself. If the selected flow's planner uses the same runtime, the CLI refuses;
 report that and suggest a flow or Flow Studio change instead of working around it.
 
+If the human asks the main chat to write the plan itself, skip the planner and
+steps 2–3: run `plan --schema` for the format, read the relevant files, write the
+plan JSON to a private file outside Git and store it with `plan --from-file FILE`
+(no model call; MAF validates it and prints the same summary). Then continue at
+step 4. Tell the user this plan had no second-model check.
+
 1. Resolve this skill's symlink to `<tool>/skills/maf-plan/SKILL.md`; the
    entrypoint is `<tool>/flow.py`. Use the current project's Git root as
    `--repo`, not the tool repository unless they are the same.
