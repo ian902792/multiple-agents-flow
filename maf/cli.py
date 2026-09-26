@@ -64,6 +64,8 @@ def parser():
     p = commands.add_parser("work", help="Process queued work; waits consume no model tokens")
     p.add_argument("--once", action="store_true")
     p.add_argument("--run-id", action="append", help="Only process these runs; repeat for independent delegates")
+    p.add_argument("--daemon", action="store_true",
+                   help="Keep polling for new work (Herdr supervisor); by default work exits once nothing can progress")
     p.add_argument("--delegate-concurrency", type=int, default=3, help="Maximum simultaneous independent delegates (default: 3; range: 1..3)")
     p.add_argument("--poll", type=int, default=30)
     p.add_argument("--planner-pane", metavar="PANE_ID", help="Inside Herdr: update the main task pane while this worker runs")
@@ -92,6 +94,8 @@ def parser():
     p.add_argument("--plan", metavar="PLAN_ID", help="Run a saved plan's chains once every decision is answered")
     p.add_argument("--approve", action="store_true", help="You have read these task files: approve every scope that needs approval")
     p.add_argument("--mode", help="Use this mode or named flow for these tasks only")
+    p.add_argument("--integrate", action="store_true",
+                   help="Then cherry-pick every fully passing chain onto this branch and verify the result once")
     p.add_argument("--poll", type=int, default=30)
     p = commands.add_parser("retry", help="Queue a stopped delegate again with its failure reason; dependents follow")
     p.add_argument("run_id")
@@ -125,7 +129,7 @@ def launch_herdr(repo):
                                       "--label", "flow: " + repo.name, "--no-focus"], repo))
     pane = result["result"]["root_pane"]["pane_id"]
     launcher = Path(__file__).resolve().parent.parent / "flow.py"
-    argv = [sys.executable, "-u", str(launcher), "--repo", str(repo), "work", "--planner-pane", caller,
+    argv = [sys.executable, "-u", str(launcher), "--repo", str(repo), "work", "--daemon", "--planner-pane", caller,
             "--agent-panes"]
     core.command(["herdr", "pane", "run", pane, shlex.join(argv)], repo)
     return {"pane": pane, "planner_pane": caller, "workspace": result["result"]["workspace"]["workspace_id"],
@@ -256,6 +260,13 @@ def main(argv=None):
                         chains[-1].append(core.read_json(Path(item)))
                 if not all(chains):
                     raise core.FlowError("Each chain needs at least one task file; do not start or end with +.")
+            _, config = core.execution_config(repo, args.mode, args.main)
+            needs = [(task["id"], reason) for chain in chains for task in chain
+                     for reason in core.approval_reasons(core.validate_task(task), config)]
+            if needs and not args.approve:
+                raise core.FlowError("這些任務需要你核准才會執行，請一次看完：\n"
+                                     + "\n".join(f"  {task_id}：{reason}" for task_id, reason in needs)
+                                     + "\n確認後加 --approve 重新執行 night；這樣整晚不會中途停下來等核准。")
             with core.exclusive(repo):
                 runs = core.queue_chains(repo, chains, args.mode, args.main, args.approve, args.plan)
             for run in runs:
@@ -263,7 +274,24 @@ def main(argv=None):
                 print(f"排入 {run['id']}  {progress.status_zh(run['status'])}{after}", flush=True)
             started = time.time()
             core.run_until_settled(repo, [run["id"] for run in runs], args.poll)
+            if args.integrate:
+                ids, chain_ids = iter(run["id"] for run in runs), []
+                for chain in chains:
+                    chain_ids.append([next(ids) for _ in chain])
+                start = core.git(repo, "rev-parse", "HEAD")
+                picked, skipped, verify = core.integrate(repo, chain_ids, args.mode, args.main, args.approve, args.poll)
             print(progress.render_report(progress.report(repo, (time.time() - started) / 3600 + 0.1)))
+            if args.integrate:
+                print("\n整合：")
+                for runs in picked:
+                    print(f"  ✓ 已套用 {' → '.join(run['id'] for run in runs)}")
+                for chain, reason in skipped:
+                    print(f"  ✗ 未套用 {' → '.join(chain)}：{reason}")
+                if verify:
+                    ok = verify["status"] in ("tested", "verified")
+                    print(f"  整合後驗證 {verify['id']}：{progress.status_zh(verify['status'])}"
+                          + ("" if ok else "（未通過：整合的 commit 仍在目前分支上，請檢查或 git reset）"))
+                    print(core.git(repo, "diff", "--stat", start, "HEAD"))
             return
         elif args.action == "report":
             data = progress.report(repo, args.hours)
@@ -278,7 +306,7 @@ def main(argv=None):
             if args.agent_panes:
                 progress.check_pane(repo, os.environ.get("HERDR_PANE_ID"))
             with progress.monitor(repo, args.planner_pane):
-                core.work(repo, args.once, args.poll, args.run_id, args.agent_panes, args.delegate_concurrency)
+                core.work(repo, args.once, args.poll, args.run_id, args.agent_panes, args.delegate_concurrency, args.daemon)
             return
         elif args.action == "progress":
             if not 1 <= args.poll <= 3600:

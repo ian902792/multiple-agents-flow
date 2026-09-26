@@ -32,15 +32,16 @@ report that and suggest a flow or Flow Studio change instead of working around i
    integration is on, a temporary read-only planner pane opens and closes
    automatically. Do not add API billing or bypass flags.
 4. The planner returns a structured plan; MAF validates it, stores it privately and
-   prints a Chinese summary with its plan id. Show the user that summary. Ask every
-   open decision and record each answer with `decide PLAN_ID NUMBER ANSWER`; the
-   plan will not run while any decision is open. Build the `main_agent` items
-   yourself (the main chat), commit them and verify. Then show the chains, tests and
-   any approvals once, and after the user confirms run
-   `night --plan PLAN_ID` (add `--approve` only for scopes the user confirmed). It
-   preflights every acceptance command locally, runs the chains one task at a time
-   and prints the report. In the morning run `report`, integrate each ready range
-   and `verify` the integrated commit. If the planner reply is not a valid plan,
+   prints a Chinese summary with its plan id. Show the user that summary and, in ONE
+   question, ask every open decision plus confirmation of the chains' scopes; record each
+   answer with `decide PLAN_ID NUMBER ANSWER`. Build the `main_agent` items yourself
+   (the main chat) and commit them. Then run
+   `night --plan PLAN_ID --approve --integrate` in the background (without the
+   user's scope confirmation, omit `--approve`: MAF then lists every approval it needs
+   before starting). Wait for its completion notification; do not poll. It exits
+   by itself, preflights every acceptance command, runs the chains, cherry-picks
+   every passing chain onto the branch, verifies the integrated commit and prints
+   one report. Read that report once and act only on what it lists. If the planner reply is not a valid plan,
    nothing is stored; say so and offer to plan again or write tasks directly.
 
 If readiness or billing confirmation is missing, show the exact route and

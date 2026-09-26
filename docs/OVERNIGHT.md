@@ -34,11 +34,13 @@ python3 examples/overnight/demo.py
 ```sh
 python3 flow.py --repo 專案 plan --goal-file 需求.md          # /maf-plan 在背後做的事，印出計畫 ID 與摘要
 python3 flow.py --repo 專案 decide 計畫ID 1 現有政策          # 記下第 1 個問題的答案
-python3 flow.py --repo 專案 night --plan 計畫ID --approve      # 試跑測試後依序執行，最後印出報告
+python3 flow.py --repo 專案 night --plan 計畫ID --approve --integrate  # 試跑、依序執行、整合並驗證，最後印出報告
 python3 flow.py --repo 專案 report                            # 早上再看一次
 ```
 
-`--approve` 代表你已看過計畫範圍，一次核准需要核准的任務（例如路徑含 auth、billing、order）。
+`--approve` 代表你已看過計畫範圍，一次核准需要核准的任務（例如路徑含 auth、billing、order）。沒加時，只要有任務需要核准，`night` 會在開始前一次列出全部並停下，不會半夜卡在核准。
+
+`--integrate` 會在鏈跑完後，把全部通過的鏈依序 cherry-pick 到目前分支，再用所有任務的驗收指令驗證整合後的 commit；有衝突的鏈會跳過並還原，報告最後列出套用了哪些、整合驗證結果與 diff 統計。沒加時，照下面報告的「可以整合」自己整合。
 
 ## 報告長這樣
 

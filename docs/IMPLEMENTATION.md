@@ -148,9 +148,17 @@ stops new scheduling and waits for active delegates to reach a safe checkpoint b
 After each test command MAF kills that command's whole process group, and after each agent attempt and each
 test pass it kills orphaned processes (parent pid 1) whose working directory is still inside the run's worktree;
 the count is recorded as `reaped_orphans`. A person's shell in the worktree has a live parent and is never touched.
-`work --run-id …` without `--once` exits once none of the selected runs can progress without a person
-(`can_progress`: queued, running, a confirmed quota reset, an auto-merge PR check, or a dependency that can itself
-progress); `night` relies on the same rule.
+`work` without `--once` exits once none of the selected runs (or, without `--run-id`, no run at all) can progress
+without a person (`can_progress`: queued, running, a confirmed quota reset, an auto-merge PR check, or a dependency
+that can itself progress); `night` relies on the same rule. A caller running it in the background is therefore
+always notified instead of waiting on an idle loop. Only `work --daemon`, used by the Herdr supervisor, keeps
+polling for new submissions.
+`night` computes `approval_reasons` for every task before queueing and, without `--approve`, refuses with the whole
+list. Preflight treats a command argument that is missing at HEAD but inside the chain's editable paths so far as an
+expected failure. `night --integrate` then calls `integrate`: with a clean tree, it cherry-picks each fully tested
+chain's `base..tested` range onto the current branch (a conflicting chain is aborted and reset to the commit before
+it), submits one verify run over the union of paths and tests with base = the pre-integration HEAD, approves it only
+under `--approve`, and runs it to completion.
 Every agent stage records a running checkpoint BEFORE invocation, with an activity label,
 start time, timeout (including up to 60 seconds for auth), and diagnostic log path.
 Each test command records its own activity checkpoint. Agent attempts also record provider and elapsed time.

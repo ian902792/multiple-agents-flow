@@ -123,6 +123,19 @@ class FlowTests(unittest.TestCase):
             except ProcessLookupError:
                 pass
 
+    def test_plain_work_exits_when_a_run_needs_a_person(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        run = core.submit(self.repo, self.night_task("a"), kind="delegate")
+        with patch.object(core.agents, "run_agent", side_effect=self.night_agent(stuck={"a"})), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            worker = threading.Thread(target=lambda: core.work(self.repo, poll=0.1))
+            worker.start()
+            worker.join(30)
+        self.assertFalse(worker.is_alive(), "plain work kept polling although nothing could progress")
+        self.assertEqual(core.load(self.repo, run["id"])["status"], "needs_human")
+        self.assertIn("Nothing can progress without a person", output.getvalue())
+
     def test_work_on_selected_runs_exits_once_they_settle(self):
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")
@@ -743,6 +756,44 @@ class FlowTests(unittest.TestCase):
             cli.main(["--repo", str(self.repo), "night", "--plan", plan_id])
         self.assertIn("無法執行", errors.getvalue())
         self.assertEqual(core.list_runs(self.repo), [])
+
+    def test_night_asks_every_approval_up_front_and_integrates_passing_chains(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        folder = Path(self.config_temp.name) / "tasks"
+        folder.mkdir()
+        files = {}
+        for name, needs in (("a", []), ("b", ["a"]), ("d", [])):
+            files[name] = folder / f"{name}.json"
+            files[name].write_text(json.dumps(self.night_task(name, needs)))
+        files["d"].write_text(json.dumps(dict(self.night_task("d"), paths=["docs/d.md", ".env.example"])))
+        argv = ["--repo", str(self.repo), "night", str(files["a"]), str(files["b"]), "+", str(files["d"]),
+                "--integrate", "--poll", "1"]
+        errors = io.StringIO()
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(errors):
+            cli.main(argv)
+        self.assertIn("night-d：Sensitive or broad edit scope: .env.example", errors.getvalue())
+        self.assertEqual(core.list_runs(self.repo), [])
+        output = io.StringIO()
+        with patch.object(core.agents, "run_agent", side_effect=self.night_agent()), contextlib.redirect_stdout(output):
+            cli.main(argv + ["--approve"])
+        self.assertEqual({path.name for path in (self.repo / "docs").iterdir()}, {"a.md", "b.md", "d.md"})
+        self.assertEqual(core.git(self.repo, "status", "--porcelain"), "")
+        verify = next(run for run in core.list_runs(self.repo) if run["kind"] == "verify")
+        self.assertEqual((verify["status"], verify["tested_sha"]), ("verified", core.git(self.repo, "rev-parse", "HEAD")))
+        text = output.getvalue()
+        self.assertEqual(text.count("✓ 已套用"), 2)
+        self.assertIn(f"整合後驗證 {verify['id']}", text)
+
+    def test_preflight_expects_files_the_plan_creates(self):
+        plan = self.sample_plan()
+        plan["chains"] = [{"name": "工具", "tasks": [
+            dict(self.night_task("a"), paths=["tools/check.py"], tests=[[sys.executable, "tools/check.py"]]),
+            dict(self.night_task("b"), tests=[[sys.executable, "tools/other.py"]])]}]
+        results = {r["task"]: (r["outcome"], r["detail"]) for r in plans.preflight(self.repo, plan, 30)}
+        self.assertEqual(results["night-a"], ("fails", "created by the plan: tools/check.py"))
+        self.assertEqual(results["night-b"][0], "fails")
+        self.assertNotIn("created", results["night-b"][1])
 
     def test_retry_carries_the_failure_and_moves_dependents(self):
         core.git(self.repo, "add", ".maf.json")

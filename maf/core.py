@@ -413,6 +413,21 @@ def list_runs(repo):
     return runs
 
 
+def approval_reasons(task, config, kind="delegate", require_approval=False):
+    """Why a task must wait for a person's approval before it runs; empty when it may run directly."""
+    reasons = []
+    if require_approval:
+        reasons.append("Explicit plan approval requested.")
+    if kind == "batch" and task["risk"] == "manual":
+        reasons.append("Manual-risk batch task.")
+    for path in task["paths"]:
+        if sensitive_path(path, config) or any(char in path for char in "*?["):
+            reasons.append(f"Sensitive or broad edit scope: {path}")
+    if any(PurePosixPath(argv[0]).name in ("sh", "bash", "zsh", "fish", "sudo") for argv in task["tests"]):
+        reasons.append("Shell or privileged verification command.")
+    return reasons
+
+
 def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch", base_ref=None,
            require_approval=False, main_runtime="claude", depends_on=None):
     repo = Path(repo).resolve()
@@ -479,16 +494,7 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch",
            "maf_version": __version__}
     if depends_on is not None:
         run["depends_on"] = depends_on
-    reasons = []
-    if require_approval:
-        reasons.append("Explicit plan approval requested.")
-    if kind == "batch" and task["risk"] == "manual":
-        reasons.append("Manual-risk batch task.")
-    for path in task["paths"]:
-        if sensitive_path(path, config) or any(char in path for char in "*?["):
-            reasons.append(f"Sensitive or broad edit scope: {path}")
-    if any(PurePosixPath(argv[0]).name in ("sh", "bash", "zsh", "fish", "sudo") for argv in task["tests"]):
-        reasons.append("Shell or privileged verification command.")
+    reasons = approval_reasons(task, config, kind, require_approval)
     run["approval"] = {"required": bool(reasons), "reasons": reasons,
                        "scope_hash": approval_scope(run), "approved_at": None}
     if checklist:
@@ -969,6 +975,45 @@ def queue_chains(repo, chains, mode=None, main_runtime="claude", approve_all=Fal
     return runs
 
 
+def integrate(repo, chains, mode=None, main_runtime="claude", approve_all=False, poll=30):
+    """Cherry-pick each fully tested chain onto the current branch, then verify the result as one exact commit.
+
+    chains are lists of run ids in order. A chain that did not fully pass, or conflicts, is left out and the branch
+    is reset to where it was before that chain. Returns (picked, skipped, verify run or None).
+    """
+    repo = Path(repo).resolve()
+    if git(repo, "status", "--porcelain"):
+        raise FlowError("The workspace changed while the chains ran; not integrating.")
+    start = git(repo, "rev-parse", "HEAD")
+    picked, skipped = [], []
+    for chain in chains:
+        runs = [load(repo, run_id) for run_id in chain]
+        if any(run.get("status") not in ("tested", "verified") for run in runs):
+            skipped.append((chain, "not every task passed"))
+            continue
+        before = git(repo, "rev-parse", "HEAD")
+        try:
+            git(repo, "cherry-pick", f"{runs[0]['base_sha']}..{runs[-1]['tested_sha']}")
+        except FlowError:
+            subprocess.run(["git", "cherry-pick", "--abort"], cwd=repo, capture_output=True)
+            git(repo, "reset", "--hard", before)  # Only drops this chain's own picks: the tree was clean.
+            skipped.append((chain, "conflicts with an earlier chain"))
+            continue
+        picked.append(runs)
+    if not picked:
+        return picked, skipped, None
+    tasks = [run["task"] for runs in picked for run in runs]
+    task = {"id": "integrate-" + uuid.uuid4().hex[:8], "title": "Verify the integrated chains",
+            "instructions": "Verify the integrated result of: " + ", ".join(t["title"] for t in tasks),
+            "paths": list(dict.fromkeys(p for t in tasks for p in t["paths"])),
+            "tests": [json.loads(k) for k in dict.fromkeys(json.dumps(a) for t in tasks for a in t["tests"])],
+            "risk": "manual" if any(t["risk"] == "manual" for t in tasks) else "tests"}
+    run = submit(repo, task, mode=mode, kind="verify", base_ref=start, main_runtime=main_runtime)
+    if approve_all and run["status"] == "awaiting_approval":
+        approve(repo, run["id"])
+    return picked, skipped, run_until_settled(repo, [run["id"]], poll)[0]
+
+
 def retry(repo, run_id, note="", main_runtime="claude"):
     """Queue the same delegate task again with the previous stop reason, and move its waiting dependents to it.
 
@@ -1038,7 +1083,9 @@ def parallel_lightweight(run):
             and all(not any(char in path for char in "*?[") for path in run["task"]["paths"]))
 
 
-def work(repo, once=False, poll=30, run_id=None, agent_panes=False, delegate_concurrency=3):
+def work(repo, once=False, poll=30, run_id=None, agent_panes=False, delegate_concurrency=3, daemon=False):
+    """Process queued work. Without --once it keeps going while anything can still progress on its own, then exits,
+    so a caller waiting on it is notified as soon as a run needs a person; daemon keeps polling for new submissions."""
     if type(delegate_concurrency) is not int or not 1 <= delegate_concurrency <= 3:
         raise FlowError("Delegate concurrency must be 1..3.")
     run_ids = [run_id] if isinstance(run_id, str) else run_id
@@ -1105,9 +1152,10 @@ def work(repo, once=False, poll=30, run_id=None, agent_panes=False, delegate_con
                     if not started:
                         print("No runnable tasks. Quota/ambiguous stages are never retried implicitly.")
                     return
-                if (run_ids is not None and not once and not active and not selected and not ran_serial
-                        and not any(can_progress(repo, load(repo, run_id)) for run_id in run_ids)):
-                    print("Selected runs are finished or need a person; exiting.", flush=True)
+                if not once and not daemon and not active and not selected and not ran_serial and not any(
+                        can_progress(repo, run) for run in ([load(repo, i) for i in run_ids] if run_ids is not None
+                                                           else list_runs(repo))):
+                    print("Nothing can progress without a person; exiting. Read report for what needs you.", flush=True)
                     return
                 if active:
                     done, _ = wait(active, timeout=poll, return_when=FIRST_COMPLETED)
