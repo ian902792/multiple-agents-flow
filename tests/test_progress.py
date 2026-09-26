@@ -319,21 +319,49 @@ class ProgressTests(unittest.TestCase):
         self.assertIn("--no-focus", calls[1])
         self.assertEqual(calls[2][:4], ["herdr", "pane", "rename", "w1:p2"])
         self.assertEqual(calls[3][:4], ["herdr", "pane", "run", "w1:p2"])
-        self.assertEqual(shlex.split(calls[3][-1])[-2:], ["live-view", str(live)])
+        self.assertEqual(shlex.split(calls[3][-1])[-4:-2], ["live-view", str(live)])
+        self.assertEqual(shlex.split(calls[3][-1])[-2], "--worktree")
         self.assertEqual([call for call in calls if call[:3] == ["herdr", "pane", "close"]],
                          [["herdr", "pane", "close", "w1:p3"], ["herdr", "pane", "close", "w1:p2"]])
         self.assertFalse(any(argv[-1] == "w1:p1" for argv in calls if argv[:3] == ["herdr", "pane", "close"]))
 
-    def test_live_event_shows_status_without_agent_content(self):
-        event = json.dumps({"type": "item.started", "item": {"type": "command_execution", "name": "Read",
-                                                         "text": "private prompt"}, "status": "running"}).encode()
-        self.assertEqual(progress.live_event(event), "item.started command_execution Read running")
-        self.assertEqual(progress.live_event(b"secret stderr text\n"), "unstructured output")
-        self.assertEqual(progress.live_event(b'{"type":"result","subtype":"success","result":"private"}'),
-                         "result success")
-        self.assertEqual(progress.live_event(b'{"type":"assistant","message":{"content":['
-                                             b'{"type":"tool_use","name":"Read","input":{"secret":"private"}}]}}'),
-                         "assistant Read")
+    def test_live_summary_shows_tools_and_paths_without_agent_content(self):
+        root = Path(self.config_temp.name) / "worktree"
+        feed = lambda summary, event, now: summary.feed(json.dumps(event).encode(), now)
+        pi = progress.LiveSummary(root, now=0)
+        self.assertEqual(feed(pi, {"type": "message_update", "delta": "private reasoning"}, 1), [])
+        self.assertEqual(feed(pi, {"type": "tool_execution_start", "toolName": "read",
+                                   "args": {"path": "docs/a.md", "limit": 9}}, 2), ["read docs/a.md  (+2s)"])
+        self.assertEqual(feed(pi, {"type": "tool_execution_start", "toolName": "grep",
+                                   "args": {"pattern": "secret token"}}, 3), ["grep  (+1s)"])
+        self.assertEqual(feed(pi, {"type": "tool_execution_start", "toolName": "edit",
+                                   "args": {"path": str(root / "src/app.py"), "oldText": "private"}}, 7),
+                         ["edit src/app.py  (+4s)"])
+        for offset, outside in enumerate(("/etc/passwd", "../escape.py", str(root.parent / "other.py"))):
+            self.assertEqual(feed(pi, {"type": "tool_execution_start", "toolName": "read", "args": {"path": outside}},
+                                  8 + offset), ["read  (+1s)"])
+        self.assertEqual(feed(pi, {"type": "agent_settled"}, 12), ["done  (12s total)"])
+        self.assertEqual(pi.feed(b"secret stderr text\n", 13), [])
+        self.assertEqual(pi.feed(None, 14), ["step details omitted  (+2s)"])
+        claude = progress.LiveSummary(root, now=0)
+        self.assertEqual(feed(claude, {"type": "assistant", "message": {"content": [
+            {"type": "text", "text": "private reply"},
+            {"type": "tool_use", "name": "Write", "input": {"file_path": str(root / "a.py"), "content": "private"}}]}}, 3),
+            ["Write a.py  (+3s)"])
+        self.assertEqual(feed(claude, {"type": "result", "subtype": "success", "result": "private"}, 5), ["done  (5s total)"])
+        codex = progress.LiveSummary(root, now=0)
+        self.assertEqual(feed(codex, {"type": "item.started", "item": {"type": "command_execution", "command": "cat secret"}}, 1),
+                         ["command  (+1s)"])
+        self.assertEqual(feed(codex, {"type": "item.completed", "item": {"type": "file_change",
+                                                                         "changes": [{"path": "b.py", "kind": "update"}]}}, 2),
+                         ["edit b.py  (+1s)"])
+        self.assertEqual(feed(codex, {"type": "turn.failed", "error": {"message": "private"}}, 3), ["error  (3s total)"])
+        agy = progress.LiveSummary(root, now=0)
+        self.assertEqual(feed(agy, {"event": "step_update", "step_update": {"tool_name": "view_file",
+                                                                             "tool_info": {"args": {"AbsolutePath": str(root / "c.py")}}}}, 2),
+                         ["view_file c.py  (+2s)"])
+        self.assertEqual(feed(agy, {"event": "result", "result": {"status": "SUCCESS", "response": "private"}}, 4),
+                         ["done  (4s total)"])
 
     def test_main_pane_monitor_runs_during_work_and_stops_on_failure(self):
         started, finished = threading.Event(), threading.Event()

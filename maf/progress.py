@@ -428,34 +428,113 @@ def report_pane(repo, pane, title, poll=5):
                   "--title", title, "--ttl-ms", str(ttl_for(poll))], repo, timeout=15)
 
 
-def live_event(raw):
-    """Display only event names and tool types; raw private logs remain the verification source."""
-    try:
-        event = json.loads(raw)
-    except ValueError:
-        return "unstructured output"
-    if not isinstance(event, dict):
-        return "event"
-    item = event.get("item") if isinstance(event.get("item"), dict) else {}
-    step = event.get("step_update") if isinstance(event.get("step_update"), dict) else {}
-    result = event.get("result") if isinstance(event.get("result"), dict) else {}
-    message = event.get("message") if isinstance(event.get("message"), dict) else {}
-    blocks = message.get("content") if isinstance(message.get("content"), list) else []
-    tool_names = [block.get("name") for block in blocks[:3]
-                  if isinstance(block, dict) and block.get("type") == "tool_use"]
-    parts = [event.get("type"), event.get("event"), item.get("type"), item.get("name"),
-             step.get("step_type"), step.get("tool_name"), event.get("toolName"), *tool_names,
-             event.get("status"), result.get("status"), event.get("subtype")]
-    return " ".join(part for part in parts if isinstance(part, str) and PANE_ID.fullmatch(part)) or "event"
+PATH_KEYS = ("path", "file_path", "filePath", "target_file", "TargetFile", "AbsolutePath")
 
 
-def follow_live(repo, path):
+class LiveSummary:
+    """Turn a private agent event stream into one line per tool call.
+
+    Shows the tool name and, when it stays inside the worktree, the repo-relative path it touches.
+    Never shows prompts, model text, file contents, search patterns or shell commands; the raw
+    private log remains the diagnostic source.
+    """
+
+    def __init__(self, root=None, now=None):
+        self.root = Path(root).resolve() if root else None
+        self.started = self.last = now
+
+    def path(self, value):
+        if not isinstance(value, str) or not value or "\x00" in value:
+            return ""
+        path = Path(value)
+        if path.is_absolute():
+            if self.root is None:
+                return ""
+            try:
+                path = path.resolve().relative_to(self.root)
+            except (ValueError, OSError):
+                return ""
+        if ".." in path.parts or not str(path) or str(path) == ".":
+            return ""
+        return clean(path.as_posix(), 80)
+
+    def target(self, *sources):
+        for source in sources:
+            if isinstance(source, dict):
+                found = next((self.path(source[k]) for k in PATH_KEYS if k in source), "")
+                if found:
+                    return found
+        return ""
+
+    def steps(self, event):
+        """(tool, path) calls, 'done' or 'error <status>' from Pi, Claude, Codex or Antigravity events."""
+        kind = event.get("type")
+        if kind == "tool_execution_start":  # Pi
+            return [(event.get("toolName"), self.target(event.get("args")))]
+        if kind == "agent_settled":
+            return ["done"]
+        if kind == "assistant":  # Claude stream-json
+            blocks = (event.get("message") or {}).get("content") if isinstance(event.get("message"), dict) else []
+            return [(b.get("name"), self.target(b.get("input"))) for b in blocks or []
+                    if isinstance(b, dict) and b.get("type") == "tool_use"]
+        if kind == "result":
+            return ["done" if event.get("subtype") == "success" else f"error {event.get('subtype')}"]
+        if kind in ("item.started", "item.completed"):  # Codex
+            item = event.get("item") if isinstance(event.get("item"), dict) else {}
+            if kind == "item.started" and item.get("type") == "command_execution":
+                return [("command", "")]
+            if kind == "item.completed" and item.get("type") == "file_change":
+                changes = item.get("changes") if isinstance(item.get("changes"), list) else []
+                return [("edit", self.target(c)) for c in changes if isinstance(c, dict)] or [("edit", "")]
+            return []
+        if kind == "turn.completed":
+            return ["done"]
+        if kind in ("turn.failed", "error"):
+            return ["error"]
+        if event.get("event") == "step_update":  # Antigravity
+            step = event.get("step_update") if isinstance(event.get("step_update"), dict) else {}
+            tool = step.get("tool_name")
+            info = step.get("tool_info") if isinstance(step.get("tool_info"), dict) else {}
+            return [(tool, self.target(info.get("args"), info.get("input"), info))] if tool else []
+        if event.get("event") == "result":
+            status = (event.get("result") or {}).get("status") if isinstance(event.get("result"), dict) else None
+            return ["done" if status == "SUCCESS" else f"error {status}"]
+        return []
+
+    def feed(self, raw, now):
+        """Lines to print for one raw event line; message streaming and unknown events print nothing."""
+        if self.started is None:
+            self.started = self.last = now
+        if raw is None:
+            steps = [("step", "details omitted")]
+        else:
+            try:
+                event = json.loads(raw)
+            except ValueError:
+                return []
+            steps = self.steps(event) if isinstance(event, dict) else []
+        lines = []
+        for step in steps:
+            if isinstance(step, tuple):
+                tool, where = step
+                if not isinstance(tool, str) or not tool:
+                    continue
+                text = clean(tool, 30) + (f" {where}" if where else "")
+                lines.append(f"{text}  (+{max(0, now - self.last):.0f}s)")
+            else:
+                lines.append(f"{clean(step, 40)}  ({max(0, now - self.started):.0f}s total)")
+            self.last = now
+        return lines
+
+
+def follow_live(repo, path, worktree=None):
     """Follow a private agent event stream until the owned Herdr pane closes."""
     root = core.root_for(repo)
     path = Path(path)
     if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(root):
         raise core.FlowError("Live log must be a regular file in this repository's private MAF state.")
-    print("MAF agent events (full private log is kept for diagnosis)", flush=True)
+    print("MAF live view: tool calls and repo paths only; prompts, replies and contents stay private.", flush=True)
+    summary = LiveSummary(worktree)
     pending, too_large = bytearray(), False
     try:
         with path.open("rb") as stream:
@@ -469,8 +548,8 @@ def follow_live(repo, path):
                 if not too_large:
                     pending.extend(chunk)
                 if chunk.endswith(b"\n"):
-                    label = "large event omitted" if too_large else live_event(bytes(pending))
-                    print(f"{time.strftime('%H:%M:%S')} {label}", flush=True)
+                    for line in summary.feed(None if too_large else bytes(pending), time.monotonic()):
+                        print(f"{time.strftime('%H:%M:%S')}  {line}", flush=True)
                     pending.clear()
                     too_large = False
     except KeyboardInterrupt:
@@ -495,7 +574,8 @@ def agent_pane(repo, label, cwd, live_log, enabled):
             raise core.FlowError("Herdr returned an invalid child pane id.")
         core.command(["herdr", "pane", "rename", pane, clean(label, 80)], repo, timeout=15)
         launcher = Path(__file__).resolve().parent.parent / "flow.py"
-        viewer = [sys.executable, "-u", str(launcher), "--repo", str(repo), "live-view", str(live_log)]
+        viewer = [sys.executable, "-u", str(launcher), "--repo", str(repo), "live-view", str(live_log),
+                  "--worktree", str(cwd)]
         core.command(["herdr", "pane", "run", pane, shlex.join(viewer)], repo, timeout=15)
     except CAUGHT as exc:
         warn(f"agent pane unavailable: {exc}; agent continues in the supervisor.")
