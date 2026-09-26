@@ -62,7 +62,7 @@ Bounded subprocess timeouts terminate their own process group; do not kill unrel
 
 Optional tracked `.maf.json` holds project roles and policy. Without it, built-in policy chooses
 local `main`, then `master`, then the current branch as base. Global `billing.json` holds a human's
-confirmation that provider extra usage / Go Use balance are disabled for each active role/model set. A disabled reviewer does not participate in billing checks or doctor auth checks.
+confirmation that provider extra usage / Go Use balance are disabled for each active role/model set. Effort is excluded from that set: it changes how long a model thinks, not how it is billed. A disabled reviewer does not participate in billing checks or doctor auth checks.
 This is attestation, not a remotely enforceable spending cap. No model invocation until that
 role/model set is confirmed. Project policy changes still invalidate existing runs, but do not
 require billing reconfirmation if model routes are unchanged.
