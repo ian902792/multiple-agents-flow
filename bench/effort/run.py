@@ -30,6 +30,21 @@ def flow_cli(env, *args, repo=None):
     return result.stdout
 
 
+def normalize(usage):
+    """One token breakdown from Pi, Antigravity or Codex usage; input never includes cache reads."""
+    n = lambda key: usage.get(key) if type(usage.get(key)) is int else 0
+    if "cacheRead" in usage or "output" in usage:  # Pi
+        return {"input": n("input"), "cacheRead": n("cacheRead"), "cacheWrite": n("cacheWrite"),
+                "output": n("output"), "reasoning": n("reasoning")}
+    if "cache_read_tokens" in usage:  # Antigravity: input_tokens excludes cache reads
+        return {"input": n("input_tokens"), "cacheRead": n("cache_read_tokens"), "cacheWrite": 0,
+                "output": n("output_tokens"), "reasoning": n("thinking_tokens")}
+    if "cached_input_tokens" in usage:  # Codex: input_tokens already includes cached tokens
+        return {"input": n("input_tokens") - n("cached_input_tokens"), "cacheRead": n("cached_input_tokens"),
+                "cacheWrite": 0, "output": n("output_tokens"), "reasoning": n("reasoning_output_tokens")}
+    return None
+
+
 def run_level(task, flow_name, level, env, keep):
     source = HERE / "tasks" / task
     repo = Path(tempfile.mkdtemp(prefix=f"maf-bench-{task}-{level}-"))
@@ -47,12 +62,10 @@ def run_level(task, flow_name, level, env, keep):
         row = next(r for r in json.loads(flow_cli(env, "progress", "--json", repo=repo)) if r["run"] == run_id)
         coder = [a for a in row["agents"] if a["role"] == "coder"]
         usages = [a.get("usage") or {} for a in coder]
-        names = {"input": ("input", "input_tokens"), "cacheRead": ("cacheRead", "cache_read_tokens"),
-                 "cacheWrite": ("cacheWrite",), "output": ("output", "output_tokens"),
-                 "reasoning": ("reasoning", "thinking_tokens")}  # Pi and Antigravity field names
-        pick = lambda u, keys: next((u[k] for k in keys if type(u.get(k)) is int), 0)
-        known = bool(usages) and all(any(k in u for k in names["output"]) for u in usages)
-        total = {k: sum(pick(u, keys) for u in usages) if known else None for k, keys in names.items()}
+        counts = [normalize(u) for u in usages]
+        known = bool(counts) and all(c is not None for c in counts)
+        total = {k: sum(c[k] for c in counts) if known else None
+                 for k in ("input", "cacheRead", "cacheWrite", "output", "reasoning")}
         costs = [(u.get("cost") or {}).get("total") for u in usages]
         cost = sum(costs) if known and all(isinstance(c, (int, float)) for c in costs) else None  # agy reports none
         prompt = (total["input"] + total["cacheRead"] + total["cacheWrite"]) if known else 0

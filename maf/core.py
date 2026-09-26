@@ -116,6 +116,7 @@ def run_exclusive(repo, run_id):
 
 
 PRESETS = ("economy", "opus-sol", "hermes-coder")
+LIGHTWEIGHT = ("pi", "antigravity", "codex")  # Small-task coders a main chat may delegate to
 MODES = ("default", "configured", *PRESETS)
 SENSITIVE_NAMES = {
     "agents.md", "claude.md", "soul.md", "security.md", "codeowners",
@@ -432,8 +433,8 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch",
         raise FlowError("Commit or remove all workspace changes before delegating or verifying an exact HEAD.")
     if kind != "batch" and (publish or auto_merge):
         raise FlowError("Delegate and verify are local handoffs; publishing requires an explicit separate task.")
-    if kind == "delegate" and config["roles"]["coder"]["runtime"] not in ("pi", "antigravity"):
-        raise FlowError("Delegate requires a Pi or Antigravity coder in the selected flow.")
+    if kind == "delegate" and config["roles"]["coder"]["runtime"] not in LIGHTWEIGHT:
+        raise FlowError("Delegate requires a Pi, Antigravity or Codex coder in the selected flow.")
     if depends_on is not None:
         if kind != "delegate":
             raise FlowError("Only delegate tasks can depend on another run.")
@@ -918,7 +919,7 @@ def parallel_lightweight(run):
     return (run.get("kind") == "delegate" and run["task"].get("independent") is True
             and run["task"]["risk"] != "manual" and not run["approval"]["required"]
             and not run["publish"] and not run["auto_merge"]
-            and run["config"]["roles"]["coder"]["runtime"] in ("pi", "antigravity")
+            and run["config"]["roles"]["coder"]["runtime"] in LIGHTWEIGHT
             and all(not any(char in path for char in "*?[") for path in run["task"]["paths"]))
 
 

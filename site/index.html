@@ -331,7 +331,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-bet
     <div class="hero-copy">
       <span class="pill"><b>terminal 原生</b>送給喜歡在 terminal 工作的你</span>
       <h1>留在主對話，<br>把<em>小工作</em>交給別人做</h1>
-      <p class="lede">你照常在 terminal 裡的 Claude Code 或 Codex 描述需求，不用另開 app 或網頁面板。主 Agent 把路徑和驗收都明確的小工作，交給 Pi 或 Antigravity 在獨立工作樹完成；MAF 負責跑測試，需要時再請另一家模型審查，而且全部綁定同一個 Git commit。</p>
+      <p class="lede">你照常在 terminal 裡的 Claude Code 或 Codex 描述需求，不用另開 app 或網頁面板。主 Agent 把路徑和驗收都明確的小工作，交給 Pi、Antigravity 或 Codex 在獨立工作樹完成；MAF 負責跑測試，需要時再請另一家模型審查，而且全部綁定同一個 Git commit。</p>
       <div class="cta">
         <a class="btn primary" href="#demo">看它怎麼運作</a>
         <a class="btn ghost" href="#setup">開始安裝</a>
@@ -408,7 +408,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-bet
         <div class="card"><span class="tag">程式把關</span><h3>不靠模型自律</h3><p>可修改的路徑排入時就凍結，越界就停；中斷後不會自動重跑，額度或登入不明時停下。</p></div>
         <div class="card"><span class="tag">成本</span><h3>只用現有訂閱</h3><p>拒絕 API key 路由，額度用完就停，不會改用按量計費繼續跑。</p></div>
         <div class="card"><span class="tag">第二雙眼</span><h3>規畫與審查一定換一家</h3><p>Claude 對話交給 Codex 規畫，Codex 對話交給 Claude；同一家的組合會被擋下，避免同一種盲點。</p></div>
-        <div class="card"><span class="tag">並行</span><h3>同時跑但不互相踩到</h3><p>Pi、Antigravity 都能並行，最多 3 件；只限標記獨立、檔案不重疊、從同一個 commit 出發的任務，其餘照順序。</p></div>
+        <div class="card"><span class="tag">並行</span><h3>同時跑但不互相踩到</h3><p>Pi、Antigravity、Codex 都能並行，最多 3 件；只限標記獨立、檔案不重疊、從同一個 commit 出發的任務，其餘照順序。</p></div>
         <div class="card"><span class="tag">terminal 原生</span><h3>留在 terminal，不用開面板</h3><p>就在 Claude Code、Codex 的 terminal 對話裡運作，主 Agent 透過 skill 在背後委派與驗證；想同時看多個 agent，再搭配 Herdr。只用 Python 標準庫，沒有常駐服務或資料庫。</p></div>
       </div>
       <div class="sec-head" style="margin:48px 0 0">
@@ -562,6 +562,10 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
           <div class="chain"><span class="av main">主</span><i>→</i><span class="av agy">AG</span><span>Claude Opus 5.5 → Gemini 3.8 Flash Low</span></div>
           <p>小任務改用 Google 帳號的 Antigravity 額度。</p>
           <div class="say"><span class="kw">maf</span>改用 quick-antigravity。<button class="copy" type="button">複製</button></div></div>
+        <div class="card flow"><h3>quick-codex</h3>
+          <div class="chain"><span class="av main">主</span><i>→</i><span class="av rev">CX</span><span>Claude Opus 5.5 → GPT-6 Luna</span></div>
+          <p>小任務交給 Codex 的 GPT-6 Luna（最低推理），用 ChatGPT 訂閱額度。</p>
+          <div class="say"><span class="kw">maf</span>改用 quick-codex。<button class="copy" type="button">複製</button></div></div>
         <div class="card flow"><h3>planned</h3>
           <div class="chain"><span class="av rev">規</span><i>→</i><span class="av main">主</span><i>→</i><span class="av pi">Pi</span><span>Codex 規畫，Claude 實作</span></div>
           <p>中大型需求。先手動輸入 <code>/maf-plan</code> 請 Codex 規畫，Claude 實作。</p>

@@ -318,6 +318,18 @@ class FlowTests(unittest.TestCase):
         with self.assertRaises(core.FlowError):
             flows.save("self-review", flow)
 
+    def test_quick_codex_delegates_to_gpt6_luna_at_low_effort(self):
+        flow = flows.templates()["quick-codex"]
+        self.assertEqual(flow["main"]["runtime"], "claude")
+        self.assertEqual(flow["roles"]["coder"], {"runtime": "codex", "provider": "chatgpt", "model": "gpt-6-luna",
+                                                  "access": "edit", "effort": "low"})
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        core.confirm_billing(self.repo, core.execution_config(self.repo, "quick-codex")[1])
+        run = core.submit(self.repo, dict(self.task, independent=True), kind="delegate", mode="quick-codex")
+        self.assertEqual((run["status"], run["config"]["roles"]["coder"]["runtime"]), ("queued", "codex"))
+        self.assertTrue(core.parallel_lightweight(run))
+
     def test_main_chats_keep_separate_defaults_and_project_modes(self):
         self.assertEqual(core.execution_config(self.repo, main_runtime="codex")[0], "codex-pi")
         flows.set_default("planned")

@@ -20,6 +20,8 @@ def templates():
     antigravity = deepcopy(roles)
     antigravity["coder"] = {"runtime": "antigravity", "provider": "google-account",
                              "model": "gemini-3.8-flash-low", "access": "edit", "effort": "low"}
+    luna = deepcopy(roles)
+    luna["coder"] = {"runtime": "codex", "provider": "chatgpt", "model": "gpt-6-luna", "access": "edit", "effort": "low"}
     codex = deepcopy(roles)
     codex["planner"] = {"runtime": "claude", "provider": "claude-subscription",
                         "model": "claude-opus-5-5", "access": "read", "effort": "high"}
@@ -32,6 +34,8 @@ def templates():
                     "manual_plan": True, "main": {"runtime": "claude", "model": "claude-opus-5-5", "effort": "high"}, "roles": planned},
         "quick-antigravity": {"description": "小任務：Claude 主對話開發；明確小工作交 Antigravity Gemini Flash。",
                               "manual_plan": False, "main": {"runtime": "claude", "model": "claude-opus-5-5", "effort": "medium"}, "roles": antigravity},
+        "quick-codex": {"description": "小任務：Claude 主對話開發；明確小工作交 Codex GPT-6 Luna（最低推理）。",
+                        "manual_plan": False, "main": {"runtime": "claude", "model": "claude-opus-5-5", "effort": "medium"}, "roles": luna},
         "codex-pi": {"description": "Codex 主對話開發；明確小任務交 Pi；手動 $maf-plan 由 Claude 規畫，獨立 Claude 審查可選。",
                      "manual_plan": False, "main": {"runtime": "codex", "model": "gpt-6-sol", "effort": "high"}, "roles": codex},
     }

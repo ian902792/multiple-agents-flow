@@ -1,6 +1,6 @@
 ---
 name: maf
-description: Operate multiple-agents-flow (MAF) from the main coding chat. Use when the user says maf, /maf or $maf (e.g. "maf 改用 quick", "maf 狀態"), or when project instructions ask for MAF delegation and verification. Covers MAF flow/mode selection, scoped Pi or Antigravity delegation, exact-commit verification, progress and blocked-run recovery. Not for GitHub Actions workflows, git-flow, the Flow type checker, or Claude Code plan/auto/fast modes.
+description: Operate multiple-agents-flow (MAF) from the main coding chat. Use when the user says maf, /maf or $maf (e.g. "maf 改用 quick", "maf 狀態"), or when project instructions ask for MAF delegation and verification. Covers MAF flow/mode selection, scoped Pi, Antigravity or Codex delegation, exact-commit verification, progress and blocked-run recovery. Not for GitHub Actions workflows, git-flow, the Flow type checker, or Claude Code plan/auto/fast modes.
 ---
 
 # MAF
@@ -91,7 +91,7 @@ unless `roles.reviewer.enabled` is true; do not turn it on without the user's re
 ## Main-chat work
 
 For ordinary tasks, implement in this main conversation. Do not start a
-separate coder for the main agent's work. Use the selected Pi or Antigravity coder only for narrow
+separate coder for the main agent's work. Use the selected Pi, Antigravity or Codex coder only for narrow
 edits or test-writing tasks with explicit paths and approved test argv. The
 lightweight coder must not execute shell tests; the
 supervisor runs them. Do not delegate planning, broad integration, or final
@@ -126,7 +126,7 @@ clean; these commands snapshot exact HEAD. Do not stash or reset user changes.
 Read `mode` first. Follow the selected global or project flow; do not switch
 to another flow unless the user requests it.
 
-- `delegate <task-file> [--mode NAME]` queues the selected Pi or Antigravity coder in an isolated
+- `delegate <task-file> [--mode NAME]` queues the selected Pi, Antigravity or Codex coder in an isolated
   worktree at HEAD. For multiple independent requirements, prepare and submit
   each task before starting the worker. Resolve any `awaiting_approval` gate,
   then run `work --once --run-id ID` with one `--run-id` per submitted task;
