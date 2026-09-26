@@ -164,12 +164,13 @@ SHA; submit a new verify run. Never auto-publish or merge a delegated run.
 ## Overnight chains
 
 When the user wants a batch to run unattended (for example overnight), plan first: small tasks,
-correct acceptance tests, decisions made now. Submit tasks that build on earlier ones with
-`delegate TASK --depends-on RUN_ID`; the run waits in `waiting_dependency` and starts from the
-dependency's tested commit. Approve any `awaiting_approval` scope the user has confirmed, then run
-`work --delegate-concurrency 1` (or `herdr`). In the morning read `report`: handle "Needs you"
-first, then integrate each "Ready to integrate" range, inspect the diff and `verify` the integrated
-commit. A run stopped at stage `dependency` is never resumed; resolve its dependency and submit a
+correct acceptance tests, decisions made now. Write the task files, show the user the scopes, then
+run one command: `night A.json B.json C.json + D.json` (each file builds on the previous one's
+tested commit; `+` starts another chain). Add `--approve` only when the user confirmed those scopes.
+It works one task at a time until all finish or stop, then prints the Chinese report. When the user
+asks for the morning report, run `report`: handle 需要你處理 first, then integrate each 可以整合
+range, inspect the diff and `verify` the integrated commit. `delegate --depends-on RUN_ID` remains
+for adding one task to an existing chain. A run stopped at stage `dependency` is never resumed; resolve its dependency and submit a
 new chain from there.
 
 ## Explicit batch run

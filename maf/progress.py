@@ -350,7 +350,7 @@ def report(repo, hours=24):
         hits = [a["cache_hit"] for a in row.get("agents", []) if a.get("cache_hit") is not None]
         items.append({"run": row["run"], "task": row["task"], "status": row["status"], "stage": row["stage"],
                       "depends_on": run.get("depends_on"), "complete": row["complete"] == "yes",
-                      "attention": row["attention"], "next": row["next"], "feedback": clean(run.get("feedback", ""), 300),
+                      "attention": row["attention"], "next": next_zh(run), "feedback": reason_zh(run, runs),
                       "unverified": clean(unverified, 200),
                       "agent_seconds": round(sum(a.get("duration_seconds") or 0 for a in row.get("agents", [])), 1),
                       "cache_hit": round(sum(hits) / len(hits), 3) if hits else None})
@@ -381,35 +381,85 @@ def report(repo, hours=24):
             "counts": counts_for([rows[item["run"]] for item in items])}
 
 
+STATUS_ZH = {"needs_human": "卡住", "corrupt": "狀態損壞", "awaiting_approval": "等你核准", "waiting_quota": "等額度",
+             "creating": "建立中", "running": "執行中", "queued": "排隊中", "waiting_dependency": "等上游",
+             "tested": "測試通過", "verified": "測試與審查通過", "publishing": "發布中", "pr": "PR 已建立",
+             "merging": "合併中", "merged": "已合併"}
+
+
+def status_zh(status):
+    return STATUS_ZH.get(status, str(status))
+
+
+def next_zh(run):
+    """What the person should do next, in plain Chinese; empty when nothing is needed."""
+    run_id, status, stage = clean(run.get("id", "?"), 80), run.get("status"), run.get("stage")
+    resume = f"resume {run_id} --acknowledge-stopped"
+    if status == "corrupt":
+        return "狀態檔損壞；請手動檢查，不要刪除或重跑。"
+    if status == "awaiting_approval":
+        return f"看過範圍後執行 approve {run_id}。"
+    if status == "waiting_quota":
+        if run.get("not_before"):
+            return time.strftime("額度預計 %m-%d %H:%M 重置，會自動繼續。", time.localtime(run["not_before"]))
+        return f"額度恢復後執行 {resume}（知道重置時間可加 --after）。"
+    if status == "waiting_dependency":
+        return f"等 {clean(run.get('depends_on', '?'), 80)} 完成後自動開始。"
+    if status not in ("needs_human", "creating"):
+        return ""
+    if stage == "replan":
+        return "需求要你決定；決定後重新排一件任務。"
+    if stage == "dependency":
+        return "上游無法完成；先處理上游，再從那裡重新排鏈。"
+    if stage == "external_fix":
+        return "修正來源分支並提交，再對新的 commit 執行 verify。"
+    if stage in DONE:
+        return "看原因後用 publish／merge 核對結果，不要重跑 agent。"
+    if run.get("repairs", 0) > (run.get("config") or {}).get("max_repairs", 0):
+        return "自動修復已用完；請重新規畫這件任務。"
+    attempts = run.get("agents") or []
+    if attempts and attempts[-1].get("status") == "blocked":
+        return f"檢查登入或權限（可執行 doctor），確認沒有殘留程序後 {resume}。"
+    return f"看原因與紀錄並處理，確認沒有殘留程序後 {resume}。"
+
+
+def reason_zh(run, runs):
+    """Why a run stopped; a failed dependency is explained in Chinese, agent and tool messages stay verbatim."""
+    if run.get("stage") == "dependency":
+        dependency = runs.get(run.get("depends_on")) or {}
+        return f"上游 {clean(run.get('depends_on', '?'), 80)} {status_zh(dependency.get('status', '無法讀取'))}，無法接著做。"
+    return clean(run.get("feedback", ""), 300)
+
+
 def render_report(data):
     items, by_id = data["runs"], {item["run"]: item for item in data["runs"]}
-    lines = [f"MAF report: {len(items)} run(s) in the last {data['hours']}h"
-             + ("; " + ", ".join(f"{n} {s}" for s, n in sorted(data["counts"].items())) if items else "")]
-    groups = [("Needs you", [i for i in items if i["attention"]]),
-              ("Waiting", [i for i in items if not i["attention"] and not i["complete"]]),
-              ("Done", [i for i in items if i["complete"] and not i["attention"]])]
+    counts = "、".join(f"{n} 件{status_zh(s)}" for s, n in sorted(data["counts"].items()))
+    lines = [f"MAF 報告：最近 {data['hours']:g} 小時共 {len(items)} 件任務" + (f"（{counts}）" if items else "")]
+    groups = [("需要你處理", [i for i in items if i["attention"]]),
+              ("等待中", [i for i in items if not i["attention"] and not i["complete"]]),
+              ("已完成", [i for i in items if i["complete"] and not i["attention"]])]
     for title, group in groups:
         if not group:
             continue
-        lines.append(f"\n{title} ({len(group)})")
+        lines.append(f"\n{title}（{len(group)}）")
         for item in group:
-            extra = (f"  {item['agent_seconds']:.0f}s" if item["agent_seconds"] >= 1 else "") + (
-                f"  cache {item['cache_hit']:.0%}" if item["cache_hit"] is not None else "")
-            lines.append(f"  {item['run']}  {item['status']}{extra}")
+            extra = (f"  {item['agent_seconds']:.0f} 秒" if item["agent_seconds"] >= 1 else "") + (
+                f"  快取 {item['cache_hit']:.0%}" if item["cache_hit"] is not None else "")
+            lines.append(f"  {item['run']}  {status_zh(item['status'])}{extra}")
             if item["attention"] and item["feedback"]:
-                lines.append(f"    why: {item['feedback']}")
+                lines.append(f"    原因：{item['feedback']}")
             if item["next"]:
-                lines.append(f"    next: {item['next']}")
+                lines.append(f"    下一步：{item['next']}")
             if item["complete"] and item["unverified"] and not item["unverified"].endswith("none"):
-                lines.append(f"    {item['unverified']}")
+                lines.append(f"    存疑：{item['unverified']}")
     if data["chains"]:
-        lines.append("\nChains")
+        lines.append("\n依賴鏈")
         for path in data["chains"]:
-            lines.append("  " + " -> ".join(f"{run_id} ({by_id[run_id]['status']})" for run_id in path))
+            lines.append("  " + " → ".join(f"{run_id}（{status_zh(by_id[run_id]['status'])}）" for run_id in path))
     if data["integrate"]:
-        lines.append("\nReady to integrate (inspect the diff, then verify the integrated commit)")
+        lines.append("\n可以整合（先看 diff，整合後對新的 commit 執行一次 verify）")
         for entry in data["integrate"]:
-            lines.append(f"  {' -> '.join(entry['runs'])}\n    git cherry-pick {entry['range']}")
+            lines.append(f"  {' → '.join(entry['runs'])}\n    git cherry-pick {entry['range']}")
     return "\n".join(lines)
 
 

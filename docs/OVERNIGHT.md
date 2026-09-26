@@ -1,75 +1,76 @@
 # 一晚跑一批任務
 
-睡前排好一整串小任務，讓 MAF 一件接一件做完；起床看一份報告，整合後自己做最後的實際使用測試。先跑模擬範例看看整個流程（幾秒完成，不呼叫模型、不花額度）：
+睡前一個指令排好一串任務，MAF 一件接一件做完；起床看一份中文報告，整合後自己做最後的實際使用測試。
+
+先看模擬（幾秒完成，不呼叫模型、不花額度）：
 
 ```sh
 python3 examples/overnight/demo.py
 ```
 
-## 關鍵：睡前把會卡住的事先做完
+## 兩個步驟
 
-晚上沒人能回答問題，所以成敗在規畫。
-
-- **拆小**：每件任務只改少數檔案，驗收測試要真的能證明它做完了，並寫好 `acceptance_why`。
-- **先規畫**：大需求先用 `/maf-plan`（Codex 用 `$maf-plan`）請另一家的強模型排出順序與依賴。
-- **需要判斷的事睡前決定**：規格衝突、取捨、命名，留到晚上只會讓任務停在 `needs_human`。
-- **敏感範圍先核准**：路徑含 auth、billing、order 等字的任務會停在 `awaiting_approval`，睡前 `approve`。
-- **確認環境**：`doctor` 與訂閱確認都通過。
-
-## 睡前：排入任務
-
-有先後順序的任務用 `--depends-on` 串成鏈。下游會等上游 `tested`，再從上游測試通過的 commit 接著做；互不相依的任務直接排入即可。
+**睡前**：依順序列出任務檔，後一個會接在前一個之後做；用 `+` 分開不同的鏈，單獨一個檔案就是獨立任務。
 
 ```sh
-python3 "$FLOW" --repo "$TARGET" delegate data-model.json
-# 回傳 data-model-9b4840e5ad
-python3 "$FLOW" --repo "$TARGET" delegate orders-api.json  --depends-on data-model-9b4840e5ad
-python3 "$FLOW" --repo "$TARGET" delegate orders-page.json --depends-on orders-api-883edf53be
-python3 "$FLOW" --repo "$TARGET" delegate docs-update.json
-python3 "$FLOW" --repo "$TARGET" approve docs-update-55efc916ec   # 若有 awaiting_approval
+python3 flow.py --repo 專案 night 資料模型.json 訂單API.json 訂單頁.json + 文件.json --approve
 ```
 
-平常只要對主 Agent 說「maf 今晚依序做完這些任務：1. … 2. 依賴 1 … 3. 依賴 2 …」，它會替你寫任務檔、串好依賴並核准你確認過的範圍。
+`--approve` 代表你已看過這些任務檔，一次核准需要核准的範圍（例如路徑含 auth、billing、order）。不加的話，那些任務會停在「等你核准」，其他照跑。所有任務都會依序執行，全部做完或卡住就自動結束，並印出報告。
 
-然後啟動常駐的 supervisor，一件一件做：
+**起床**：
 
 ```sh
-python3 "$FLOW" --repo "$TARGET" work --delegate-concurrency 1
+python3 flow.py --repo 專案 report
 ```
 
-在 Herdr 裡可用 `herdr` 指令改為背景執行，並在暫時 pane 看每件任務的工具步驟。晚上時間多，依序執行比並行更容易看出是哪件出錯，也比較不會被供應商限流；互不相依的任務想加快，再調回 `--delegate-concurrency 3`。
+也可以直接對主 Agent 說：「maf 今晚依序做完：1. … 2. 接在 1 之後 … 3. 接在 2 之後 …」，它會寫好任務檔並執行 `night`；早上說「maf 報告」。
 
-## 起床：看報告、整合
+## 報告長這樣
 
-```sh
-python3 "$FLOW" --repo "$TARGET" report          # 預設看最近 24 小時；--hours 12、--json 皆可
+```
+MAF 報告：最近 24 小時共 6 件任務（2 件卡住、4 件測試通過）
+
+需要你處理（2）
+  refund-page-44df7468a7  卡住
+    原因：上游 refund-rules-0ee5f4e1ba 卡住，無法接著做。
+    下一步：上游無法完成；先處理上游，再從那裡重新排鏈。
+  refund-rules-0ee5f4e1ba  卡住
+    原因：MAF_NEEDS_HUMAN: 退款超過 30 天的規則和現有政策衝突，要以哪一個為準？
+    下一步：需求要你決定；決定後重新排一件任務。
+
+已完成（4）
+  data-model-d380c56de7  測試通過
+  ...
+
+可以整合（先看 diff，整合後對新的 commit 執行一次 verify）
+  data-model-… → orders-api-… → orders-page-…
+    git cherry-pick 起點..終點
 ```
 
-報告依「先處理哪件」排序：
+照「需要你處理」→「可以整合」的順序處理：整合後對新的 commit 跑一次 `verify`，再做你的實際使用測試。
 
-- **Needs you**：卡住的任務，附原因與下一步。
-- **Waiting**：還在等額度、等上游或排隊中的任務。
-- **Done**：通過測試的任務，並列出 coder 自己標出的存疑項。
-- **Chains**：每條依賴鏈目前走到哪裡。
-- **Ready to integrate**：整條完成的鏈或獨立任務，直接給出 `git cherry-pick 起點..終點`。檢查 diff、整合後，對新的 commit 跑一次 `verify`，再做你的實際使用測試。
+## 睡前檢查
+
+晚上沒人能回答問題，成敗在規畫：
+
+- **拆小**：每件只改少數檔案，驗收測試要真的能證明做完，並寫好 `acceptance_why`。
+- **先規畫**：大需求先用 `/maf-plan`（Codex 用 `$maf-plan`）請另一家的強模型排出順序。
+- **判斷先做完**：規格衝突、取捨、命名，留到晚上只會停在「卡住」。
+- **環境**：`doctor` 與訂閱確認都通過。
 
 ## 出狀況時會怎樣
 
-| 情況 | 上游任務 | 下游任務 |
+| 情況 | 這件任務 | 接在它後面的任務 |
 | --- | --- | --- |
-| 測試失敗 | 自動修一輪；仍失敗就停在 `needs_human` | 繼續等待 |
-| 需求衝突或安全疑慮 | 停在 `needs_human`（需要重新規畫） | 標記為依賴失敗，不會執行 |
-| 額度用完 | 停在 `waiting_quota` | 繼續等待；上游恢復並通過後接著做 |
-| 登入或權限問題 | 停在 `needs_human`，修好後可 `resume` | 繼續等待 |
+| 測試失敗 | 自動修一輪；仍失敗就卡住 | 繼續等 |
+| 需求衝突或安全疑慮 | 卡住，需要你決定 | 不會執行，報告會說明原因 |
+| 額度用完 | 等額度 | 繼續等；額度恢復並通過後接著做 |
+| 登入或權限問題 | 卡住，修好後可 `resume` | 繼續等 |
 
-額度用完時，若供應商告訴你重置時間，用 `resume RUN_ID --acknowledge-stopped --after 時間` 讓它在那之後自動繼續，下游會跟著接上。依賴失敗的任務不會被重跑：處理完上游後，從那裡重新排一條鏈。
+額度用完時，若知道重置時間，執行 `resume RUN_ID --acknowledge-stopped --after 時間`，它會在那之後自動繼續，後面的任務也會接上。
 
-## 模擬範例在做什麼
+## 進階
 
-`examples/overnight/demo.py` 用假的 agent，在暫時的 repo 與隔離的 MAF 設定裡模擬一晚：
-
-- 一條成功的鏈：資料模型 → 訂單 API → 訂單頁面；
-- 一件獨立任務：更新文件（路徑含 orders，睡前先核准）；
-- 一條會卡住的鏈：退款規則與既有政策衝突，退款頁面因此不執行。
-
-最後印出的正是早上會看到的 `report`。
+- 想自己控制每一步：`delegate 任務.json --depends-on RUN_ID` 逐件排入，再用 `work --delegate-concurrency 1` 執行。
+- 在 Herdr 裡可改用 `herdr` 指令背景執行，並在暫時 pane 看每件任務的工具步驟。

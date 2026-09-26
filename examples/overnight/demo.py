@@ -1,7 +1,7 @@
 """Simulate an unattended overnight batch in a few seconds, with fake agents and no model calls.
 
 It builds a throwaway Git repository and an isolated MAF config, queues two task chains plus one
-independent task the way you would before bed, runs the worker, and prints the morning report:
+independent task with the same calls as `flow.py night ... --approve`, and prints the morning report:
 
     python3 examples/overnight/demo.py
 """
@@ -42,7 +42,7 @@ def fake_agent(role, prompt, cwd, log, timeout):
     name = next(n for n in PLAN if cwd.name.startswith(n + "-"))
     path, _, stuck = PLAN[name]
     if stuck:
-        text = "MAF_NEEDS_HUMAN: refunds after 30 days conflict with the existing policy; which one wins?"
+        text = "MAF_NEEDS_HUMAN: 退款超過 30 天的規則和現有政策衝突，要以哪一個為準？"
     else:
         (cwd / path).parent.mkdir(parents=True, exist_ok=True)
         (cwd / path).write_text(f"# {name}\n")
@@ -62,25 +62,14 @@ def main():
         subprocess.run(["git", "config", "user.name", "MAF demo"], cwd=repo, check=True)
         subprocess.run(["git", "config", "user.email", "demo@example.invalid"], cwd=repo, check=True)
         core.confirm_billing(repo, core.execution_config(repo)[1])  # Fake agents only; nothing is billed.
-        print("Before bed: queue two chains and one independent task")
-        ids = []
-        for chain in CHAINS:
-            previous = None
-            for name in chain:
-                run = core.submit(repo, task(name), kind="delegate", depends_on=previous)
-                after = f" --depends-on {previous}" if previous else ""
-                print(f"  $ flow.py delegate {name}.json{after}   -> {run['id']} ({run['status']})")
-                ids.append(run["id"])
-                previous = run["id"]
-        for run_id in ids:  # Approve sensitive scopes before bed; nobody can answer at 3 a.m.
-            if core.load(repo, run_id)["status"] == "awaiting_approval":
-                print(f"  $ flow.py approve {run_id}   (path mentions orders, a sensitive word)")
-                core.approve(repo, run_id)
-        print("  $ flow.py work --delegate-concurrency 1   (runs one task at a time overnight)\n")
+        files = " + ".join(" ".join(f"{name}.json" for name in chain) for chain in CHAINS)
+        print("睡前：一個指令排好三條鏈，依序執行（docs-update 的路徑含 orders，--approve 代表你已看過並核准）")
+        print(f"  $ flow.py night {files} --approve\n")
         with patch.object(core.agents, "run_agent", side_effect=fake_agent), \
                 contextlib.redirect_stdout(io.StringIO()):
-            core.work(repo, once=True, poll=0.1, run_id=ids, delegate_concurrency=1)
-        print("Next morning: $ flow.py report\n")
+            runs = core.queue_chains(repo, [[task(name) for name in chain] for chain in CHAINS], approve_all=True)
+            core.run_until_settled(repo, [run["id"] for run in runs], poll=1)
+        print("隔天早上：$ flow.py report\n")
         print(progress.render_report(progress.report(repo)))
     finally:
         shutil.rmtree(work, ignore_errors=True)

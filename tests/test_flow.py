@@ -501,9 +501,9 @@ class FlowTests(unittest.TestCase):
                       data["integrate"])
         self.assertIn({"runs": [d["id"]], "range": f"{d['source_sha']}..{d['tested_sha']}"}, data["integrate"])
         text = progress.render_report(data)
-        self.assertIn("Ready to integrate", text)
+        self.assertIn("可以整合", text)
         self.assertIn(f"git cherry-pick {a['source_sha']}..{c['tested_sha']}", text)
-        self.assertNotIn("Needs you", text)
+        self.assertNotIn("需要你處理", text)
 
     def test_overnight_chain_stops_downstream_but_waits_for_quota(self):
         core.git(self.repo, "add", ".maf.json")
@@ -528,10 +528,36 @@ class FlowTests(unittest.TestCase):
         with self.assertRaisesRegex(core.FlowError, "dependency cannot finish"):
             core.resume(self.repo, c["id"], acknowledge=True)
         text = progress.render_report(progress.report(self.repo))
-        self.assertIn("Needs you", text)
-        self.assertIn("Chains", text)
-        self.assertIn(f"{a['id']} (verified) -> {b['id']} (needs_human) -> {c['id']} (needs_human)", text)
-        self.assertNotIn("Ready to integrate", text)
+        self.assertIn("需要你處理", text)
+        self.assertIn("上游無法完成", text)
+        self.assertIn(f"{a['id']}（測試與審查通過） → {b['id']}（卡住） → {c['id']}（卡住）", text)
+        self.assertIn(f"等 {x['id']} 完成後自動開始", text)
+        self.assertNotIn("可以整合", text)
+
+    def test_night_command_chains_files_and_prints_chinese_report(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        folder = Path(self.config_temp.name) / "tasks"
+        folder.mkdir()
+        files = {}
+        for name, needs in (("a", []), ("b", ["a"]), ("d", [])):
+            files[name] = folder / f"{name}.json"
+            files[name].write_text(json.dumps(self.night_task(name, needs)))
+        output = io.StringIO()
+        with patch.object(core.agents, "run_agent", side_effect=self.night_agent()), contextlib.redirect_stdout(output):
+            cli.main(["--repo", str(self.repo), "night", str(files["a"]), str(files["b"]), "+", str(files["d"]), "--poll", "1"])
+        runs = {run["task"]["id"]: run for run in core.list_runs(self.repo)}
+        self.assertEqual({run["status"] for run in runs.values()}, {"verified"})
+        self.assertEqual(runs["night-b"]["depends_on"], runs["night-a"]["id"])
+        self.assertNotIn("depends_on", runs["night-d"])
+        text = output.getvalue()
+        self.assertIn(f"排入 {runs['night-b']['id']}  等上游  （接在 {runs['night-a']['id']} 之後）", text)
+        self.assertIn("MAF 報告", text)
+        self.assertIn("已完成（3）", text)
+        errors = io.StringIO()
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(errors):
+            cli.main(["--repo", str(self.repo), "night", "+", str(files["d"])])
+        self.assertIn("at least one task", errors.getvalue())
 
     def test_chained_task_approval_waits_without_a_worktree(self):
         core.git(self.repo, "add", ".maf.json")

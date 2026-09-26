@@ -886,6 +886,33 @@ def advance_dependency(repo, run):
     save(repo, run)
 
 
+def queue_chains(repo, chains, mode=None, main_runtime="claude", approve_all=False):
+    """Queue each list of tasks as a dependency chain; approve_all records the user's approval of every frozen scope."""
+    runs = []
+    for chain in chains:
+        previous = None
+        for task in chain:
+            run = submit(repo, task, mode=mode, kind="delegate", main_runtime=main_runtime, depends_on=previous)
+            if approve_all and run["status"] == "awaiting_approval":
+                run = approve(repo, run["id"])
+            runs.append(run)
+            previous = run["id"]
+    return runs
+
+
+def run_until_settled(repo, run_ids, poll=30):
+    """Work through these runs one at a time until none can make progress without a person."""
+    while True:
+        work(repo, once=True, poll=poll, run_id=list(run_ids), delegate_concurrency=1)
+        runs = [load(repo, run_id) for run_id in run_ids]
+        if any(run["status"] in ("queued", "running") for run in runs):
+            continue
+        waiting = [run["not_before"] for run in runs if run["status"] == "waiting_quota" and run.get("not_before")]
+        if not waiting:
+            return runs
+        time.sleep(max(1, min(poll, min(waiting) - time.time())))
+
+
 def parallel_lightweight(run):
     """Only an explicitly independent, narrow lightweight handoff can share execution time."""
     return (run.get("kind") == "delegate" and run["task"].get("independent") is True

@@ -684,6 +684,31 @@ const S={
   {t:"out",c:"ok",x:"[docs-all-4e81c2b0aa] tested:",s:6,st:"tested"},
   {t:"ai",x:"完成：三份文件都在 e19f3c7，tested。還沒 push。"}
  ]},
+ overnight:{label:"一晚跑一批",main:"Claude Code · quick",skip:true,
+  desc:"<b>睡前一句話，起床看報告</b>。有先後順序的任務串成鏈，一件接一件做；卡住的只擋住自己後面的任務，其他照跑。",
+  ev:[
+  {t:"you",x:"maf 今晚依序做完：1. 訂單資料模型 2. 接著做訂單 API 3. 再做訂單頁面；另外更新訂單文件，也把退款規則和退款頁排進去。",s:0,st:"—"},
+  {t:"ai",x:"我拆成三條鏈，任務檔和驗收測試都寫好了。文件路徑含 orders，屬於要核准的範圍；你確認後我加 --approve 一次核准。",code:"鏈 1：data-model → orders-api → orders-page\n鏈 2：docs-update（需核准）\n鏈 3：refund-rules → refund-page",s:1},
+  {t:"you",x:"確認，開始吧，晚安。"},
+  {t:"cmd",x:'python3 "$FLOW" --repo . night data-model.json orders-api.json orders-page.json + docs-update.json + refund-rules.json refund-page.json --approve'},
+  {t:"out",x:"排入 data-model-1f4c2a9b7e  排隊中\n排入 orders-api-8d31e6c05a  等上游  （接在 data-model-1f4c2a9b7e 之後）\n排入 orders-page-2b97f0d4c1  等上游  （接在 orders-api-8d31e6c05a 之後）\n排入 docs-update-6a0e5c3f92  排隊中\n排入 refund-rules-c47d19b2e8  排隊中\n排入 refund-page-5e82a7d016  等上游  （接在 refund-rules-c47d19b2e8 之後）",st:"queued"},
+  {t:"cmt",x:"# 23:10 開始，一次一件"},
+  {t:"out",x:"[data-model-1f4c2a9b7e] coding",s:2,st:"running"},
+  {t:"out",c:"ok",x:"[data-model-1f4c2a9b7e] tested:",s:3},
+  {t:"out",x:"[orders-api-8d31e6c05a] coding",s:2},
+  {t:"out",c:"ok",x:"[orders-api-8d31e6c05a] tested:",s:3},
+  {t:"out",x:"[orders-page-2b97f0d4c1] coding",s:2},
+  {t:"out",c:"ok",x:"[orders-page-2b97f0d4c1] tested:",s:3},
+  {t:"out",x:"[docs-update-6a0e5c3f92] coding",s:2},
+  {t:"out",c:"ok",x:"[docs-update-6a0e5c3f92] tested:",s:3},
+  {t:"out",x:"[refund-rules-c47d19b2e8] coding",s:2},
+  {t:"out",c:"bad",x:"[refund-rules-c47d19b2e8] needs_human: MAF_NEEDS_HUMAN: 退款超過 30 天的規則和現有政策衝突，要以哪一個為準？",s:3,st:"needs_human"},
+  {t:"cmt",x:"# 02:47 全部做完或卡住，自動結束\n# ──── 隔天早上 07:30 ────"},
+  {t:"you",x:"maf 報告"},
+  {t:"cmd",x:'python3 "$FLOW" --repo . report'},
+  {t:"out",x:"MAF 報告：最近 24 小時共 6 件任務（2 件卡住、4 件測試通過）\n\n需要你處理（2）\n  refund-page-5e82a7d016  卡住\n    原因：上游 refund-rules-c47d19b2e8 卡住，無法接著做。\n  refund-rules-c47d19b2e8  卡住\n    原因：MAF_NEEDS_HUMAN: 退款超過 30 天的規則和現有政策衝突，要以哪一個為準？\n    下一步：需求要你決定；決定後重新排一件任務。\n\n已完成（4）\n  data-model-1f4c2a9b7e  測試通過\n  orders-api-8d31e6c05a  測試通過\n  orders-page-2b97f0d4c1  測試通過\n  docs-update-6a0e5c3f92  測試通過\n\n可以整合（先看 diff，整合後對新的 commit 執行一次 verify）\n  data-model → orders-api → orders-page\n    git cherry-pick 3c9e1f0..b72d4a8\n  docs-update\n    git cherry-pick 3c9e1f0..e05f6c1",s:5,st:"tested"},
+  {t:"ai",x:"早安。訂單三件和文件都測試通過，我先整合訂單這條鏈並對新的 commit 跑 verify，你就能開始實際使用測試。退款規則卡在政策衝突：超過 30 天的退款要以哪一個為準？你決定後我重新排退款這條鏈。",s:6}
+ ]},
  review:{label:"開啟審查",main:"Claude Code · quick + 審查",skip:false,
   desc:"<b>flow：quick，並在 Flow Studio 勾選了獨立審查</b>（Codex GPT-6 Sol）。審查退回一次，修好後同一個 commit 通過，結果是 <b>verified</b>。",
   ev:[
@@ -724,7 +749,9 @@ const S={
 };
 const LIVE={coder:["read A","grep","read B","edit A","read A","edit B","read B"],reviewer:["read A","command","read B","command","read A"]};
 const FILES={"remember-me":["src/login.tsx","src/session.ts"],"install-docs":["docs/install.md"],"faq-docs":["docs/faq.md"],
-  "troubleshooting-docs":["docs/troubleshooting.md"],"list-paging":["src/api/list.ts","tests/list.test.ts"],"floor-amount":["src/billing/round.ts"]};
+  "troubleshooting-docs":["docs/troubleshooting.md"],"list-paging":["src/api/list.ts","tests/list.test.ts"],"floor-amount":["src/billing/round.ts"],
+  "data-model":["app/models.py"],"orders-api":["app/api.py","app/models.py"],"orders-page":["app/page.html","app/api.py"],
+  "docs-update":["docs/orders.md"],"refund-rules":["app/refunds.py"]};
 const NOTE={
   off:"沒勾 Herdr：主 Agent 在前景跑 <code>work --once</code>，跑完才回到對話，只看得到階段變化。右側指令由主 Agent 透過 MAF skill 執行，平常不必自己輸入。",
   on:"勾選 Herdr：supervisor 在 <code>flow: your-project</code> workspace 背景常駐，主 Agent 只負責排入任務與讀交接。每個 coder／reviewer 會開一個暫時 pane，逐行顯示它呼叫的工具與碰到的檔案（例如 <code>edit src/login.tsx (+4s)</code>），不顯示 prompt、回覆或檔案內容，結束後自動關閉；主對話的 pane 標題（右上角橘色）即時顯示進度。"
@@ -745,7 +772,7 @@ function build(){
   if(!herdr)return ev.map(e=>Object.assign({},e,{dst:"term"}));
   const out=[];let inWork=false;
   ev.forEach((e,i)=>{
-    if(e.t==="cmd"){inWork=/ work --once/.test(e.x);if(inWork)return;out.push(Object.assign({},e,{t:"tool",x:e.x.replace(P,"flow.py ")}));return}
+    if(e.t==="cmd"){const night=/ night /.test(e.x);inWork=/ work --once/.test(e.x)||night;if(inWork&&!night)return;out.push(Object.assign({},e,{t:"tool",x:e.x.replace(P,"flow.py ")}));return}
     if(e.t==="out"||e.t==="cmt"){out.push(Object.assign({},e,{dst:inWork?"sup":"tool"}));return}
     out.push(e);
     if(i===0)out.push({t:"tool",x:"flow.py herdr",launch:true},{t:"out",dst:"tool",x:'{ "workspace": "flow: your-project", "pane": "p-sup", "planner_pane": "p-main", … }'});

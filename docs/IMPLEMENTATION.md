@@ -103,6 +103,9 @@ worktree is created from that tested SHA and base/source/owned head are set to i
 rejects. Queued, running, quota-waiting or resumable dependencies keep it waiting. `report [--hours N] [--json]`
 is a read-only summary grouped by attention, with dependency chains and `source..tested` integration ranges for
 fully completed delegate chains.
+`night FILE … [+ FILE …] [--approve]` queues each list as a chain (`queue_chains`), approving frozen scopes only
+with `--approve`, then `run_until_settled` repeats a one-at-a-time `work --once` over those IDs until none is
+queued or running and no confirmed quota reset is pending, and prints the report. Report text is Chinese.
 `install-skills` registers one shared skill in the user's `~/.agents/skills/maf` and `~/.claude/skills/maf`,
 plus manual-only `maf-plan` in both `~/.agents/skills` and `~/.claude/skills`. Global commands, including default-flow billing confirmation, work outside a Git repository; `mode` remains per repository.
 Execution: awaiting_approval (when required) -> queued -> coding -> testing -> `tested` when review is off, or reviewing -> `verified` when review is on. Publishing requires the latter.
