@@ -114,10 +114,16 @@ def _argv(role: dict, timeout: int) -> list[str]:
                                    "--safe-mode", "--reasoning", effort, "--max-turns", "30", "--run-budget", str(int(timeout))]
 
 
-def _pump(stream, buf: bytearray, on_output=None):
-    """Copy a pipe into buf, keeping only the last _OUTPUT_LIMIT bytes."""
+# Every supported CLI streams JSON events while it works, so this long a silence means a stalled agent.
+IDLE_TIMEOUT = 600  # ponytail: one fixed value; make it a per-flow setting if a model thinks silently for longer.
+
+
+def _pump(stream, buf: bytearray, on_output=None, last=None):
+    """Copy a pipe into buf, keeping only the last _OUTPUT_LIMIT bytes; last[0] is the time of the latest chunk."""
     try:
         while chunk := stream.read1(65536):
+            if last is not None:
+                last[0] = time.monotonic()
             buf += chunk
             if len(buf) > _OUTPUT_LIMIT:
                 del buf[:len(buf) - _OUTPUT_LIMIT]
@@ -158,24 +164,35 @@ def _killpg(proc):
         proc.wait()
 
 
-def _exec(argv, *, stdin: str, timeout: float, cwd=None, on_start=None, on_output=None):
-    """Run argv in its own process group. The group is killed on timeout, KeyboardInterrupt or any other
-    exception; an escaped grandchild holding the pipes cannot hang the return. -> (rc, out, err, timed_out)."""
+def _exec(argv, *, stdin: str, timeout: float, cwd=None, on_start=None, on_output=None, idle=None):
+    """Run argv in its own process group. The group is killed on timeout, after `idle` seconds without any output,
+    on KeyboardInterrupt or any other exception; an escaped grandchild holding the pipes cannot hang the return.
+    -> (rc, out, err, timed_out) where timed_out is False, "total" or "idle"."""
     proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             cwd=cwd, env=clean_env(), start_new_session=True)
     out, err, timed_out = bytearray(), bytearray(), False
-    threads = [threading.Thread(target=_pump, args=(proc.stdout, out, on_output), daemon=True),
-               threading.Thread(target=_pump, args=(proc.stderr, err), daemon=True),
+    last = [time.monotonic()]
+    threads = [threading.Thread(target=_pump, args=(proc.stdout, out, on_output, last), daemon=True),
+               threading.Thread(target=_pump, args=(proc.stderr, err, None, last), daemon=True),
                threading.Thread(target=_feed, args=(proc.stdin, stdin), daemon=True)]
     try:
         if on_start:
             on_start(proc.pid)
         for t in threads:
             t.start()
-        try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
+        deadline = time.monotonic() + timeout
+        while proc.poll() is None:
+            now = time.monotonic()
+            if now >= deadline:
+                timed_out = "total"
+            elif idle and now - last[0] >= idle:
+                timed_out = "idle"
+            if timed_out:
+                break
+            try:
+                proc.wait(timeout=min(1.0, deadline - now))
+            except subprocess.TimeoutExpired:
+                pass
     finally:
         _killpg(proc)
         deadline = time.monotonic() + 5
@@ -404,7 +421,7 @@ def run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int, *, li
     _append_log(log, f"== checkpoint ==\n{json.dumps({'argv': argv, 'started': time.time(), 'timeout': timeout})}\n")
     try:
         if live_log is None:
-            rc, out, err, timed_out = _exec(argv, stdin=input_data, timeout=timeout, cwd=str(cwd),
+            rc, out, err, timed_out = _exec(argv, stdin=input_data, timeout=timeout, cwd=str(cwd), idle=IDLE_TIMEOUT,
                                             on_start=lambda pid: _append_log(log, f"pid={pid}\n"))
         else:
             lock = threading.Lock()
@@ -417,7 +434,7 @@ def run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int, *, li
                             if not written:
                                 raise OSError("Live log write made no progress")
                             remaining = remaining[written:]
-                rc, out, err, timed_out = _exec(argv, stdin=input_data, timeout=timeout, cwd=str(cwd),
+                rc, out, err, timed_out = _exec(argv, stdin=input_data, timeout=timeout, cwd=str(cwd), idle=IDLE_TIMEOUT,
                                                 on_start=lambda pid: _append_log(log, f"pid={pid}\n"),
                                                 on_output=mirror)
     except OSError as e:
@@ -429,7 +446,8 @@ def run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int, *, li
         res = _result("blocked", session_id=res["session_id"], usage=res["usage"], detail="agy tool permission was denied")
     if timed_out:
         return _result("error", session_id=res["session_id"], usage=res["usage"],
-                       detail=f"timeout after {timeout}s; process group killed")
+                       detail=(f"no output for {IDLE_TIMEOUT}s; process group killed" if timed_out == "idle"
+                               else f"timeout after {timeout}s; process group killed"))
     if rc != 0 and res["status"] == "ok":
         res = _result("error", "", res["session_id"], res["usage"], f"exit {rc} despite success event")
     return res

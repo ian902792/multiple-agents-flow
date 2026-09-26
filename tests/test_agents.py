@@ -34,7 +34,7 @@ class FakeExec:
     def __init__(self, auth_out, run=(0, "", "", False)):
         self.auth_out, self.run, self.calls = auth_out, run, []
 
-    def __call__(self, argv, *, stdin, timeout, cwd=None, on_start=None):
+    def __call__(self, argv, *, stdin, timeout, cwd=None, on_start=None, idle=None):
         self.calls.append({"argv": list(argv), "stdin": stdin, "timeout": timeout, "cwd": cwd})
         if on_start:
             on_start(4242)
@@ -387,6 +387,14 @@ class RealSubprocess(unittest.TestCase):
             self.assertFalse(worker.is_alive())
             self.assertEqual(result[0]["status"], "ok")
             self.assertIn(b"turn.completed", live.read_bytes())
+
+    def test_silent_agent_is_stopped_but_a_chatty_one_is_not(self):
+        started = time.monotonic()
+        rc, out, err, timed_out = agents._exec(["sh", "-c", "echo hi; sleep 30"], stdin="", timeout=30, idle=1)
+        self.assertEqual((timed_out, out), ("idle", "hi\n"))
+        self.assertLess(time.monotonic() - started, 10)
+        chatty = "for i in 1 2 3; do echo $i; sleep 0.6; done"
+        self.assertFalse(agents._exec(["sh", "-c", chatty], stdin="", timeout=30, idle=1)[3])
 
     def test_timeout_kills_own_process_group(self):
         rc, out, err, timed_out = agents._exec(["sh", "-c", "sleep 30 & echo $!; wait"], stdin="", timeout=0.3)
