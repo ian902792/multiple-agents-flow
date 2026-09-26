@@ -163,8 +163,10 @@ SHA; submit a new verify run. Never auto-publish or merge a delegated run.
 
 ## Overnight chains
 
-When the user wants a batch to run unattended (for example overnight), plan first: small tasks,
-correct acceptance tests, decisions made now. Write the task files, show the user the scopes, then
+When the user wants a batch to run unattended (for example overnight), prefer the planned path:
+suggest `/maf-plan` (Codex `$maf-plan`), which stores a structured plan; answer its decisions with
+`decide`, build its `main_agent` items yourself, then `night --plan PLAN_ID`. Without a plan: small
+tasks, correct acceptance tests, decisions made now. Write the task files, show the user the scopes, then
 run one command: `night A.json B.json C.json + D.json` (each file builds on the previous one's
 tested commit; `+` starts another chain). Add `--approve` only when the user confirmed those scopes.
 It works one task at a time until all finish or stop, then prints the Chinese report. When the user

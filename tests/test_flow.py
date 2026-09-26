@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -12,7 +13,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from maf import cli, core, flows, github, progress, skills
+from maf import cli, core, flows, github, plans, progress, skills
 
 
 class FlowTests(unittest.TestCase):
@@ -558,6 +559,90 @@ class FlowTests(unittest.TestCase):
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(errors):
             cli.main(["--repo", str(self.repo), "night", "+", str(files["d"])])
         self.assertIn("at least one task", errors.getvalue())
+
+    def sample_plan(self):
+        return {"version": 1, "goal": "訂單功能", "interfaces": [{"name": "Order", "spec": "id:int"}],
+                "main_agent": [{"title": "訂單模型骨架", "why": "其他任務都依賴它", "paths": ["app/models.py"]}],
+                "decisions": [{"question": "退款以哪個為準？", "options": ["新規則", "現有政策"],
+                               "blocks": ["night-b"], "answer": None}],
+                "chains": [{"name": "訂單", "tasks": [dict(self.night_task("a"), acceptance_why="a 存在"),
+                                                     self.night_task("b", ["a"])]},
+                           {"name": "文件", "tasks": [self.night_task("d")]}],
+                "risks": ["介面改了下游要一起調整"]}
+
+    def test_plan_is_parsed_validated_and_summarized(self):
+        plan = self.sample_plan()
+        parsed = plans.parse("好的，計畫如下：\n```json\n" + json.dumps(plan, ensure_ascii=False) + "\n```\n")
+        self.assertEqual(parsed["chains"][1]["tasks"][0]["id"], "night-d")
+        for broken in (dict(plan, extra=1), dict(plan, chains=[]),
+                       dict(plan, decisions=[dict(plan["decisions"][0], blocks=["missing"])]),
+                       dict(plan, chains=[{"name": "x", "tasks": [self.night_task("a"), self.night_task("a")]}])):
+            with self.assertRaises(core.FlowError):
+                plans.validate_plan(broken)
+        with self.assertRaisesRegex(core.FlowError, "not a valid plan"):
+            plans.parse("I could not plan this.")
+        text = plans.render("plan-20260926-231000-abcd", plan)
+        for expected in ("需要你決定", "尚未決定", "主對話先做", "訂單：night-a → night-b", "decide plan-20260926-231000-abcd"):
+            self.assertIn(expected, text)
+
+    def test_plan_command_stores_the_planners_structured_plan(self):
+        goal = Path(self.config_temp.name) / "goal.md"
+        goal.write_text("訂單功能\n")
+        reply = {"status": "ok", "text": json.dumps(self.sample_plan(), ensure_ascii=False), "session_id": "p",
+                 "usage": None, "detail": ""}
+        output = io.StringIO()
+        with patch.object(cli.agents, "run_agent", return_value=reply) as agent, contextlib.redirect_stdout(output):
+            cli.main(["--repo", str(self.repo), "plan", "--goal-file", str(goal)])
+        self.assertIn("Return ONLY one JSON object", agent.call_args.args[1])
+        plan_id = re.search(r"# 計畫 (plan-\S+)", output.getvalue()).group(1)
+        self.assertEqual(plans.load(self.repo, plan_id)["goal"], "訂單功能")
+        self.assertTrue((plans.directory(self.repo, plan_id) / "plan.md").is_file())
+
+    def test_night_plan_waits_for_every_decision_then_preflights_and_runs(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        plan_id = plans.new_id()
+        plans.save(self.repo, plan_id, self.sample_plan())
+        errors = io.StringIO()
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(errors), patch.object(core.agents, "run_agent") as agent:
+            cli.main(["--repo", str(self.repo), "night", "--plan", plan_id])
+        self.assertIn("退款以哪個為準", errors.getvalue())
+        agent.assert_not_called()
+        self.assertEqual(core.list_runs(self.repo), [])
+        with contextlib.redirect_stdout(io.StringIO()):
+            cli.main(["--repo", str(self.repo), "decide", plan_id, "1", "現有政策"])
+        output = io.StringIO()
+        with patch.object(core.agents, "run_agent", side_effect=self.night_agent()), contextlib.redirect_stdout(output):
+            cli.main(["--repo", str(self.repo), "night", "--plan", plan_id, "--poll", "1"])
+        text = output.getvalue()
+        self.assertEqual(text.count("✓ 尚未通過（正常）"), 3)
+        self.assertIn("已完成（3）", text)
+        runs = {run["task"]["id"]: run for run in core.list_runs(self.repo)}
+        self.assertEqual({run["status"] for run in runs.values()}, {"verified"})
+        self.assertEqual(runs["night-b"]["depends_on"], runs["night-a"]["id"])
+        self.assertIn("Decided: 退款以哪個為準？ -> 現有政策", runs["night-b"]["task"]["instructions"])
+        self.assertNotIn("Decided", runs["night-a"]["task"]["instructions"])
+        self.assertEqual([p.name for p in (self.repo / ".maf-worktrees").iterdir() if p.name.startswith("preflight-")], [])
+
+    def test_preflight_flags_passing_and_broken_acceptance_commands(self):
+        plan = self.sample_plan()
+        plan["decisions"] = []
+        plan["chains"] = [{"name": "檢查", "tasks": [
+            dict(self.night_task("a"), tests=[[sys.executable, "-c", "pass"]]),
+            dict(self.night_task("b"), tests=[["definitely-not-a-maf-command"]]),
+            self.night_task("c")]}]
+        results = {r["task"]: r["outcome"] for r in plans.preflight(self.repo, plan, 30)}
+        self.assertEqual(results, {"night-a": "passes", "night-b": "cannot_run", "night-c": "fails"})
+        self.assertIn("⚠ 已經通過", plans.render_preflight(plans.preflight(self.repo, plan, 30)))
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        plan_id = plans.new_id()
+        plans.save(self.repo, plan_id, plan)
+        errors = io.StringIO()
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(errors), contextlib.redirect_stdout(io.StringIO()):
+            cli.main(["--repo", str(self.repo), "night", "--plan", plan_id])
+        self.assertIn("無法執行", errors.getvalue())
+        self.assertEqual(core.list_runs(self.repo), [])
 
     def test_chained_task_approval_waits_without_a_worktree(self):
         core.git(self.repo, "add", ".maf.json")

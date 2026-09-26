@@ -31,12 +31,17 @@ report that and suggest a flow or Flow Studio change instead of working around i
    subscription route before inference. Inside Herdr, when the user-wide
    integration is on, a temporary read-only planner pane opens and closes
    automatically. Do not add API billing or bypass flags.
-4. Summarize the plan in the current chat. Treat its proposed tasks as
-   suggestions, not authorization. If implementation is not already authorized,
-   show the concrete paths, tests, roles and risks and ask once before starting.
-   Then continue within the approved scope without repeated prompts. Delegate
-   narrow independent work to the flow's small-task agent when useful, and
-   verify the final commit with tests and, when enabled, an independent review.
+4. The planner returns a structured plan; MAF validates it, stores it privately and
+   prints a Chinese summary with its plan id. Show the user that summary. Ask every
+   open decision and record each answer with `decide PLAN_ID NUMBER ANSWER`; the
+   plan will not run while any decision is open. Build the `main_agent` items
+   yourself (the main chat), commit them and verify. Then show the chains, tests and
+   any approvals once, and after the user confirms run
+   `night --plan PLAN_ID` (add `--approve` only for scopes the user confirmed). It
+   preflights every acceptance command locally, runs the chains one task at a time
+   and prints the report. In the morning run `report`, integrate each ready range
+   and `verify` the integrated commit. If the planner reply is not a valid plan,
+   nothing is stored; say so and offer to plan again or write tasks directly.
 
 If readiness or billing confirmation is missing, show the exact route and
 blocker. Never attest to a subscription on the user's behalf without their
