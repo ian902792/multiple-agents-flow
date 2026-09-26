@@ -13,6 +13,7 @@ import time
 import unittest
 from unittest.mock import patch
 
+import maf
 from maf import cli, core, flows, github, plans, progress, skills
 
 
@@ -68,6 +69,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual((self.repo / "README.md").read_text(), "Before\n")
         self.assertEqual([a["role"] for a in run["agents"]], ["coder", "reviewer"])
         self.assertEqual(core.handoff(self.repo, run)["coder_notes"], "Done")
+        self.assertEqual(run["maf_version"], maf.__version__)
         self.assertEqual(core.handoff(self.repo, run)["cache_hit"],
                          [{"role": "coder", "runtime": "pi", "cache_hit": None}, {"role": "reviewer", "runtime": "pi", "cache_hit": None}])
         tampered = copy.deepcopy(run)

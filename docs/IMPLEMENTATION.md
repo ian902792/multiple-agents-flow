@@ -7,6 +7,13 @@ Independent Pi, Antigravity or Codex delegates can occupy up to three execution 
 The economy preset uses Astra for optional planning and Pi/DeepSeek for coding, with one repair. The opus-sol preset uses Claude Opus 5.5 coding and a configured Codex Sol reviewer. Independent review is disabled until explicitly enabled in the selected flow.
 The main chat is the developer. Only the manually invoked `/maf-plan` (Claude) or `$maf-plan` (Codex) skill calls the read-only planner, and `plan` refuses a planner whose runtime equals `--main` (Claude main: Codex planner; `codex-pi`: Claude Opus 5.5 planner).
 
+## Versioning
+
+`maf/__init__.py` holds the only `__version__` (semantic versioning). `flow.py --version` and `doctor` print it with the
+checkout commit, and each run records `maf_version` at submit. `CHANGELOG.md` must lead with the same version (tested);
+pushing tag `vX.Y.Z` runs `.github/workflows/release.yml`, which checks the tag against `__version__`, runs the offline
+tests and creates the GitHub release from that CHANGELOG section (`scripts/changelog.py`).
+
 ## Files and ownership
 
 - `maf/agents.py`: runtime adapters and result parsing (Codex, Claude, Pi, Hermes, Antigravity).

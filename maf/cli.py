@@ -8,11 +8,22 @@ import subprocess
 import sys
 import time
 
-from . import agents, core, flows, github, plans, progress, skills
+from . import __version__, agents, core, flows, github, plans, progress, skills
+
+
+def version_text():
+    """Release version, plus the checkout commit when running from a Git clone between releases."""
+    try:
+        commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=Path(__file__).resolve().parent,
+                                capture_output=True, text=True, timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        commit = ""
+    return f"multiple-agents-flow {__version__}" + (f" (commit {commit})" if commit else "")
 
 
 def parser():
     cli = argparse.ArgumentParser(description="Subscription-first multi-agent workflow (Python 3.11+, macOS/Linux).")
+    cli.add_argument("--version", action="version", version=version_text())
     cli.add_argument("--repo", type=Path, help="Target Git repository root (default: cwd)")
     cli.add_argument("--main", choices=("claude", "codex"), default="claude",
                      help="Main chat sending this request; use codex from Codex skill (default: claude)")
@@ -293,13 +304,14 @@ def main(argv=None):
                     elif args.action == "doctor":
                         result = {name: agents.doctor_role(role) if name != "reviewer" or core.review_enabled(config) else []
                                   for name, role in config["roles"].items()}
+                        result["version"] = version_text()
                         try:
                             core.billing_check(repo, config)
                             result["billing"] = []
                         except core.FlowError as exc:
                             result["billing"] = [str(exc)]
                         print(json.dumps(result, ensure_ascii=False, indent=2))
-                        if any(result.values()):
+                        if any(value for key, value in result.items() if key != "version"):
                             raise SystemExit(1)
                         return
                     elif args.action == "confirm-billing":

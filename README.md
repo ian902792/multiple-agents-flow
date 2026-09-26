@@ -95,6 +95,7 @@ MAF 預設只做到本機驗證；push、PR、合併要你說一次，一次就�
 - [讓主對話自動使用 MAF](docs/AGENT-INSTRUCTIONS.md)：六行提示詞，含自己的 repo 自動合併的選用設定。
 - [指令參考](docs/CLI.md)：CLI、任務 JSON、核准與中斷恢復、Herdr 觀看模式。
 - [Pi 推理強度基準測試](bench/effort/README.md)：用固定題目自己比較 `off`～`max`。
+- [版本紀錄](CHANGELOG.md)：目前版本可用 `python3 flow.py --version` 查看。
 - [新增 agent adapter](docs/ADAPTERS.md)、[參與貢獻](CONTRIBUTING.md)、[實作契約](docs/IMPLEMENTATION.md)、[驗證紀錄](docs/VALIDATION.md)。
 
 只在你信任的 repository 使用：工作樹不是安全沙箱，測試會執行你核准的命令。

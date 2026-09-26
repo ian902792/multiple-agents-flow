@@ -18,7 +18,7 @@ import tempfile
 import time
 import uuid
 
-from . import agents
+from . import __version__, agents
 
 
 class FlowError(Exception):
@@ -475,7 +475,8 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch",
            "base_sha": base, "owned_head": source_head, "source_sha": source_head, "source_branch": current_branch,
            "kind": kind, "config": config, "config_hash": config_hash, "mode": mode, "task": task,
            "status": "creating", "stage": "testing" if kind == "verify" else "coding", "repairs": 0, "created_at": time.time(),
-           "publish": bool(publish), "auto_merge": bool(auto_merge), "feedback": "", "agents": []}
+           "publish": bool(publish), "auto_merge": bool(auto_merge), "feedback": "", "agents": [],
+           "maf_version": __version__}
     if depends_on is not None:
         run["depends_on"] = depends_on
     reasons = []

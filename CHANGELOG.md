@@ -1,0 +1,33 @@
+# 版本紀錄
+
+版本號採用 [語意化版本](https://semver.org/lang/zh-TW/)：`主版號.次版號.修訂號`。1.0 以前，次版號代表新功能或行為改變，修訂號代表修正。每次發布的最新版本寫在最上面，且必須和 `maf/__init__.py` 的 `__version__` 相同。
+
+## [0.2.0] - 2026-09-26
+
+### 新功能
+
+- **一晚跑一批**：`/maf-plan` 讓另一家的強模型寫出結構化計畫（介面約定、主對話先做的核心、需要你決定的問題、任務鏈），`decide` 記錄決定，`night --plan` 試跑驗收測試後依序執行，早上用 `report` 看中文報告。
+- **任務依賴鏈**：`delegate --depends-on RUN_ID` 讓下一件從上一件測試通過的 commit 接著做；上游等額度時下游會等，上游需要重新規畫時下游不執行。
+- **`quick-codex` flow**：小任務交給 Codex GPT-6 Luna（推理 `none`）；小任務 Agent 可以是 Pi、Antigravity 或 Codex。
+- **Codex 主對話**：`codex-pi` flow 與 Codex 的 `$maf`、`$maf-plan`；規畫者一定和主對話不同家。
+- **Herdr 工作流 pane**：每次工具呼叫一行，顯示工具與碰到的檔案，不顯示 prompt 或內容。
+- **快取命中率**：`progress`、`handoff` 顯示每次 agent 呼叫的快取命中率。
+- **推理強度基準測試**：`bench/effort/` 用固定題目比較各 flow 在不同推理強度下的成功率、速度、token 與成本。
+- **動畫導覽網站**：GitHub Pages 上的互動示範。
+- **版本機制**：`flow.py --version`、`doctor` 顯示版本，每個 run 記錄執行時的 MAF 版本。
+
+### 行為改變
+
+- 以「maf」開頭的話才是在指揮 MAF。
+- Pi 與 Antigravity coder 預設推理強度改為 `low`；Antigravity 改用 `gemini-3.8-flash-low`。
+- 推理強度不再列入訂閱確認範圍；換模型或工具仍需確認。
+- 主對話提示詞精簡為只說何時、為什麼委派。
+
+### 修正
+
+- Antigravity 的模型 ID 與推理強度不一致時，儲存 flow 就會擋下。
+- 文件中全形標點與粗體標記的顯示問題。
+
+## [0.1.0] - 2026-09-23
+
+- 第一個可用版本：主對話委派、獨立工作樹、綁定 commit 的測試與可選獨立審查、訂閱確認、Flow Studio、Herdr 觀看模式。
