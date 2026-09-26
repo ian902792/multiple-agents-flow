@@ -12,7 +12,7 @@
 
 ## 它做什麼
 
-- **你照常在 terminal 聊天**：在 Claude Code 或 Codex 描述需求。範圍清楚的小工作，主 Agent 會交給 Pi 或 Antigravity 在獨立工作樹完成。
+- **你照常在 terminal 聊天**：在 Claude Code 或 Codex 描述需求。範圍清楚的小工作，主 Agent 會交給 Pi、Antigravity 或 Codex 在獨立工作樹完成。
 - **證據綁定 commit**：測試由 MAF 自己跑，結果綁定精確的 commit SHA；需要時再請另一家模型審查同一個 commit。
 - **只用現有訂閱**：不會改用 API 計費；額度或登入狀態不明就停下。
 
@@ -50,7 +50,7 @@ python3 flow.py --main codex confirm-billing --no-overage   # Codex 預設
 | 想做的事 | 對主 Agent 說 |
 | --- | --- |
 | 換分工方式 | 「maf 改用 quick」、「maf 改回全域預設」 |
-| 同時處理幾件獨立的小事（任何 flow 都可以，Pi 或 Antigravity 最多並行 3 件） | 「maf 同時處理 1. … 2. … 3. …，各自驗收」 |
+| 同時處理幾件獨立的小事（任何 flow 都可以，Pi、Antigravity 或 Codex 最多並行 3 件） | 「maf 同時處理 1. … 2. … 3. …，各自驗收」 |
 | 看進度 | `/maf status`（Codex 用 `$maf status`） |
 | 大任務先請另一家的強模型規畫 | `/maf-plan 需求`（Codex 用 `$maf-plan 需求`） |
 | 做完直接發布 | 「全部驗證通過後直接開 PR 並合併」 |
@@ -73,6 +73,7 @@ MAF 預設只做到本機驗證；push、PR、合併要你說一次，一次就�
 | --- | --- | --- | --- |
 | `quick`（Claude 預設） | Claude Opus 5.5 | Pi · DeepSeek V4.1 Flash | Codex GPT-6 Astra |
 | `quick-antigravity` | Claude Opus 5.5 | Antigravity · Gemini 3.8 Flash Low | Codex GPT-6 Astra |
+| `quick-codex` | Claude Opus 5.5 | Codex · GPT-6 Luna（最低推理） | Codex GPT-6 Astra |
 | `planned` | Claude Opus 5.5 | Pi · DeepSeek V4.1 Flash | Codex GPT-6 Astra，大任務先規畫 |
 | `codex-pi`（Codex 預設） | Codex GPT-6 Sol | Pi · DeepSeek V4.1 Flash | Claude Opus 5.5 |
 

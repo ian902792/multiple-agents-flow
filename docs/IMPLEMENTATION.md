@@ -3,7 +3,7 @@
 Python 3.11+ stdlib. Local-only web UI edits user-wide flows and settings; no API subscription proxy.
 Herdr is opt-in and runs a persistent ordinary supervisor command in an explicitly created workspace.
 Native agent CLIs run as bounded subprocesses, with structured output captured to private logs.
-Independent Pi or Antigravity delegates can occupy up to three execution lanes; planner/coder/reviewer are independently configured roles.
+Independent Pi, Antigravity or Codex delegates can occupy up to three execution lanes; planner/coder/reviewer are independently configured roles.
 The economy preset uses Astra for optional planning and Pi/DeepSeek for coding, with one repair. The opus-sol preset uses Claude Opus 5.5 coding and a configured Codex Sol reviewer. Independent review is disabled until explicitly enabled in the selected flow.
 The main chat is the developer. Only the manually invoked `/maf-plan` (Claude) or `$maf-plan` (Codex) skill calls the read-only planner, and `plan` refuses a planner whose runtime equals `--main` (Claude main: Codex planner; `codex-pi`: Claude Opus 5.5 planner).
 
@@ -81,7 +81,7 @@ Worktrees under the target repository `.maf-worktrees/`, excluded through Git in
 never under `.git`, because native agent safety modes correctly deny edits there.
 Task JSON: `id`, `title`, `instructions`, `paths` (explicit relative path/glob allowlist),
 `tests` (nonempty arrays of argv arrays), `risk` (`manual`, `docs`, `style`, `tests`), and optional
-boolean `independent` for Pi or Antigravity delegates.
+boolean `independent` for Pi, Antigravity or Codex delegates.
 Optional `acceptance_why` states the purpose tests must protect; it reaches coder and reviewer via the task JSON.
 `handoff` also returns `coder_notes`, the tail of the coder's final reply ending in `UNVERIFIED:` items.
 Task/config snapshots pin each run. Worktrees and branches are unique; never overwrite/reuse unrelated ones.
@@ -115,12 +115,12 @@ gate for semantic high-risk work. Approval checks the pristine worktree and exac
 release. The worker ignores pending runs and rechecks the scope hash before execution/publication. Bounded
 repair within that scope needs no new approval. A coder escalation or reviewer manual-risk finding stops
 at `needs_human/replan`; resume cannot silently replay it. A changed scope requires a new run.
-`delegate` snapshots a fully clean current branch HEAD, runs the selected Pi or Antigravity coder in a new worktree, then tests and optionally reviews
+`delegate` snapshots a fully clean current branch HEAD, runs the selected Pi, Antigravity or Codex coder in a new worktree, then tests and optionally reviews
 the resulting commit. It never integrates the result into the source branch. `verify` snapshots a fully clean
 current HEAD, checks the changed paths against an exact base/merge-base, and starts at testing without a coder.
 Failed tests or review of external work stop for Claude to fix and require a new run at the new SHA. `handoff`
 returns compact evidence only after the selected checks and worktree HEAD match; its `review` value is null when review is off.
-The scheduler runs up to three `independent: true` Pi or Antigravity delegates at once. Parallel eligibility
+The scheduler runs up to three `independent: true` Pi, Antigravity or Codex delegates at once. Parallel eligibility
 requires narrow literal file paths, disjoint paths (case-insensitive comparison), the same source SHA,
 non-manual risk and no approval gate. An explicit marker is the caller's assertion that requirements and
 test resources are independent; the scheduler cannot infer semantic independence. Other runs remain serial.
@@ -170,7 +170,7 @@ stdout into a private live event file while retaining its bounded parser and fin
 The observer (`LiveSummary`) prints one line per tool call: the tool name, the repo-relative path it touches when that path stays inside the worktree, and seconds since the previous step, plus a done/error line. Streaming message events are skipped; prompts, model text, file contents, search patterns and shell commands are never shown. Only the pane ID
 returned by that split is closed after the role finishes; pane failures warn without replaying the agent.
 Agents still run as supervisor-owned subprocesses; Herdr's agent lifecycle display is not verification.
-Parallel Pi or Antigravity delegates can show multiple observer panes at once. A manually invoked `work` needs
+Parallel Pi, Antigravity or Codex delegates can show multiple observer panes at once. A manually invoked `work` needs
 `--agent-panes` to opt in; plain `work` keeps its previous terminal behavior.
 Successful test logs stay in local evidence; review prompts carry only argv, exit_code and log path.
 
