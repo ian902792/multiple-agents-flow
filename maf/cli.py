@@ -228,6 +228,11 @@ def main(argv=None):
                 raise core.FlowError("Give either task files or --plan PLAN_ID.")
             if args.plan:
                 saved = plans.load(repo, args.plan)
+                pending = [run for run in core.list_runs(repo) if run.get("plan_id") == args.plan
+                           and (run.get("status") == "awaiting_approval" or core.can_progress(repo, run))]
+                if pending:
+                    raise core.FlowError(f"計畫 {args.plan} 已經排入，還有 {len(pending)} 件任務沒結束；用 report 查看進度，"
+                                         "不要重複排入。")
                 waiting = plans.open_decisions(saved)
                 if waiting:
                     raise core.FlowError(f"還有 {len(waiting)} 個問題未決定，整份計畫不會執行：\n"
@@ -249,7 +254,7 @@ def main(argv=None):
                 if not all(chains):
                     raise core.FlowError("Each chain needs at least one task file; do not start or end with +.")
             with core.exclusive(repo):
-                runs = core.queue_chains(repo, chains, args.mode, args.main, args.approve)
+                runs = core.queue_chains(repo, chains, args.mode, args.main, args.approve, args.plan)
             for run in runs:
                 after = f"  （接在 {run['depends_on']} 之後）" if run.get("depends_on") else ""
                 print(f"排入 {run['id']}  {progress.status_zh(run['status'])}{after}", flush=True)

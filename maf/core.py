@@ -949,13 +949,16 @@ def advance_dependency(repo, run):
     save(repo, run)
 
 
-def queue_chains(repo, chains, mode=None, main_runtime="claude", approve_all=False):
+def queue_chains(repo, chains, mode=None, main_runtime="claude", approve_all=False, plan_id=None):
     """Queue each list of tasks as a dependency chain; approve_all records the user's approval of every frozen scope."""
     runs = []
     for chain in chains:
         previous = None
         for task in chain:
             run = submit(repo, task, mode=mode, kind="delegate", main_runtime=main_runtime, depends_on=previous)
+            if plan_id:
+                run["plan_id"] = plan_id
+                save(repo, run)
             if approve_all and run["status"] == "awaiting_approval":
                 run = approve(repo, run["id"])
             runs.append(run)
