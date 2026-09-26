@@ -77,6 +77,10 @@ def validate_role(role) -> None:
         raise ValueError("hermes has no native read-only toolset; only access 'edit' is supported")
     if role["runtime"] == "antigravity" and role["access"] != "edit":
         raise ValueError("antigravity has no native read-only toolset; only access 'edit' is supported")
+    level = re.search(r"-(low|medium|high)$", model) if role["runtime"] == "antigravity" else None
+    if level and level.group(1) != role.get("effort", "medium"):
+        # agy rejects e.g. --model gemini-3.8-flash-high --effort low; each level is its own model ID.
+        raise ValueError(f"antigravity model {model} needs effort {level.group(1)}; pick the model for that level")
 
 
 def _hermes_prefix(role):

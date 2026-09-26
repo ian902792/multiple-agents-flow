@@ -35,7 +35,7 @@ Pi usage sums assistant message_end usage across all model calls, excluding agen
 truncated counts remain unknown; cache and reasoning counters are not added again to output/total.
 Timeout results retain only usage already emitted, not an estimate of unreported usage.
 `role` fields: `runtime`, `model`, `provider`, optional `profile`, `access` (`read`/`edit`). Reviewer alone may carry boolean `enabled`; missing means disabled.
-Optional `effort` follows each CLI: Codex and Claude low/medium/high/xhigh/max; Pi off/minimal/low/medium/high/xhigh/max (Pi 0.86.1 `--thinking`); Hermes and Antigravity low/medium/high. Model IDs are configurable but cannot contain provider prefixes.
+Optional `effort` follows each CLI: Codex and Claude low/medium/high/xhigh/max; Pi off/minimal/low/medium/high/xhigh/max (Pi 0.86.1 `--thinking`); Hermes and Antigravity low/medium/high; an Antigravity model ID ending in -low/-medium/-high must match its effort, because agy rejects a mismatched --model/--effort pair. Model IDs are configurable but cannot contain provider prefixes.
 Allowed subscription routes: Codex ChatGPT login; Claude first-party subscription login;
 Pi OpenCode Go; Hermes explicitly OpenCode Go; Antigravity signed-in Google account. No arbitrary CLI extra args or endpoints.
 Hermes and Antigravity support coder/edit only. Antigravity uses `agy` NDJSON stdin/stdout,
@@ -141,7 +141,7 @@ TTY widths below 100 use multiple lines wrapped to terminal width, including 38 
 No input is sent and no agent
 lifecycle is touched; Herdr failures are warnings only.
 `progress --json` is a standalone read-only snapshot with activity, minute-level elapsed/limit, attention,
-next steps and per-attempt native usage plus `cache_hit` (cached ÷ all prompt tokens, from each provider's own fields: Pi cacheRead/input/cacheWrite, Claude cache_read/input/cache_creation, Codex cached_input_tokens within input_tokens; null when any count is missing); no prompt or transcript. `handoff` carries the same per-attempt `cache_hit`. It cannot be combined with sync/watch/pane.
+next steps and per-attempt native usage plus `cache_hit` (cached ÷ all prompt tokens, from each provider's own fields: Pi cacheRead/input/cacheWrite, Claude cache_read/input/cache_creation, Codex cached_input_tokens within input_tokens, Antigravity cache_read_tokens beside input_tokens; null when any count is missing); no prompt or transcript. `handoff` carries the same per-attempt `cache_hit`. It cannot be combined with sync/watch/pane.
 Deadlines overdue by more than 15 seconds request inspection, not an inferred exit or permission to retry.
 Permission/auth stops, quota resets, exhausted repairs and publication recovery have distinct guidance.
 `herdr` validates the inherited HERDR_PANE_ID before creating its workspace and passes it to

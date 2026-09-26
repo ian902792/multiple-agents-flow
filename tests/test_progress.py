@@ -27,6 +27,8 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(progress.cache_hit(pi), 0.945)
         self.assertEqual(progress.cache_hit(claude), 0.808)
         self.assertEqual(progress.cache_hit(codex), 0.885)
+        agy = {"input_tokens": 75939, "output_tokens": 44367, "thinking_tokens": 42265, "cache_read_tokens": 122394}
+        self.assertEqual(progress.cache_hit(agy), 0.617)
         for usage in (None, {}, {"input": 10, "output": 2}, {"input": 0, "cacheRead": 0},
                       {"input": "10", "cacheRead": 5}, {"input_tokens": 1, "cached_input_tokens": 5}):
             self.assertIsNone(progress.cache_hit(usage))

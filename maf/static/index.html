@@ -83,6 +83,10 @@ function collect(){
   flow.main.runtime=el("main-runtime").value;flow.main.model=el("main-model").value.trim();flow.main.effort=el("main-effort").value;
   for(const row of document.querySelectorAll(".role-row")){
     const role=flow.roles[row.dataset.role];
+    if(row.dataset.role==="coder"&&el("coder-runtime").value==="antigravity"){
+      const input=row.querySelector(".model-input"),effort=row.querySelector(":scope > label > .effort-select").value;
+      input.value=input.value.replace(/-(low|medium|high)$/,"-"+effort); // agy encodes the level in the model ID
+    }
     if(row.dataset.role==="coder"||row.dataset.role==="reviewer"){
       role.runtime=el(row.dataset.role+"-runtime").value;role.provider=coderRoutes[role.runtime][0];if(role.runtime!=="hermes")delete role.profile;
     }
