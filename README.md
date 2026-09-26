@@ -2,6 +2,8 @@
 
 **留在你習慣的 Claude Code 或 Codex 對話，把明確的小工作交給別的 agent，完成要有 commit 綁定的測試證據。**
 
+> **送給喜歡在 terminal 工作的你。** MAF 就在 Claude Code、Codex 的 terminal 對話裡運作：不用另開 app、網頁面板或常駐服務。想同時看好幾個 agent 做事，搭配 [Herdr](https://ian902792.github.io/multiple-agents-flow/#herdr) 這類 terminal 多工器就好。
+
 ### ▶ [先看 3 分鐘動畫導覽](https://ian902792.github.io/multiple-agents-flow/)
 
 一步步播放四個情境：日常委派、三件並行、開啟審查、被擋下時；也能切換 Herdr 觀看模式比較差異。
@@ -10,7 +12,7 @@
 
 ## 它做什麼
 
-- **你照常聊天**：在主對話描述需求。範圍清楚的小工作，主 Agent 會交給 Pi 或 Antigravity 在獨立工作樹完成。
+- **你照常在 terminal 聊天**：在 Claude Code 或 Codex 描述需求。範圍清楚的小工作，主 Agent 會交給 Pi 或 Antigravity 在獨立工作樹完成。
 - **證據綁定 commit**：測試由 MAF 自己跑，結果綁定精確的 commit SHA；需要時再請另一家模型審查同一個 commit。
 - **只用現有訂閱**：不會改用 API 計費；額度或登入狀態不明就停下。
 
@@ -72,6 +74,7 @@ MAF 預設只做到本機驗證；push、PR、合併要你說一次，一次就�
 - **由程式把關**：可修改的檔案在排入時就鎖定，越界就停；中斷後可以恢復，不會盲目重跑。
 - **省主對話額度**：寫程式的工作交給別家訂閱，主對話只花在判斷與整合。
 - **換一家看**：規畫與審查由不同家的模型負責，避免同一種盲點。
+- **terminal 原生**：指令、進度、交接都在 terminal；Flow Studio 網頁只是選用的設定畫面。
 
 和同一家的子 agent、其他多 agent 做法的比較，以及相對的限制，請看[導覽頁的特色一節](https://ian902792.github.io/multiple-agents-flow/#why)。
 

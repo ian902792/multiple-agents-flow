@@ -92,17 +92,23 @@ button{font-family:inherit}
 .relay-h{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted);margin-bottom:12px}
 .relay ol{list-style:none;margin:0;padding:0;display:grid;gap:10px;position:relative}
 .relay ol::before{content:"";position:absolute;left:23px;top:24px;bottom:24px;border-left:2px dashed var(--line)}
-.rrow{position:relative;display:flex;align-items:center;gap:14px;height:56px;padding:0 12px 0 0;border-radius:16px;animation:hl 10s infinite}
+.rrow{position:relative;display:flex;align-items:center;gap:14px;height:56px;padding:0 112px 0 0;border-radius:16px;animation:hl 10s infinite}
 .rrow:nth-child(2){animation-delay:2s}.rrow:nth-child(3){animation-delay:4s}.rrow:nth-child(4){animation-delay:6s}.rrow:nth-child(5){animation-delay:8s}
 @keyframes hl{0%,18%{background:var(--bg2)}20%,100%{background:transparent}}
 .av{flex:none;width:48px;height:48px;border-radius:16px;display:grid;place-items:center;font:600 14px var(--body);color:#fff;position:relative;z-index:1}
 .av.you{background:var(--r-you);color:var(--bg)}.av.main{background:var(--r-main)}.av.pi{background:var(--r-pi)}.av.agy{background:var(--r-agy)}.av.rev{background:var(--r-rev)}
 .av.sm{width:26px;height:26px;border-radius:9px;font-size:11px}
-.rtext{display:grid;line-height:1.4}
+.rtext{display:grid;line-height:1.4;min-width:0}
+.rtext b,.rtext span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rtext b{font-weight:500;font-size:15px}
 .rtext span{font-size:12.5px;color:var(--muted)}
-.ticket{position:absolute;right:12px;top:16px;padding:4px 10px;border-radius:8px;background:var(--accent-soft);color:var(--accent-ink);font:600 11.5px var(--mono);box-shadow:0 4px 10px -4px rgba(0,0,0,.2);animation:ride 10s infinite}
-@media (max-width:420px){.ticket{display:none}}
+.ticket{position:absolute;right:10px;top:16px;width:92px;height:24px;border-radius:8px;background:var(--accent-soft);color:var(--accent-ink);font:600 11.5px var(--mono);box-shadow:0 4px 10px -4px rgba(0,0,0,.2);animation:ride 10s infinite}
+.ticket span{position:absolute;inset:0;display:grid;place-items:center;opacity:0;animation:tk 10s infinite}
+.ticket span:first-child{opacity:1}
+.ticket span:nth-child(2){animation-delay:2s}.ticket span:nth-child(3){animation-delay:4s}.ticket span:nth-child(4){animation-delay:6s}.ticket span:nth-child(5){animation-delay:8s}
+@keyframes tk{0%,17%{opacity:1}19%,100%{opacity:0}}
+.taskname{font:600 12px var(--mono);color:var(--muted)}
+@media (max-width:420px){.rrow{padding-right:104px}.relay{padding:18px 14px}}
 @keyframes ride{0%,16%{transform:translateY(0)}20%,36%{transform:translateY(66px)}40%,56%{transform:translateY(132px)}60%,76%{transform:translateY(198px)}80%,96%{transform:translateY(264px)}100%{transform:translateY(0)}}
 .relay-f{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--muted)}
 
@@ -323,9 +329,9 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-bet
 <main id="top">
   <div class="wrap hero">
     <div class="hero-copy">
-      <span class="pill"><b>新手導覽</b>五分鐘看懂，十分鐘裝好</span>
+      <span class="pill"><b>terminal 原生</b>送給喜歡在 terminal 工作的你</span>
       <h1>留在主對話，<br>把<em>小工作</em>交給別人做</h1>
-      <p class="lede">你照常在 Claude Code 或 Codex 描述需求。主 Agent 把路徑和驗收都明確的小工作，交給 Pi 或 Antigravity 在獨立工作樹完成；MAF 負責跑測試，需要時再請另一家模型審查，而且全部綁定同一個 Git commit。</p>
+      <p class="lede">你照常在 terminal 裡的 Claude Code 或 Codex 描述需求，不用另開 app 或網頁面板。主 Agent 把路徑和驗收都明確的小工作，交給 Pi 或 Antigravity 在獨立工作樹完成；MAF 負責跑測試，需要時再請另一家模型審查，而且全部綁定同一個 Git commit。</p>
       <div class="cta">
         <a class="btn primary" href="#demo">看它怎麼運作</a>
         <a class="btn ghost" href="#setup">開始安裝</a>
@@ -333,16 +339,16 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-bet
       <div class="promise"><span>只用你現有的訂閱</span><span>不自動 push 或合併</span><span>額度不明就停下</span></div>
     </div>
     <div class="relay" aria-label="一件任務的接力流程">
-      <div class="relay-h"><span>一件任務的接力</span><span class="chip tested">tested</span></div>
+      <div class="relay-h"><span>一件任務的接力</span><span class="taskname">任務：remember-me</span></div>
       <ol>
         <li class="rrow"><span class="av you">你</span><span class="rtext"><b>描述需求</b><span>像平常聊天一樣說</span></span></li>
         <li class="rrow"><span class="av main">主</span><span class="rtext"><b>主 Agent 拆成小任務</b><span>寫清楚路徑、驗收與目的</span></span></li>
         <li class="rrow"><span class="av pi">Pi</span><span class="rtext"><b>小任務 Agent 施工</b><span>在獨立工作樹，不碰你的分支</span></span></li>
         <li class="rrow"><span class="av rev">✓</span><span class="rtext"><b>MAF 測試，可選審查</b><span>證據綁定同一個 commit</span></span></li>
         <li class="rrow"><span class="av main">主</span><span class="rtext"><b>整合後回報</b><span>附上 commit SHA</span></span></li>
-        <li class="ticket" aria-hidden="true">remember-me</li>
+        <li class="ticket" aria-hidden="true"><span>需求</span><span>task.json</span><span>coding…</span><span>tested ✓</span><span>a41c9e2</span></li>
       </ol>
-      <div class="relay-f"><span>你只在開頭和被擋下時出場</span><span>其餘自動接力</span></div>
+      <div class="relay-f"><span>右側標籤是任務在每一站的產出</span><span>你只在開頭和被擋下時出場</span></div>
     </div>
   </div>
 
@@ -403,7 +409,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-bet
         <div class="card"><span class="tag">成本</span><h3>只用現有訂閱</h3><p>拒絕 API key 路由，額度用完就停，不會改用按量計費繼續跑。</p></div>
         <div class="card"><span class="tag">第二雙眼</span><h3>規畫與審查一定換一家</h3><p>Claude 對話交給 Codex 規畫，Codex 對話交給 Claude；同一家的組合會被擋下，避免同一種盲點。</p></div>
         <div class="card"><span class="tag">並行</span><h3>同時跑但不互相踩到</h3><p>最多 3 件，只限標記獨立、檔案不重疊、從同一個 commit 出發的任務，其餘照順序。</p></div>
-        <div class="card"><span class="tag">輕巧</span><h3>留在對話，讀得完</h3><p>不必切到另一個管理介面，主 Agent 透過 skill 在背後委派與驗證。只用 Python 標準庫，沒有常駐服務或資料庫。</p></div>
+        <div class="card"><span class="tag">terminal 原生</span><h3>留在 terminal，不用開面板</h3><p>就在 Claude Code、Codex 的 terminal 對話裡運作，主 Agent 透過 skill 在背後委派與驗證；想同時看多個 agent，再搭配 Herdr。只用 Python 標準庫，沒有常駐服務或資料庫。</p></div>
       </div>
       <div class="sec-head" style="margin:48px 0 0">
         <h3 style="font-size:24px">和同一家的子 agent 怎麼分工</h3>
