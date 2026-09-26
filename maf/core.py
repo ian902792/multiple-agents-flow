@@ -129,7 +129,7 @@ SENSITIVE_WORDS = re.compile(r"(^|[/_.-])(auth|secret|credential|permission|poli
 def default_config(preset="economy"):
     roles = {
         "planner": {"runtime": "codex", "provider": "chatgpt", "model": "gpt-6-astra", "access": "read", "effort": "high"},
-        "coder": {"runtime": "pi", "provider": "opencode-go", "model": "deepseek-v4.1-flash", "access": "edit", "effort": "medium"},
+        "coder": {"runtime": "pi", "provider": "opencode-go", "model": "deepseek-v4.1-flash", "access": "edit", "effort": "low"},
         "reviewer": {"runtime": "pi", "provider": "opencode-go", "model": "deepseek-v4.1-flash", "access": "read", "effort": "medium", "enabled": False},
     }
     if preset == "opus-sol":

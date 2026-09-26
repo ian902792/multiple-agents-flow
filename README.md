@@ -121,24 +121,30 @@ Flow Studio 可複製 flow，切換主對話、小任務與審查工具，設定
 
 ### 自己實測：Pi coder 的推理強度
 
-Pi 的推理強度（`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`）可在 Flow Studio 的小任務 Agent 調整。想知道哪個最適合，可以用內建的基準測試親自跑：
+Pi 的推理強度（`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`）可在 Flow Studio 的小任務 Agent 調整，內建 flow 的 Pi coder 預設是 `low`。想用自己的環境驗證，可以跑內建的基準測試：
 
 ```sh
-python3 bench/effort/run.py --levels off,low,medium,max --repeat 2 --confirm-subscription-only
+python3 bench/effort/run.py --task duration --levels off,low,medium,max --repeat 2 --confirm-subscription-only
+python3 bench/effort/run.py --task webapp   --levels off,low,medium,max --repeat 2 --confirm-subscription-only
 ```
 
-它讓 Pi 走正常的 `delegate` 流程，實作一個時間長度解析器（8 個測試、兩百多個驗收案例，含各種不合法輸入與來回轉換）。每個強度都在全新的暫時 repo 與隔離的 MAF 設定裡執行，不會動到你的全域 flow 與確認紀錄，最後印出比較表。會使用真實的 Pi／OpenCode Go 額度（上面的指令約 $0.05 等值），所以要先確認 Use balance 已關閉，再加 `--confirm-subscription-only`。
+兩個題目都讓 Pi 走正常的 `delegate` 流程，不需要安裝任何套件：
 
-2026-09-26 以 DeepSeek V4.1 Flash、每個強度 2 次的結果：
+- `duration`：時間長度解析器，8 個測試、兩百多個驗收案例，含各種不合法輸入與來回轉換。
+- `webapp`：用標準庫 WSGI 寫待辦事項網站，包含 HTML 表單頁（`<label>`、HTML 跳脫防 XSS）、表單送出轉址，以及 JSON API 的 201／204／400／404／405／422 狀態碼與 `Location`、`Allow` 標頭，共 11 個測試。
 
-| 強度 | 一次通過 | 平均秒數 | 平均輸出 token | 其中推理 | 快取命中 | 平均成本 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `off` | 1/2 | 38 | 4,682 | 2,641 | 69.1% | $0.0043 |
-| `low` | 2/2 | 28 | 3,591 | 2,309 | 64.8% | $0.0031 |
-| `medium` | 1/2 | 53 | 7,350 | 5,442 | 71.0% | $0.0064 |
-| `max` | 2/2 | 66 | 10,094 | 8,499 | 63.3% | $0.0081 |
+每個強度都在全新的暫時 repo 與隔離的 MAF 設定裡執行，不會動到你的全域 flow 與確認紀錄，最後印出比較表。會使用真實的 Pi／OpenCode Go 額度（每行指令約 $0.05～0.08 等值），所以要先確認 Use balance 已關閉，再加 `--confirm-subscription-only`。
 
-八次最後都通過（未一次通過的，都在一輪自動修復後通過）。這題 `low` 最快也最便宜；`max` 同樣一次通過，但成本是 2.6 倍、時間是 2.3 倍。`off` 在這個模型上仍會產生推理 token，並不等於完全不思考。快取命中率主要跟來回輪數有關，和強度關係不大。樣本很少，不同任務的結果也會不同，建議用自己的工作再跑一次。
+2026-09-26 以 DeepSeek V4.1 Flash、每題每個強度 2 次的結果（16 次最後全部通過）：
+
+| 強度 | duration 一次通過 | webapp 一次通過 | duration 平均成本 | webapp 平均成本 | webapp 平均秒數 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `off` | 1/2 | 2/2 | $0.0043 | $0.0058 | 49 |
+| `low` | 2/2 | 2/2 | $0.0031 | $0.0065 | 49 |
+| `medium` | 1/2 | 1/2 | $0.0064 | $0.0104 | 84 |
+| `max` | 2/2 | 2/2 | $0.0081 | $0.0143 | 102 |
+
+`low` 是唯一兩題都一次通過、成本又最低或接近最低的強度，因此成為預設。`max` 同樣穩定，但成本約 2.4 倍、時間約 2 倍；`off` 在網頁題與 `low` 打平，卻在另一題失敗一次，而且這個模型在 `off` 仍會產生推理 token。快取命中率主要跟來回輪數有關，和強度關係不大。樣本很少，不同任務的結果也會不同，建議用自己的工作再跑一次。
 
 ## 想讓主對話自動使用 MAF
 

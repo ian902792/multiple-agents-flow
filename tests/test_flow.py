@@ -299,7 +299,7 @@ class FlowTests(unittest.TestCase):
     def test_codex_main_flow_keeps_claude_review_optional_and_independent(self):
         flow = flows.templates()["codex-pi"]
         self.assertEqual(flow["main"], {"runtime": "codex", "model": "gpt-6-sol", "effort": "high"})
-        self.assertEqual(flow["roles"]["coder"]["runtime"], "pi")
+        self.assertEqual((flow["roles"]["coder"]["runtime"], flow["roles"]["coder"]["effort"]), ("pi", "low"))
         self.assertEqual(flow["roles"]["reviewer"]["model"], "claude-opus-5-5")
         self.assertFalse(flow["roles"]["reviewer"]["enabled"])
         self.assertEqual((flow["roles"]["planner"]["runtime"], flow["roles"]["planner"]["model"]), ("claude", "claude-opus-5-5"))

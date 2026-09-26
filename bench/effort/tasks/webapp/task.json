@@ -1,0 +1,9 @@
+{
+  "id": "webapp-bench",
+  "title": "Implement the todo web app",
+  "instructions": "Implement make_app in app.py so that every test in test_app.py passes. Follow the module docstring exactly: routes, status codes, headers and HTML structure. Use only the Python standard library (wsgiref, json, html, urllib.parse and so on). Do not edit test_app.py.",
+  "paths": ["app.py"],
+  "tests": [["python3", "-B", "-m", "unittest", "-q", "test_app"]],
+  "acceptance_why": "A browser form and a JSON client must both work, invalid input must never create todos, titles must be HTML-escaped, and every route must answer with the documented status and headers.",
+  "risk": "manual"
+}
