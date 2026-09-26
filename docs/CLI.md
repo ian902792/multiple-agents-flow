@@ -32,6 +32,7 @@ python3 "$FLOW" --repo "$TARGET" --main codex mode
 | `status [RUN_ID]`、`progress [--json\|--watch]` | 查 run 的證據或只讀進度摘要；有用量時列出每次 agent 呼叫的快取命中率（`cache hit`）。 |
 | `night --plan PLAN_ID [--approve]` | 所有問題都決定後，本機試跑每個驗收指令（不呼叫模型），再依序執行計畫中的鏈並印出報告。 |
 | `night 任務.json … [+ 任務.json …] [--approve]` | 把依序列出的任務串成鏈（`+` 分開不同的鏈）、依序執行到全部完成或卡住，最後印出中文報告。`--approve` 代表你已看過任務檔並核准需要核准的範圍。 |
+| `retry RUN_ID [--note 說明]` | 帶著上次失敗原因（與你的說明）重排同一件小任務；等它的下游自動改接到新任務，舊任務保留為紀錄。 |
 | `report [--hours N] [--json]` | 無人看管批次的中文總結：需要你處理的、仍在等待的、已完成的，依賴鏈進度，以及可直接整合的 commit 範圍。見[一晚跑一批任務](OVERNIGHT.md)。 |
 | `handoff RUN_ID` | 完成任務的精確 SHA、測試與可選審查摘要，以及各次 agent 呼叫的快取命中率。 |
 | `resume RUN_ID` | 診斷中斷後明確恢復；回傳更新後的 run。 |

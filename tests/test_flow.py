@@ -744,6 +744,51 @@ class FlowTests(unittest.TestCase):
         self.assertIn("無法執行", errors.getvalue())
         self.assertEqual(core.list_runs(self.repo), [])
 
+    def test_retry_carries_the_failure_and_moves_dependents(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        a = core.submit(self.repo, self.night_task("a"), kind="delegate")
+        b = core.submit(self.repo, self.night_task("b", ["a"]), kind="delegate", depends_on=a["id"])
+        stuck_once = self.night_agent(stuck={"a"})
+        working = self.night_agent()
+        agent = lambda role, prompt, cwd, log, timeout: (working if "Previous attempt" in prompt else stuck_once)(
+            role, prompt, cwd, log, timeout)
+        with patch.object(core.agents, "run_agent", side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
+            core.work(self.repo, poll=0.1, run_id=[a["id"], b["id"]], delegate_concurrency=1)
+        self.assertEqual(core.load(self.repo, b["id"])["stage"], "dependency")
+        retried = core.retry(self.repo, a["id"], note="keep the file plain text")
+        self.assertIn(f"Previous attempt {a['id']} stopped", retried["task"]["instructions"])
+        self.assertIn("Note from the main chat: keep the file plain text", retried["task"]["instructions"])
+        self.assertEqual(core.load(self.repo, a["id"])["superseded_by"], retried["id"])
+        b = core.load(self.repo, b["id"])
+        self.assertEqual((b["status"], b["depends_on"]), ("waiting_dependency", retried["id"]))
+        core.check_approval(b)
+        with self.assertRaisesRegex(core.FlowError, "not retried yet"):
+            core.retry(self.repo, a["id"])
+        with patch.object(core.agents, "run_agent", side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
+            core.work(self.repo, poll=0.1, run_id=[retried["id"], b["id"]], delegate_concurrency=1)
+        retried, b = core.load(self.repo, retried["id"]), core.load(self.repo, b["id"])
+        self.assertEqual((retried["status"], b["status"]), ("verified", "verified"))
+        self.assertEqual(b["source_sha"], retried["tested_sha"])
+        shown = [item["run"] for item in progress.report(self.repo)["runs"]]
+        self.assertNotIn(a["id"], shown)
+        self.assertEqual(progress.report(self.repo)["chains"], [[retried["id"], b["id"]]])
+
+    def test_plan_tasks_carry_interfaces_and_codex_coders_test_first(self):
+        tasks = plans.chains_for(dict(self.sample_plan(), decisions=[]))
+        self.assertIn("Interface contracts:\n- Order: id:int", tasks[0][0]["instructions"])
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        core.confirm_billing(self.repo, core.execution_config(self.repo, "quick-codex")[1])
+        run = core.submit(self.repo, self.task, kind="delegate", mode="quick-codex")
+        prompts = []
+        def agent(role, prompt, cwd, log, timeout):
+            prompts.append(prompt)
+            return self.fake_agent(role, prompt, cwd, log, timeout)
+        with patch.object(core.agents, "run_agent", side_effect=agent):
+            core.execute(self.repo, run)
+        self.assertIn("run the task's test commands inside your sandbox", prompts[0])
+
     def test_chained_task_approval_waits_without_a_worktree(self):
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")

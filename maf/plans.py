@@ -23,8 +23,10 @@ SCHEMA = (
     '"chains": [{"name": str, "tasks": [{"id", "title", "instructions", "paths", "tests", "acceptance_why", "risk"}]}], '
     '"risks": [str]}. '
     "main_agent is the judgment-heavy core the main chat builds and commits first (shared models, interface "
-    "skeletons); chains are small, clearly testable tasks for the lightweight coder, run in order, each starting from "
-    "the previous task's tested commit. decisions are open questions only a person can settle; list them instead of "
+    "skeletons); chains are clearly testable tasks for the lightweight coder, run in order, each starting from "
+    "the previous task's tested commit. Prefer a few coarse tasks, each a meaningful module with its own tests, "
+    "over one task per function: every task costs the main chat a review and an integration. If the main chat can "
+    "finish the whole goal in one short pass, say so in risks and keep chains minimal. decisions are open questions only a person can settle; list them instead of "
     "guessing. Task ids: lowercase letters, digits and hyphens, unique. tests: nonempty argv arrays that fail before "
     "the task and pass after it. risk: manual, docs, style or tests (default manual). Write text in the user's language."
 )
@@ -149,14 +151,17 @@ def decide(repo, plan_id, number, answer):
 
 
 def chains_for(plan):
-    """Task chains with each settled decision appended to the instructions of the tasks it affects."""
+    """Task chains carrying the plan's interface contracts and each settled decision in their instructions,
+    so a retry or a coder never loses the plan's context."""
+    contracts = "\n".join(f"- {i['name']}: {i['spec']}" for i in plan["interfaces"])
     chains = []
     for chain in plan["chains"]:
         tasks = []
         for task in chain["tasks"]:
             task = dict(task)
-            notes = [f"Decided: {d['question']} -> {d['answer']}" for d in plan["decisions"]
-                     if not d["blocks"] or task["id"] in d["blocks"]]
+            notes = ([f"Interface contracts:\n{contracts}"[:4000]] if contracts else []) + [
+                f"Decided: {d['question']} -> {d['answer']}" for d in plan["decisions"]
+                if not d["blocks"] or task["id"] in d["blocks"]]
             if notes:
                 task["instructions"] = task["instructions"] + "\n" + "\n".join(notes)
             tasks.append(core.validate_task(task))

@@ -7,6 +7,16 @@ Independent Pi, Antigravity or Codex delegates can occupy up to three execution 
 The economy preset uses Astra for optional planning and Pi/DeepSeek for coding, with one repair. The opus-sol preset uses Claude Opus 5.5 coding and a configured Codex Sol reviewer. Independent review is disabled until explicitly enabled in the selected flow.
 The main chat is the developer. Only the manually invoked `/maf-plan` (Claude) or `$maf-plan` (Codex) skill calls the read-only planner, and `plan` refuses a planner whose runtime equals `--main` (Claude main: Codex planner; `codex-pi`: Claude Opus 5.5 planner).
 
+## Retry
+
+`retry RUN_ID [--note]` accepts a delegate that is `needs_human` or `waiting_quota` and not yet superseded. It submits
+the same frozen task (same mode, same `depends_on`, same `plan_id`) with the previous feedback, up to two failing test
+tails and the note appended to the instructions, marks the old run `superseded_by`, and re-points dependents that wait
+on the old run (or failed at stage `dependency` because of it) to the new run, recomputing their approval scope hash:
+their approved task is unchanged, only the identical delegate they start from is replaced. `report` hides superseded
+runs. Plan tasks carry the plan's interface contracts in their instructions. A Codex coder is asked to run the task's
+tests inside its sandbox before finishing; the supervisor still reruns them.
+
 ## Versioning
 
 `maf/__init__.py` holds the only `__version__` (semantic versioning). `flow.py --version` and `doctor` print it with the
