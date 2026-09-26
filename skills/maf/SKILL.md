@@ -53,7 +53,7 @@ Modes: `economy` = Pi/DeepSeek Flash coding;
 `configured` = project `.maf.json` roles when present, built-in economy otherwise.
 `quick`, `planned`, `quick-antigravity`, `codex-pi`, and user-created names are user-wide role
 profiles; use `flows` to inspect them. `quick-antigravity` uses the signed-in
-`agy` account with Gemini 3.8 Flash High for narrow coding tasks. Profiles select future
+`agy` account with Gemini 3.8 Flash Low (each level is its own model ID) for narrow coding tasks. Profiles select future
 MAF agents, not the current main session. `codex-pi` records Codex GPT-6 Sol as
 main, Pi for small tasks, and optional Claude Opus 5.5 review. Tests run as
 approved commands, without a tester model. Change the current session's model

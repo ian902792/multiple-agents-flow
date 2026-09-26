@@ -19,7 +19,7 @@ def templates():
     planned["reviewer"]["effort"] = "high"
     antigravity = deepcopy(roles)
     antigravity["coder"] = {"runtime": "antigravity", "provider": "google-account",
-                             "model": "gemini-3.8-flash-high", "access": "edit", "effort": "high"}
+                             "model": "gemini-3.8-flash-low", "access": "edit", "effort": "low"}
     codex = deepcopy(roles)
     codex["planner"] = {"runtime": "claude", "provider": "claude-subscription",
                         "model": "claude-opus-5-5", "access": "read", "effort": "high"}

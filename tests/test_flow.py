@@ -272,7 +272,7 @@ class FlowTests(unittest.TestCase):
             flows.set_default("quick-antigravity")
             mode, config = core.execution_config(other)
             self.assertEqual((mode, config["roles"]["coder"]["model"]),
-                             ("quick-antigravity", "gemini-3.8-flash-high"))
+                             ("quick-antigravity", "gemini-3.8-flash-low"))
             with self.assertRaises(core.FlowError):
                 core.billing_check(other, config)
             core.confirm_billing(other, config)

@@ -44,6 +44,6 @@ DeepSeek V4.1 Flash，每題每個強度 2 次，16 次最後全部通過：
 | `medium` | 2/2 | 2/2 | 127 | 108 | 41,197 | 38,235 |
 | `high` | 2/2 | 2/2 | 151 | 166 | 52,990 | 50,069 |
 
-`low` 完全不產生思考 token，速度約是 `high` 的 4 倍、輸出少了 90% 以上，唯一一次未一次通過也在一輪自動修復後通過。`medium` 與 `high` 都一次通過，但 `medium` 更快、用量更少。和 Pi `low`（duration 28 秒、webapp 49 秒，4/4 一次通過）相比，Antigravity `low` 速度相當，一次通過率略低。
+`low` 完全不產生思考 token，速度約是 `high` 的 4 倍、輸出少了 90% 以上，唯一一次未一次通過也在一輪自動修復後通過。`medium` 與 `high` 都一次通過，但 `medium` 更快、用量更少。依此結果，`quick-antigravity` 的預設改為 `gemini-3.8-flash-low`（`low`）。和 Pi `low`（duration 28 秒、webapp 49 秒，4/4 一次通過）相比，Antigravity `low` 速度相當，一次通過率略低。
 
 樣本很少，不同任務的結果也會不同，建議用自己的工作再跑一次。
