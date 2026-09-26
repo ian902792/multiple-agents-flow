@@ -40,7 +40,7 @@ python3 flow.py --repo /path/to/project --main codex doctor</pre><p><code>doctor
   </div></section>
   <section aria-labelledby="flows"><h2 id="flows">不同 flow 怎麼用？</h2><div class="table-wrap"><table><thead><tr><th>Flow</th><th>適合</th><th>你可以對主 Agent 說</th></tr></thead><tbody>
     <tr><td><code>quick</code></td><td>日常開發；小任務可交 Pi。</td><td>「maf 改用 quick，請完成這項修改。」</td></tr>
-    <tr><td><code>quick-antigravity</code></td><td>日常開發；小任務可交 Gemini 3.8 Flash High。</td><td>「maf 改用 quick-antigravity；獨立的小工作可交給 Gemini。」</td></tr>
+    <tr><td><code>quick-antigravity</code></td><td>日常開發；小任務可交 Gemini 3.8 Flash Low。</td><td>「maf 改用 quick-antigravity；獨立的小工作可交給 Gemini。」</td></tr>
     <tr><td><code>planned</code></td><td>較大任務；你決定是否手動請 Codex 規畫。</td><td>「maf 改用 planned。」需要 Codex 規畫時再由你輸入 <code>/maf-plan 需求</code>。</td></tr>
     <tr><td><code>codex-pi</code></td><td>Codex 主導，Pi 執行明確小任務；Claude Opus 5.5 審查可選、預設關閉。</td><td>在 Codex 對話說「maf 改用 codex-pi，請完成這項修改。」</td></tr>
     <tr><td>自訂名稱</td><td>把常用的角色／模型組合儲存於設定頁。</td><td>「maf 改用我的 flow。」或「maf 改回全域預設。」</td></tr>

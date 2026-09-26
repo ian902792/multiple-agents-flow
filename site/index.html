@@ -553,7 +553,7 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
           <p>日常小改動。Claude 的原始預設。</p>
           <div class="say"><span class="kw">maf</span>改用 quick。<button class="copy" type="button">複製</button></div></div>
         <div class="card flow"><h3>quick-antigravity</h3>
-          <div class="chain"><span class="av main">主</span><i>→</i><span class="av agy">AG</span><span>Claude Opus 5.5 → Gemini 3.8 Flash High</span></div>
+          <div class="chain"><span class="av main">主</span><i>→</i><span class="av agy">AG</span><span>Claude Opus 5.5 → Gemini 3.8 Flash Low</span></div>
           <p>小任務改用 Google 帳號的 Antigravity 額度。</p>
           <div class="say"><span class="kw">maf</span>改用 quick-antigravity。<button class="copy" type="button">複製</button></div></div>
         <div class="card flow"><h3>planned</h3>
@@ -656,7 +656,7 @@ const S={
   desc:"<b>flow：quick-antigravity</b>。三件互不依賴、檔案不重疊的文件工作，交給 Antigravity 同時跑（最多 3 件）。",
   ev:[
   {t:"you",x:"maf 改用 quick-antigravity，同時處理：1. 補 docs/install.md 安裝範例；2. 補 docs/faq.md；3. 補 docs/troubleshooting.md，各自驗收。",s:0,st:"—"},
-  {t:"ai",x:"三件互不依賴、檔案不重疊，我各寫一份任務並標記 independent，交給 Antigravity 的 Gemini 3.8 Flash High 並行處理。",code:'{"id": "install-docs", "paths": ["docs/install.md"],\n "tests": [["python3", "-c", "…is_file()"]],\n "risk": "docs", "independent": true}\n（faq、troubleshooting 同樣格式）',s:1},
+  {t:"ai",x:"三件互不依賴、檔案不重疊，我各寫一份任務並標記 independent，交給 Antigravity 的 Gemini 3.8 Flash Low 並行處理。",code:'{"id": "install-docs", "paths": ["docs/install.md"],\n "tests": [["python3", "-c", "…is_file()"]],\n "risk": "docs", "independent": true}\n（faq、troubleshooting 同樣格式）',s:1},
   {t:"cmd",x:P+"delegate /private/tmp/install.json"},
   {t:"out",x:'{ "id": "install-docs-5c1e0a93d4", "status": "queued", … }'},
   {t:"cmd",x:P+"delegate /private/tmp/faq.json"},
