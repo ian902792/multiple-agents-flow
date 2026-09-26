@@ -59,7 +59,12 @@ MAF 預設只做到本機驗證；push、PR、合併要你說一次，一次就�
 
 ## 一晚跑一批任務
 
-睡前排好一串任務，有先後順序的用 `--depends-on` 串成鏈，讓 MAF 一件接一件做完；起床執行 `report` 看哪些要你處理、哪些可以直接整合，最後自己做實際使用測試。先跑 `python3 examples/overnight/demo.py` 看模擬（幾秒、不花額度），完整做法見[一晚跑一批任務](docs/OVERNIGHT.md)。
+```sh
+python3 flow.py --repo 專案 night 資料模型.json 訂單API.json 訂單頁.json + 文件.json --approve   # 睡前
+python3 flow.py --repo 專案 report                                                              # 起床
+```
+
+依序列出的任務會一件接一件做，後一件從前一件測試通過的 commit 接著做；`+` 分開不同的鏈。起床看中文報告：哪些要你處理、哪些可以直接整合。先跑 `python3 examples/overnight/demo.py` 看模擬（幾秒、不花額度），詳見[一晚跑一批任務](docs/OVERNIGHT.md)。
 
 ## 內建 flow
 
@@ -84,7 +89,7 @@ MAF 預設只做到本機驗證；push、PR、合併要你說一次，一次就�
 
 ## 延伸閱讀
 
-- [一晚跑一批任務](docs/OVERNIGHT.md)：依賴鏈、睡前檢查清單、早上的 `report`。
+- [一晚跑一批任務](docs/OVERNIGHT.md)：`night` 與 `report` 兩步驟、睡前檢查清單。
 - [讓主對話自動使用 MAF](docs/AGENT-INSTRUCTIONS.md)：六行提示詞，含自己的 repo 自動合併的選用設定。
 - [指令參考](docs/CLI.md)：CLI、任務 JSON、核准與中斷恢復、Herdr 觀看模式。
 - [Pi 推理強度基準測試](bench/effort/README.md)：用固定題目自己比較 `off`～`max`。

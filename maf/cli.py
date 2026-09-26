@@ -72,6 +72,11 @@ def parser():
     p.add_argument("--planner-pane", metavar="PANE_ID", help="Inside Herdr only: refresh this live pane's metadata title each poll")
     p.add_argument("--sync", action="store_true", help="First project verified runs into todo.md under the writer lock")
     p.add_argument("--json", action="store_true", help="One compact snapshot, including blockers and per-attempt usage; no transcripts")
+    p = commands.add_parser("night", help="Queue task chains and work through them one at a time, then print the report")
+    p.add_argument("tasks", nargs="+", help="Task files in order; each file depends on the previous one. Use + to start a new chain.")
+    p.add_argument("--approve", action="store_true", help="You have read these task files: approve every scope that needs approval")
+    p.add_argument("--mode", help="Use this mode or named flow for these tasks only")
+    p.add_argument("--poll", type=int, default=30)
     p = commands.add_parser("report", help="Summarize recent runs for unattended batches: what needs you, chains, what to integrate")
     p.add_argument("--hours", type=float, default=24, help="Include runs created in the last N hours (default 24)")
     p.add_argument("--json", action="store_true")
@@ -194,6 +199,24 @@ def main(argv=None):
                 for run in core.list_runs(repo)]
         elif args.action == "handoff":
             result = core.handoff(repo, core.load(repo, args.run_id))
+        elif args.action == "night":
+            chains = [[]]
+            for item in args.tasks:
+                if item == "+":
+                    chains.append([])
+                else:
+                    chains[-1].append(core.read_json(Path(item)))
+            if not all(chains):
+                raise core.FlowError("Each chain needs at least one task file; do not start or end with +.")
+            with core.exclusive(repo):
+                runs = core.queue_chains(repo, chains, args.mode, args.main, args.approve)
+            for run in runs:
+                after = f"  （接在 {run['depends_on']} 之後）" if run.get("depends_on") else ""
+                print(f"排入 {run['id']}  {progress.status_zh(run['status'])}{after}", flush=True)
+            started = time.time()
+            core.run_until_settled(repo, [run["id"] for run in runs], args.poll)
+            print(progress.render_report(progress.report(repo, (time.time() - started) / 3600 + 0.1)))
+            return
         elif args.action == "report":
             data = progress.report(repo, args.hours)
             print(json.dumps(data, ensure_ascii=False, indent=2) if args.json else progress.render_report(data))
