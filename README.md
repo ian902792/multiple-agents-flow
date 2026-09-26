@@ -59,12 +59,13 @@ MAF 預設只做到本機驗證；push、PR、合併要你說一次，一次就�
 
 ## 一晚跑一批任務
 
-```sh
-python3 flow.py --repo 專案 night 資料模型.json 訂單API.json 訂單頁.json + 文件.json --approve   # 睡前
-python3 flow.py --repo 專案 report                                                              # 起床
-```
+你只要說三句話：
 
-依序列出的任務會一件接一件做，後一件從前一件測試通過的 commit 接著做；`+` 分開不同的鏈。起床看中文報告：哪些要你處理、哪些可以直接整合。先跑 `python3 examples/overnight/demo.py` 看模擬（幾秒、不花額度），詳見[一晚跑一批任務](docs/OVERNIGHT.md)。
+1. `/maf-plan 訂單功能：資料模型、API、頁面、文件，今晚做完`：另一家的強模型（Claude 主對話時是 Astra）只讀規畫完整計畫。
+2. 回答主 Agent 問你的問題，說「確認，開始吧」：主對話先做核心並 commit，MAF 試跑驗收測試（不花 token），小任務 Agent 一件接一件做。
+3. 起床說「maf 報告」：看中文報告，整合完成的部分，做你的實際使用測試。
+
+只要還有問題沒決定，整份計畫就不會執行。先跑 `python3 examples/overnight/demo.py` 看模擬（幾秒、不花額度），詳見[一晚跑一批任務](docs/OVERNIGHT.md)。
 
 ## 內建 flow
 
@@ -89,7 +90,7 @@ python3 flow.py --repo 專案 report                                            
 
 ## 延伸閱讀
 
-- [一晚跑一批任務](docs/OVERNIGHT.md)：`night` 與 `report` 兩步驟、睡前檢查清單。
+- [一晚跑一批任務](docs/OVERNIGHT.md)：規畫、決定、夜間執行、早上報告。
 - [讓主對話自動使用 MAF](docs/AGENT-INSTRUCTIONS.md)：六行提示詞，含自己的 repo 自動合併的選用設定。
 - [指令參考](docs/CLI.md)：CLI、任務 JSON、核准與中斷恢復、Herdr 觀看模式。
 - [Pi 推理強度基準測試](bench/effort/README.md)：用固定題目自己比較 `off`～`max`。

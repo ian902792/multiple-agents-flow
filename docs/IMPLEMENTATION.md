@@ -135,7 +135,13 @@ Authentication is checked once by the adapter, not again by the supervisor. An i
 requires explicit recovery acknowledgement; never blindly resend. Quota waits remain pinned
 to the same role; default requires user-supplied reset time before automatic retry.
 Bounded repair rounds, optional separate reviewer, exact tested SHA, clean tree required after completion.
-Planner outputs a plan for human inspection; its output cannot silently authorize task execution.
+Planner outputs a plan for human inspection; its output cannot silently authorize task execution. `plan` asks for one JSON object
+(version, goal, interfaces, main_agent, decisions, chains, risks); `maf/plans.py` validates every task with the task
+schema, rejects duplicate ids and unknown decision blocks, and stores `plans/<plan-id>/plan.json` plus a Chinese
+`plan.md` in private state. An invalid reply stores nothing runnable. `decide` records answers; `night --plan` refuses
+while any answer is null, then preflights each distinct acceptance argv once at HEAD in a throwaway detached worktree
+(clean env, test timeout, no model): a pass is a warning, a command that cannot start or times out stops the plan.
+Settled decisions are appended to the instructions of the tasks they block before `queue_chains`.
 
 ## Progress and checklist
 

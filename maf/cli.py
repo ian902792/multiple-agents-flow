@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 
-from . import agents, core, flows, github, progress, skills
+from . import agents, core, flows, github, plans, progress, skills
 
 
 def parser():
@@ -72,8 +72,13 @@ def parser():
     p.add_argument("--planner-pane", metavar="PANE_ID", help="Inside Herdr only: refresh this live pane's metadata title each poll")
     p.add_argument("--sync", action="store_true", help="First project verified runs into todo.md under the writer lock")
     p.add_argument("--json", action="store_true", help="One compact snapshot, including blockers and per-attempt usage; no transcripts")
+    p = commands.add_parser("decide", help="Record your answer to one open decision in a saved plan")
+    p.add_argument("plan_id")
+    p.add_argument("number", type=int)
+    p.add_argument("answer")
     p = commands.add_parser("night", help="Queue task chains and work through them one at a time, then print the report")
-    p.add_argument("tasks", nargs="+", help="Task files in order; each file depends on the previous one. Use + to start a new chain.")
+    p.add_argument("tasks", nargs="*", help="Task files in order; each file depends on the previous one. Use + to start a new chain.")
+    p.add_argument("--plan", metavar="PLAN_ID", help="Run a saved plan's chains once every decision is answered")
     p.add_argument("--approve", action="store_true", help="You have read these task files: approve every scope that needs approval")
     p.add_argument("--mode", help="Use this mode or named flow for these tasks only")
     p.add_argument("--poll", type=int, default=30)
@@ -121,13 +126,13 @@ def plan(repo, config, goal_file, main_runtime="claude"):
     goal = goal_file.read_text()
     if not goal.strip() or len(goal) > 50000:
         raise core.FlowError("Goal must be nonempty and at most 50,000 characters.")
-    directory = core.root_for(repo) / "plans" / str(time.time_ns())
+    plan_id = plans.new_id()
+    directory = plans.directory(repo, plan_id)
     directory.mkdir(parents=True, mode=0o700)
     prompt = ("Read-only planning. Inspect only relevant files. Do not edit files or run commands that mutate state. "
-              "Return a concise plan with dependencies, interface contracts, scope, risks and runnable acceptance commands. "
-              "Suggest small independent task JSON objects with exactly id,title,instructions,paths,tests,risk. "
-              "tests must be nonempty argv arrays. risk defaults manual. No task is authorized by your output; a human will inspect it.\n"
-              + goal)
+              "Plan the whole goal: dependency order, interface contracts, scope, risks and runnable acceptance commands. "
+              "No task is authorized by your output; a person answers the decisions and approves the plan. "
+              + plans.SCHEMA + "\nGoal:\n" + goal)
     live_log = directory / "planner.live"
     show_pane = flows.settings()["herdr_enabled"] and os.environ.get("HERDR_ENV") == "1"
     with progress.agent_pane(repo, "MAF planner", repo, live_log, show_pane) as pane:
@@ -136,8 +141,13 @@ def plan(repo, config, goal_file, main_runtime="claude"):
     core.atomic(directory / "result.json", result)
     if result["status"] != "ok":
         raise core.FlowError(f"Planner {result['status']}: {result.get('detail', '')}. Evidence: {directory}")
-    print(result["text"])
-    print(f"\nSaved: {directory / 'result.json'}\nReview the plan, then explicitly submit approved tasks.")
+    try:
+        structured = plans.parse(result["text"])
+    except core.FlowError as exc:
+        print(result["text"])
+        raise core.FlowError(f"{exc} The raw reply is saved in {directory / 'result.json'}; no plan was stored.") from exc
+    plans.save(repo, plan_id, structured)
+    print(plans.render(plan_id, structured))
 
 
 def mode_info(repo, main_runtime="claude"):
@@ -199,15 +209,34 @@ def main(argv=None):
                 for run in core.list_runs(repo)]
         elif args.action == "handoff":
             result = core.handoff(repo, core.load(repo, args.run_id))
+        elif args.action == "decide":
+            print(plans.render(args.plan_id, plans.decide(repo, args.plan_id, args.number, args.answer)))
+            return
         elif args.action == "night":
-            chains = [[]]
-            for item in args.tasks:
-                if item == "+":
-                    chains.append([])
-                else:
-                    chains[-1].append(core.read_json(Path(item)))
-            if not all(chains):
-                raise core.FlowError("Each chain needs at least one task file; do not start or end with +.")
+            if bool(args.tasks) == bool(args.plan):
+                raise core.FlowError("Give either task files or --plan PLAN_ID.")
+            if args.plan:
+                saved = plans.load(repo, args.plan)
+                waiting = plans.open_decisions(saved)
+                if waiting:
+                    raise core.FlowError(f"還有 {len(waiting)} 個問題未決定，整份計畫不會執行：\n"
+                                         + "\n".join(f"  {n}. {d['question']}" for n, d in waiting)
+                                         + f"\n用 decide {args.plan} 題號 答案 記錄決定。")
+                _, config = core.execution_config(repo, args.mode, args.main)
+                checked = plans.preflight(repo, saved, config["test_timeout"])
+                print(plans.render_preflight(checked), flush=True)
+                if any(r["outcome"] in ("cannot_run", "timeout") for r in checked):
+                    raise core.FlowError("試跑發現無法執行的驗收指令；請修正計畫後再執行 night。")
+                chains = plans.chains_for(saved)
+            else:
+                chains = [[]]
+                for item in args.tasks:
+                    if item == "+":
+                        chains.append([])
+                    else:
+                        chains[-1].append(core.read_json(Path(item)))
+                if not all(chains):
+                    raise core.FlowError("Each chain needs at least one task file; do not start or end with +.")
             with core.exclusive(repo):
                 runs = core.queue_chains(repo, chains, args.mode, args.main, args.approve)
             for run in runs:

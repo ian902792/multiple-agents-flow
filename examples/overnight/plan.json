@@ -1,0 +1,142 @@
+{
+  "version": 1,
+  "goal": "訂單功能：資料模型、API、頁面、文件，以及退款規則與退款頁",
+  "interfaces": [
+    {
+      "name": "Order",
+      "spec": "id:int、items:[{sku:str, qty:int}]、status: draft|paid|refunded"
+    },
+    {
+      "name": "GET /api/orders/{id}",
+      "spec": "200 回傳 Order；不存在回 404 {error}"
+    }
+  ],
+  "main_agent": [
+    {
+      "title": "訂單資料模型骨架",
+      "why": "API、頁面、退款都依賴這個模型，需要整體判斷",
+      "paths": [
+        "app/models.py"
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "question": "退款超過 30 天，以新規則還是現有政策為準？",
+      "options": [
+        "新規則",
+        "現有政策"
+      ],
+      "blocks": [
+        "refund-rules",
+        "refund-page"
+      ],
+      "answer": null
+    }
+  ],
+  "chains": [
+    {
+      "name": "訂單",
+      "tasks": [
+        {
+          "id": "orders-api",
+          "title": "實作訂單 API",
+          "instructions": "依介面約定建立 app/api.py。",
+          "paths": [
+            "app/api.py"
+          ],
+          "tests": [
+            [
+              "python3",
+              "-c",
+              "from pathlib import Path; assert Path('app/models.py').is_file(); assert Path('app/api.py').is_file()"
+            ]
+          ],
+          "acceptance_why": "各種訂單狀態都回傳正確的狀態碼與欄位",
+          "risk": "manual"
+        },
+        {
+          "id": "orders-page",
+          "title": "訂單頁面",
+          "instructions": "依介面約定建立 app/page.html。",
+          "paths": [
+            "app/page.html"
+          ],
+          "tests": [
+            [
+              "python3",
+              "-c",
+              "from pathlib import Path; assert Path('app/api.py').is_file(); assert Path('app/page.html').is_file()"
+            ]
+          ],
+          "acceptance_why": "頁面只透過 API 取得訂單",
+          "risk": "manual"
+        }
+      ]
+    },
+    {
+      "name": "文件",
+      "tasks": [
+        {
+          "id": "docs-update",
+          "title": "更新訂單文件",
+          "instructions": "依介面約定建立 docs/orders.md。",
+          "paths": [
+            "docs/orders.md"
+          ],
+          "tests": [
+            [
+              "python3",
+              "-c",
+              "from pathlib import Path; assert Path('docs/orders.md').is_file()"
+            ]
+          ],
+          "acceptance_why": "文件描述的欄位與介面約定一致",
+          "risk": "docs"
+        }
+      ]
+    },
+    {
+      "name": "退款",
+      "tasks": [
+        {
+          "id": "refund-rules",
+          "title": "退款規則",
+          "instructions": "依介面約定建立 app/refunds.py。",
+          "paths": [
+            "app/refunds.py"
+          ],
+          "tests": [
+            [
+              "python3",
+              "-c",
+              "from pathlib import Path; assert Path('app/models.py').is_file(); assert Path('app/refunds.py').is_file()"
+            ]
+          ],
+          "acceptance_why": "退款期限依已決定的政策計算",
+          "risk": "manual"
+        },
+        {
+          "id": "refund-page",
+          "title": "退款頁面",
+          "instructions": "依介面約定建立 app/refund_page.html。",
+          "paths": [
+            "app/refund_page.html"
+          ],
+          "tests": [
+            [
+              "python3",
+              "-c",
+              "from pathlib import Path; assert Path('app/refunds.py').is_file(); assert Path('app/refund_page.html').is_file()"
+            ]
+          ],
+          "acceptance_why": "頁面顯示的期限與規則一致",
+          "risk": "manual"
+        }
+      ]
+    }
+  ],
+  "risks": [
+    "訂單頁依賴 API 回傳格式；介面若改，下游要一起調整"
+  ]
+}
