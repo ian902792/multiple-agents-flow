@@ -44,7 +44,7 @@ python3 "$FLOW" --repo "$TARGET" --main codex mode
 
 ```sh
 python3 "$FLOW" install-skills
-python3 "$FLOW" settings default-flow quick-antigravity  # 或 quick，保留 Pi
+python3 "$FLOW" settings default-flow quick-antigravity  # 或 quick（Pi）、quick-codex（Codex GPT-6 Luna，none）
 python3 "$FLOW" settings default-flow codex-pi           # Codex 的預設，與 Claude 分開
 python3 "$FLOW" confirm-billing --no-overage              # 在供應商核對後，全域確認一次
 python3 "$FLOW" --main codex confirm-billing --no-overage
