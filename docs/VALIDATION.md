@@ -91,7 +91,7 @@
 
 ## Pi coder 推理強度基準測試
 
-2026-09-26 以 `bench/effort/run.py --levels off,low,medium,max --repeat 2` 實測 Pi 0.86.1 + DeepSeek V4.1 Flash（OpenCode Go 訂閱）當 coder：8 次 delegate 全部 `tested`，`low` 與 `max` 兩次皆一次通過，`off` 與 `medium` 各有一次在一輪修復後通過。第一輪嘗試因題目缺少 `.gitignore`，測試產生的 `__pycache__/` 被 MAF 視為測試留下的未追蹤檔而停在 `needs_human`；已改用 `python3 -B` 並補上 `.gitignore`。同日再以 `--task webapp`（WSGI 待辦事項網站，11 個測試）各跑 2 次：8 次全部 `tested`，`off`、`low`、`max` 皆一次通過，`medium` 有一次需一輪修復。依兩題結果，內建 Pi coder 預設由 `medium` 改為 `low`。完整數字見 README〈自己實測：Pi coder 的推理強度〉。
+2026-09-26 以 `bench/effort/run.py --levels off,low,medium,max --repeat 2` 實測 Pi 0.86.1 + DeepSeek V4.1 Flash（OpenCode Go 訂閱）當 coder：8 次 delegate 全部 `tested`，`low` 與 `max` 兩次皆一次通過，`off` 與 `medium` 各有一次在一輪修復後通過。第一輪嘗試因題目缺少 `.gitignore`，測試產生的 `__pycache__/` 被 MAF 視為測試留下的未追蹤檔而停在 `needs_human`；已改用 `python3 -B` 並補上 `.gitignore`。同日再以 `--task webapp`（WSGI 待辦事項網站，11 個測試）各跑 2 次：8 次全部 `tested`，`off`、`low`、`max` 皆一次通過，`medium` 有一次需一輪修復。依兩題結果，內建 Pi coder 預設由 `medium` 改為 `low`。完整數字見 [bench/effort/README.md](../bench/effort/README.md)。
 
 ## 本帳號的 GitHub 限制
 
