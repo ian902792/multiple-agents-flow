@@ -28,8 +28,8 @@ python3 "$FLOW" --repo "$TARGET" --main codex mode
 | `submit TASK.json` | 排入獨立 coder 的批次任務；回傳 run ID 與狀態。 |
 | `approve RUN_ID` | 放行一份已檢視的凍結任務範圍；回傳更新後的 run。 |
 | `work [--once] [--run-id ID ...] [--delegate-concurrency N]` | 執行佇列；多個獨立 Pi／Antigravity 任務預設最多同時 3 個，印出各自階段與結果。 |
-| `status [RUN_ID]`、`progress [--json\|--watch]` | 查 run 的證據或只讀進度摘要。 |
-| `handoff RUN_ID` | 完成任務的精確 SHA、測試與可選審查摘要。 |
+| `status [RUN_ID]`、`progress [--json\|--watch]` | 查 run 的證據或只讀進度摘要；有用量時列出每次 agent 呼叫的快取命中率（`cache hit`）。 |
+| `handoff RUN_ID` | 完成任務的精確 SHA、測試與可選審查摘要，以及各次 agent 呼叫的快取命中率。 |
 | `resume RUN_ID` | 診斷中斷後明確恢復；回傳更新後的 run。 |
 | `publish RUN_ID`、`merge RUN_ID` | 在已有授權下發布或核對 PR、合併結果。 |
 | `herdr` | 在 Herdr pane 內啟動背景 supervisor；回傳 workspace／pane ID。 |

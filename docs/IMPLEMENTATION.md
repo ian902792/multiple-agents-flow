@@ -141,7 +141,7 @@ TTY widths below 100 use multiple lines wrapped to terminal width, including 38 
 No input is sent and no agent
 lifecycle is touched; Herdr failures are warnings only.
 `progress --json` is a standalone read-only snapshot with activity, minute-level elapsed/limit, attention,
-next steps and per-attempt native usage; no prompt or transcript. It cannot be combined with sync/watch/pane.
+next steps and per-attempt native usage plus `cache_hit` (cached ÷ all prompt tokens, from each provider's own fields: Pi cacheRead/input/cacheWrite, Claude cache_read/input/cache_creation, Codex cached_input_tokens within input_tokens; null when any count is missing); no prompt or transcript. `handoff` carries the same per-attempt `cache_hit`. It cannot be combined with sync/watch/pane.
 Deadlines overdue by more than 15 seconds request inspection, not an inferred exit or permission to retry.
 Permission/auth stops, quota resets, exhausted repairs and publication recovery have distinct guidance.
 `herdr` validates the inherited HERDR_PANE_ID before creating its workspace and passes it to
