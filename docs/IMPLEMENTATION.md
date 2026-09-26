@@ -95,6 +95,14 @@ delegates; with repeated `--run-id`, it drains those IDs once each. `work` polls
 consuming other queued tasks. Interrupted stages are never implicitly replayed. `--delegate-concurrency N`
 sets the Pi/Antigravity delegate limit from 1 to 3 (default 3). The skill uses explicit IDs after delegation.
 Selection changes still use the repository writer lock.
+`delegate --depends-on RUN_ID` records `depends_on` (a delegate run) and leaves base/source unset and no worktree:
+status `awaiting_approval` or `waiting_dependency`. Its approval scope binds `depends_on` instead of base/source.
+Each worker pass advances waiting runs: once the dependency passes the evidence gate (`tested`/`verified`), the
+worktree is created from that tested SHA and base/source/owned head are set to it; a dependency at stage
+`replan`/`external_fix`/`dependency` or corrupt marks the run `needs_human` at stage `dependency`, which resume
+rejects. Queued, running, quota-waiting or resumable dependencies keep it waiting. `report [--hours N] [--json]`
+is a read-only summary grouped by attention, with dependency chains and `source..tested` integration ranges for
+fully completed delegate chains.
 `install-skills` registers one shared skill in the user's `~/.agents/skills/maf` and `~/.claude/skills/maf`,
 plus manual-only `maf-plan` in both `~/.agents/skills` and `~/.claude/skills`. Global commands, including default-flow billing confirmation, work outside a Git repository; `mode` remains per repository.
 Execution: awaiting_approval (when required) -> queued -> coding -> testing -> `tested` when review is off, or reviewing -> `verified` when review is on. Publishing requires the latter.

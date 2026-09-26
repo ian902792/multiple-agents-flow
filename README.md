@@ -57,6 +57,10 @@ python3 flow.py --main codex confirm-billing --no-overage   # Codex 預設
 
 MAF 預設只做到本機驗證；push、PR、合併要你說一次，一次就能涵蓋整批任務。
 
+## 一晚跑一批任務
+
+睡前排好一串任務，有先後順序的用 `--depends-on` 串成鏈，讓 MAF 一件接一件做完；起床執行 `report` 看哪些要你處理、哪些可以直接整合，最後自己做實際使用測試。先跑 `python3 examples/overnight/demo.py` 看模擬（幾秒、不花額度），完整做法見[一晚跑一批任務](docs/OVERNIGHT.md)。
+
 ## 內建 flow
 
 | Flow | 主對話 | 小任務交給 | 規畫（手動 maf-plan） |
@@ -80,6 +84,7 @@ MAF 預設只做到本機驗證；push、PR、合併要你說一次，一次就�
 
 ## 延伸閱讀
 
+- [一晚跑一批任務](docs/OVERNIGHT.md)：依賴鏈、睡前檢查清單、早上的 `report`。
 - [讓主對話自動使用 MAF](docs/AGENT-INSTRUCTIONS.md)：六行提示詞，含自己的 repo 自動合併的選用設定。
 - [指令參考](docs/CLI.md)：CLI、任務 JSON、核准與中斷恢復、Herdr 觀看模式。
 - [Pi 推理強度基準測試](bench/effort/README.md)：用固定題目自己比較 `off`～`max`。

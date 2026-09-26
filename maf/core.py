@@ -293,9 +293,10 @@ def sensitive_path(path, config):
 
 
 def approval_scope(run):
+    # A chained delegate starts from its dependency's future tested commit, so it binds to that run instead.
+    start = ("depends_on",) if run.get("depends_on") else ("base_sha", "source_sha")
     try:
-        return digest({key: run[key] for key in ("task", "config", "mode", "kind", "base_sha", "source_sha",
-                                                   "publish", "auto_merge")})
+        return digest({key: run[key] for key in ("task", "config", "mode", "kind", *start, "publish", "auto_merge")})
     except (KeyError, TypeError, ValueError) as exc:
         raise FlowError("Invalid approval scope; inspect the run and submit a new task.") from exc
 
@@ -318,6 +319,11 @@ def approve(repo, run_id):
         raise FlowError("Task scope, tests or execution policy changed; submit a new run for approval.")
     if digest(config_for(repo)) != run["config_hash"]:
         raise FlowError("Configuration changed since submission; submit a new run.")
+    if run.get("depends_on") and run.get("source_sha") is None:
+        run["approval"]["approved_at"] = time.time()
+        run["status"] = "waiting_dependency"
+        save(repo, run)
+        return run
     if (git(run["worktree"], "branch", "--show-current") != run["branch"]
             or git(run["worktree"], "rev-parse", "HEAD") != run["source_sha"]
             or git(run["worktree"], "status", "--porcelain")):
@@ -407,7 +413,7 @@ def list_runs(repo):
 
 
 def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch", base_ref=None,
-           require_approval=False, main_runtime="claude"):
+           require_approval=False, main_runtime="claude", depends_on=None):
     repo = Path(repo).resolve()
     config_hash = digest(config_for(repo))
     mode, config = execution_config(repo, mode, main_runtime)
@@ -428,6 +434,11 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch",
         raise FlowError("Delegate and verify are local handoffs; publishing requires an explicit separate task.")
     if kind == "delegate" and config["roles"]["coder"]["runtime"] not in ("pi", "antigravity"):
         raise FlowError("Delegate requires a Pi or Antigravity coder in the selected flow.")
+    if depends_on is not None:
+        if kind != "delegate":
+            raise FlowError("Only delegate tasks can depend on another run.")
+        if load(repo, depends_on).get("kind") != "delegate":
+            raise FlowError("A dependency must be a delegate run.")
     if kind != "delegate" and task.get("independent"):
         raise FlowError("Only lightweight delegate tasks can opt into parallel execution.")
     if kind == "verify" and review_enabled(config):
@@ -447,6 +458,8 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch",
         else:
             base = git(repo, "merge-base", source_head, config["base_branch"])
         check_scope({"worktree": str(repo), "base_sha": base, "task": task})
+    elif depends_on is not None:
+        base = source_head = None  # Set from the dependency's tested commit when it finishes.
     else:
         base = source_head
     run_id = task["id"] + "-" + uuid.uuid4().hex[:10]
@@ -462,6 +475,8 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch",
            "kind": kind, "config": config, "config_hash": config_hash, "mode": mode, "task": task,
            "status": "creating", "stage": "testing" if kind == "verify" else "coding", "repairs": 0, "created_at": time.time(),
            "publish": bool(publish), "auto_merge": bool(auto_merge), "feedback": "", "agents": []}
+    if depends_on is not None:
+        run["depends_on"] = depends_on
     reasons = []
     if require_approval:
         reasons.append("Explicit plan approval requested.")
@@ -476,6 +491,10 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch",
                        "scope_hash": approval_scope(run), "approved_at": None}
     if checklist:
         run["checklist"] = checklist
+    if depends_on is not None:
+        run["status"] = "awaiting_approval" if reasons else "waiting_dependency"
+        save(repo, run)
+        return run
     save(repo, run)
     try:
         git(repo, "worktree", "add", "-b", branch, str(worktree), source_head)
@@ -556,7 +575,7 @@ def handoff(repo, run):
             "branch": run["branch"], "paths": changed_paths(run),
             "tests": [{"argv": item["argv"], "exit_code": item["exit_code"]} for item in run["tests"]],
             "review": run.get("review") if review_enabled(run["config"]) else None,
-            "coder_notes": run.get("coder_notes"),
+            "coder_notes": run.get("coder_notes"), "depends_on": run.get("depends_on"),
             "cache_hit": [{"role": a["role"], "runtime": a["runtime"], "cache_hit": cache_hit(a.get("usage"))}
                           for a in run.get("agents", [])]}
 
@@ -807,6 +826,8 @@ def resume(repo, run_id, acknowledge=False, after=None):
         raise FlowError("Requirements or security risk need a new approved task; do not replay this run.")
     if run.get("stage") == "external_fix":
         raise FlowError("Fix the source branch, commit, and submit a new verify run for its new SHA.")
+    if run.get("stage") == "dependency":
+        raise FlowError("Its dependency cannot finish; resolve that run and submit a new chain.")
     if run["status"] not in ("waiting_quota", "needs_human", "running", "creating"):
         raise FlowError("Only quota/interrupted/needs-human runs can resume.")
     if not acknowledge:
@@ -842,6 +863,29 @@ def resume(repo, run_id, acknowledge=False, after=None):
     return run
 
 
+def advance_dependency(repo, run):
+    """Start a waiting chained delegate from its dependency's tested commit, or stop it when that can never happen.
+
+    A dependency that is still queued, running, waiting for quota or resumable keeps this run waiting.
+    """
+    from .progress import CAUGHT, eligible
+    try:
+        dependency = load(repo, run["depends_on"])
+        if dependency.get("stage") in ("replan", "external_fix", "dependency") or dependency.get("status") == "corrupt":
+            raise FlowError(f"Dependency {run['depends_on']} stopped at {dependency.get('status')}/{dependency.get('stage')}; "
+                            "resolve it and submit a new chain.")
+        if dependency.get("status") not in ("tested", "verified"):
+            return
+        head = eligible(repo, dependency)
+        git(repo, "worktree", "add", "-b", run["branch"], run["worktree"], head)
+    except CAUGHT as exc:
+        run.update(status="needs_human", stage="dependency", feedback=str(exc)[:10000])
+        save(repo, run)
+        return
+    run.update(base_sha=head, source_sha=head, owned_head=head, status="queued")
+    save(repo, run)
+
+
 def parallel_lightweight(run):
     """Only an explicitly independent, narrow lightweight handoff can share execution time."""
     return (run.get("kind") == "delegate" and run["task"].get("independent") is True
@@ -870,6 +914,8 @@ def work(repo, once=False, poll=30, run_id=None, agent_panes=False, delegate_con
                         candidates = [load(repo, item) for item in run_ids] if run_ids is not None else list_runs(repo)
                         ready = []
                         for run in candidates:
+                            if run["status"] == "waiting_dependency":
+                                advance_dependency(repo, run)
                             if (run["status"] == "waiting_quota" and run.get("not_before") is not None
                                     and run["not_before"] <= time.time()):
                                 run["status"] = "queued"

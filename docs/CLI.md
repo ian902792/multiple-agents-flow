@@ -23,12 +23,13 @@ python3 "$FLOW" --repo "$TARGET" --main codex mode
 | `doctor` | 檢查 CLI、登入與訂閱確認紀錄，不呼叫模型；有問題時非零結束。 |
 | `confirm-billing --no-overage` | 在任意目錄確認全域預設 flow 的模型路由；若加 `--repo` 則確認該專案目前 mode。 |
 | `plan --goal-file FILE [--mode NAME]` | 只讀規畫，印出建議與私有結果路徑；不排入任務。 |
-| `delegate TASK.json` | 把明確小任務排給所選 flow 的 Pi／Antigravity；回傳 run ID 與狀態。 |
+| `delegate TASK.json [--depends-on RUN_ID]` | 把明確小任務排給所選 flow 的 Pi／Antigravity；回傳 run ID 與狀態。加 `--depends-on` 時等該 run `tested` 後，從它測試通過的 commit 接著做。 |
 | `verify TASK.json` | 排入目前 commit 的測試；若 flow 啟用獨立審查才呼叫 reviewer。回傳 run ID 與來源 SHA。 |
 | `submit TASK.json` | 排入獨立 coder 的批次任務；回傳 run ID 與狀態。 |
 | `approve RUN_ID` | 放行一份已檢視的凍結任務範圍；回傳更新後的 run。 |
 | `work [--once] [--run-id ID ...] [--delegate-concurrency N]` | 執行佇列；多個獨立 Pi／Antigravity 任務預設最多同時 3 個，印出各自階段與結果。 |
 | `status [RUN_ID]`、`progress [--json\|--watch]` | 查 run 的證據或只讀進度摘要；有用量時列出每次 agent 呼叫的快取命中率（`cache hit`）。 |
+| `report [--hours N] [--json]` | 無人看管批次的總結：需要你處理的、仍在等待的、已完成的，依賴鏈進度，以及可直接整合的 commit 範圍。見[一晚跑一批任務](OVERNIGHT.md)。 |
 | `handoff RUN_ID` | 完成任務的精確 SHA、測試與可選審查摘要，以及各次 agent 呼叫的快取命中率。 |
 | `resume RUN_ID` | 診斷中斷後明確恢復；回傳更新後的 run。 |
 | `publish RUN_ID`、`merge RUN_ID` | 在已有授權下發布或核對 PR、合併結果。 |

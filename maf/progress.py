@@ -233,6 +233,8 @@ def diagnostics(run):
             result["next"] = f"Wait until confirmed reset {reset}; worker will retry."
         else:
             result.update(attention=True, next="Confirm quota reset and stopped process, then " + resume + " [--after TIME_WITH_ZONE].")
+    elif status == "waiting_dependency":
+        result["next"] = f"Waits for {clean(run.get('depends_on', '?'), 80)}; starts from its tested commit automatically."
     elif status == "awaiting_approval":
         result.update(attention=True, next=f"Inspect status {clean(run['id'], 80)} (task, paths, tests, roles); then approve {clean(run['id'], 80)} once.")
     elif status in ("needs_human", "creating"):
@@ -241,6 +243,8 @@ def diagnostics(run):
             result["next"] = "Requirements or security risk need a human decision; submit a new scoped task after resolving it."
         elif stage == "external_fix":
             result["next"] = "Fix the source branch, commit, and start a new verify run for the new SHA."
+        elif stage == "dependency":
+            result["next"] = "Its dependency cannot finish. Resolve that run first, then submit a new chain from there."
         elif stage in DONE:
             result["next"] = "Inspect feedback; reconcile with publish/merge. Do not replay agents."
         elif run.get("repairs", 0) > run["config"]["max_repairs"]:
@@ -326,6 +330,87 @@ def rows(repo):
             result.append(row_for(repo, {"id": str(run.get("id", "?")), "status": "corrupt", "feedback": str(exc)}))
     result.sort(key=lambda row: (row["task"], row["created"], row["run"]))
     return result
+
+
+REPORT_ORDER = ("needs_human", "corrupt", "awaiting_approval", "waiting_quota", "creating", "running", "queued",
+                "waiting_dependency", "tested", "verified", "publishing", "pr", "merging", "merged")
+
+
+def report(repo, hours=24):
+    """Read-only summary of recent runs for a batch left running unattended: what needs you, chains, what to integrate."""
+    since = time.time() - hours * 3600
+    runs = {run["id"]: run for run in core.list_runs(repo)
+            if run.get("status") == "corrupt" or float(run.get("created_at") or 0) >= since}
+    rows = {run_id: row_for(repo, run) for run_id, run in runs.items()}
+    items = []
+    for run_id, run in runs.items():
+        row = rows[run_id]
+        notes = str(run.get("coder_notes") or "")
+        unverified = next((line.strip() for line in reversed(notes.splitlines()) if "UNVERIFIED" in line), "")
+        hits = [a["cache_hit"] for a in row.get("agents", []) if a.get("cache_hit") is not None]
+        items.append({"run": row["run"], "task": row["task"], "status": row["status"], "stage": row["stage"],
+                      "depends_on": run.get("depends_on"), "complete": row["complete"] == "yes",
+                      "attention": row["attention"], "next": row["next"], "feedback": clean(run.get("feedback", ""), 300),
+                      "unverified": clean(unverified, 200),
+                      "agent_seconds": round(sum(a.get("duration_seconds") or 0 for a in row.get("agents", [])), 1),
+                      "cache_hit": round(sum(hits) / len(hits), 3) if hits else None})
+    rank = {status: index for index, status in enumerate(REPORT_ORDER)}
+    items.sort(key=lambda item: (rank.get(item["status"], len(rank)), item["task"]))
+    children = {}
+    for item in items:
+        if item["depends_on"] in runs:
+            children.setdefault(item["depends_on"], []).append(item["run"])
+    chains = []
+
+    def walk(run_id, path):
+        path = path + [run_id]
+        if run_id not in children:
+            chains.append(path)
+        for child in children.get(run_id, []):
+            walk(child, path)
+    for item in items:
+        if item["depends_on"] not in runs and item["run"] in children:
+            walk(item["run"], [])
+    by_id = {item["run"]: item for item in items}
+    integrate = []
+    for path in chains + [[item["run"]] for item in items
+                          if item["depends_on"] not in runs and item["run"] not in children]:
+        if all(by_id[run_id]["complete"] for run_id in path) and runs[path[0]].get("kind") == "delegate":
+            integrate.append({"runs": path, "range": f"{runs[path[0]]['source_sha']}..{runs[path[-1]]['tested_sha']}"})
+    return {"hours": hours, "runs": items, "chains": chains, "integrate": integrate,
+            "counts": counts_for([rows[item["run"]] for item in items])}
+
+
+def render_report(data):
+    items, by_id = data["runs"], {item["run"]: item for item in data["runs"]}
+    lines = [f"MAF report: {len(items)} run(s) in the last {data['hours']}h"
+             + ("; " + ", ".join(f"{n} {s}" for s, n in sorted(data["counts"].items())) if items else "")]
+    groups = [("Needs you", [i for i in items if i["attention"]]),
+              ("Waiting", [i for i in items if not i["attention"] and not i["complete"]]),
+              ("Done", [i for i in items if i["complete"] and not i["attention"]])]
+    for title, group in groups:
+        if not group:
+            continue
+        lines.append(f"\n{title} ({len(group)})")
+        for item in group:
+            extra = (f"  {item['agent_seconds']:.0f}s" if item["agent_seconds"] >= 1 else "") + (
+                f"  cache {item['cache_hit']:.0%}" if item["cache_hit"] is not None else "")
+            lines.append(f"  {item['run']}  {item['status']}{extra}")
+            if item["attention"] and item["feedback"]:
+                lines.append(f"    why: {item['feedback']}")
+            if item["next"]:
+                lines.append(f"    next: {item['next']}")
+            if item["complete"] and item["unverified"] and not item["unverified"].endswith("none"):
+                lines.append(f"    {item['unverified']}")
+    if data["chains"]:
+        lines.append("\nChains")
+        for path in data["chains"]:
+            lines.append("  " + " -> ".join(f"{run_id} ({by_id[run_id]['status']})" for run_id in path))
+    if data["integrate"]:
+        lines.append("\nReady to integrate (inspect the diff, then verify the integrated commit)")
+        for entry in data["integrate"]:
+            lines.append(f"  {' -> '.join(entry['runs'])}\n    git cherry-pick {entry['range']}")
+    return "\n".join(lines)
 
 
 def counts_for(rows):

@@ -47,6 +47,9 @@ def parser():
         p.add_argument("--require-approval", action="store_true", help="Hold execution for one plan/scope approval")
         if name == "verify":
             p.add_argument("--base", help="Exact ancestor ref to compare with HEAD; default is merge-base with base branch")
+        else:
+            p.add_argument("--depends-on", metavar="RUN_ID",
+                           help="Start from this delegate run's tested commit once it finishes (chains unattended work)")
     p = commands.add_parser("work", help="Process queued work; waits consume no model tokens")
     p.add_argument("--once", action="store_true")
     p.add_argument("--run-id", action="append", help="Only process these runs; repeat for independent delegates")
@@ -69,6 +72,9 @@ def parser():
     p.add_argument("--planner-pane", metavar="PANE_ID", help="Inside Herdr only: refresh this live pane's metadata title each poll")
     p.add_argument("--sync", action="store_true", help="First project verified runs into todo.md under the writer lock")
     p.add_argument("--json", action="store_true", help="One compact snapshot, including blockers and per-attempt usage; no transcripts")
+    p = commands.add_parser("report", help="Summarize recent runs for unattended batches: what needs you, chains, what to integrate")
+    p.add_argument("--hours", type=float, default=24, help="Include runs created in the last N hours (default 24)")
+    p.add_argument("--json", action="store_true")
     p = commands.add_parser("resume", help="Resume only after inspecting an interrupted/quota-blocked run")
     p.add_argument("run_id")
     p.add_argument("--acknowledge-stopped", action="store_true")
@@ -188,6 +194,10 @@ def main(argv=None):
                 for run in core.list_runs(repo)]
         elif args.action == "handoff":
             result = core.handoff(repo, core.load(repo, args.run_id))
+        elif args.action == "report":
+            data = progress.report(repo, args.hours)
+            print(json.dumps(data, ensure_ascii=False, indent=2) if args.json else progress.render_report(data))
+            return
         elif args.action == "live-view":
             progress.follow_live(repo, args.file, args.worktree)
             return
@@ -252,7 +262,7 @@ def main(argv=None):
                     elif args.action in ("delegate", "verify"):
                         result = core.submit(repo, core.read_json(args.task), mode=args.mode, kind=args.action,
                                              base_ref=getattr(args, "base", None), require_approval=args.require_approval,
-                                             main_runtime=args.main)
+                                             main_runtime=args.main, depends_on=getattr(args, "depends_on", None))
                     elif args.action == "approve":
                         result = core.approve(repo, args.run_id)
                     elif args.action == "resume":
