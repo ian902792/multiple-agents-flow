@@ -89,11 +89,17 @@
 - Hermes coder 的真實模型呼叫尚未測試；只完成 CLI／登入探測與 parser／argv 單元測試。
 - 任意專案的 UI／E2E、睡眠／重開機實機恢復、多人跨程序同時操作、真實 Pi／Herdr 併發。
 
+## Pi coder 推理強度基準測試
+
+2026-09-26 以 `bench/effort/run.py --levels off,low,medium,max --repeat 2` 實測 Pi 0.86.1 + DeepSeek V4.1 Flash（OpenCode Go 訂閱）當 coder：8 次 delegate 全部 `tested`，`low` 與 `max` 兩次皆一次通過，`off` 與 `medium` 各有一次在一輪修復後通過。第一輪嘗試因題目缺少 `.gitignore`，測試產生的 `__pycache__/` 被 MAF 視為測試留下的未追蹤檔而停在 `needs_human`；已改用 `python3 -B` 並補上 `.gitignore`。完整數字見 README〈自己實測：Pi coder 的推理強度〉。
+
 ## 本帳號的 GitHub 限制
 
 對此 private repository 查詢 required status checks protection，GitHub 實際回覆 HTTP 403，要求 GitHub Pro 或 public repository。
 依使用者「不新增費用、保持 private」的選擇，未升級、未改公開、未降低合併門檻。
 因此此 repo 可建立 draft PR、執行 CI，但目前自動合併會停在人工確認。這是方案限制，不是已完成的自動合併實測。
+
+2026-09-26 起 repository 已改為 public，上述 403 限制不再適用；MAF `--auto-merge` 路徑尚未在 public 狀態下重新實測。
 
 ## 重跑
 

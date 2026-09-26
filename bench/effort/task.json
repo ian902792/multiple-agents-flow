@@ -1,0 +1,20 @@
+{
+  "id": "duration-bench",
+  "title": "Implement duration parsing and formatting",
+  "instructions": "Implement parse_duration and format_duration in duration.py so that every test in test_duration.py passes. Follow the docstrings. Use only the Python standard library. Do not edit test_duration.py.",
+  "paths": [
+    "duration.py"
+  ],
+  "tests": [
+    [
+      "python3",
+      "-B",
+      "-m",
+      "unittest",
+      "-q",
+      "test_duration"
+    ]
+  ],
+  "acceptance_why": "Both functions must accept every documented form, reject malformed input with ValueError, and round-trip exactly.",
+  "risk": "manual"
+}

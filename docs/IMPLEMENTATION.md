@@ -35,7 +35,7 @@ Pi usage sums assistant message_end usage across all model calls, excluding agen
 truncated counts remain unknown; cache and reasoning counters are not added again to output/total.
 Timeout results retain only usage already emitted, not an estimate of unreported usage.
 `role` fields: `runtime`, `model`, `provider`, optional `profile`, `access` (`read`/`edit`). Reviewer alone may carry boolean `enabled`; missing means disabled.
-Optional `effort`: low/medium/high. Model IDs are configurable but cannot contain provider prefixes.
+Optional `effort` follows each CLI: Codex and Claude low/medium/high/xhigh/max; Pi off/minimal/low/medium/high/xhigh/max (Pi 0.86.1 `--thinking`); Hermes and Antigravity low/medium/high. Model IDs are configurable but cannot contain provider prefixes.
 Allowed subscription routes: Codex ChatGPT login; Claude first-party subscription login;
 Pi OpenCode Go; Hermes explicitly OpenCode Go; Antigravity signed-in Google account. No arbitrary CLI extra args or endpoints.
 Hermes and Antigravity support coder/edit only. Antigravity uses `agy` NDJSON stdin/stdout,
