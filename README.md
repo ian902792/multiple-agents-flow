@@ -50,7 +50,7 @@ python3 flow.py --main codex confirm-billing --no-overage   # Codex 預設
 | 想做的事 | 對主 Agent 說 |
 | --- | --- |
 | 換分工方式 | 「maf 改用 quick」、「maf 改回全域預設」 |
-| 同時處理幾件獨立的小事 | 「maf 同時處理 1. … 2. … 3. …，各自驗收」 |
+| 同時處理幾件獨立的小事（任何 flow 都可以，Pi 或 Antigravity 最多並行 3 件） | 「maf 同時處理 1. … 2. … 3. …，各自驗收」 |
 | 看進度 | `/maf status`（Codex 用 `$maf status`） |
 | 大任務先請另一家的強模型規畫 | `/maf-plan 需求`（Codex 用 `$maf-plan 需求`） |
 | 做完直接發布 | 「全部驗證通過後直接開 PR 並合併」 |

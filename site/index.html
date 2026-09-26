@@ -408,7 +408,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-bet
         <div class="card"><span class="tag">程式把關</span><h3>不靠模型自律</h3><p>可修改的路徑排入時就凍結，越界就停；中斷後不會自動重跑，額度或登入不明時停下。</p></div>
         <div class="card"><span class="tag">成本</span><h3>只用現有訂閱</h3><p>拒絕 API key 路由，額度用完就停，不會改用按量計費繼續跑。</p></div>
         <div class="card"><span class="tag">第二雙眼</span><h3>規畫與審查一定換一家</h3><p>Claude 對話交給 Codex 規畫，Codex 對話交給 Claude；同一家的組合會被擋下，避免同一種盲點。</p></div>
-        <div class="card"><span class="tag">並行</span><h3>同時跑但不互相踩到</h3><p>最多 3 件，只限標記獨立、檔案不重疊、從同一個 commit 出發的任務，其餘照順序。</p></div>
+        <div class="card"><span class="tag">並行</span><h3>同時跑但不互相踩到</h3><p>Pi、Antigravity 都能並行，最多 3 件；只限標記獨立、檔案不重疊、從同一個 commit 出發的任務，其餘照順序。</p></div>
         <div class="card"><span class="tag">terminal 原生</span><h3>留在 terminal，不用開面板</h3><p>就在 Claude Code、Codex 的 terminal 對話裡運作，主 Agent 透過 skill 在背後委派與驗證；想同時看多個 agent，再搭配 Herdr。只用 Python 標準庫，沒有常駐服務或資料庫。</p></div>
       </div>
       <div class="sec-head" style="margin:48px 0 0">
@@ -658,11 +658,11 @@ const S={
   {t:"out",c:"ok",x:"[remember-me-8d02e61f4a] tested:",s:6,st:"tested"},
   {t:"ai",x:"完成：tested @ 7b20d5f（沒開獨立審查）。只在本機，還沒 push 或合併。下一件建議補 Safari 私密模式的測試。"}
  ]},
- parallel:{label:"三件並行",main:"Claude Code · quick-antigravity",skip:true,
-  desc:"<b>flow：quick-antigravity</b>。三件互不依賴、檔案不重疊的文件工作，交給 Antigravity 同時跑（最多 3 件）。",
+ parallel:{label:"三件並行",main:"Claude Code · quick",skip:true,
+  desc:"<b>任何 flow 都能並行</b>。三件互不依賴、檔案不重疊的工作，交給目前 flow 的小任務 Agent 同時跑（最多 3 件）；這裡是 <b>quick</b> 的 Pi，換成 quick-antigravity 就是 Antigravity 並行。",
   ev:[
-  {t:"you",x:"maf 改用 quick-antigravity，同時處理：1. 補 docs/install.md 安裝範例；2. 補 docs/faq.md；3. 補 docs/troubleshooting.md，各自驗收。",s:0,st:"—"},
-  {t:"ai",x:"三件互不依賴、檔案不重疊，我各寫一份任務並標記 independent，交給 Antigravity 的 Gemini 3.8 Flash Low 並行處理。",code:'{"id": "install-docs", "paths": ["docs/install.md"],\n "tests": [["python3", "-c", "…is_file()"]],\n "risk": "docs", "independent": true}\n（faq、troubleshooting 同樣格式）',s:1},
+  {t:"you",x:"maf 同時處理：1. 補 docs/install.md 安裝範例；2. 補 docs/faq.md；3. 補 docs/troubleshooting.md，各自驗收。",s:0,st:"—"},
+  {t:"ai",x:"三件互不依賴、檔案不重疊，我各寫一份任務並標記 independent，交給目前 flow 的小任務 Agent（quick 是 Pi · DeepSeek V4.1 Flash）並行處理。",code:'{"id": "install-docs", "paths": ["docs/install.md"],\n "tests": [["python3", "-c", "…is_file()"]],\n "risk": "docs", "independent": true}\n（faq、troubleshooting 同樣格式）',s:1},
   {t:"cmd",x:P+"delegate /private/tmp/install.json"},
   {t:"out",x:'{ "id": "install-docs-5c1e0a93d4", "status": "queued", … }'},
   {t:"cmd",x:P+"delegate /private/tmp/faq.json"},
