@@ -93,9 +93,20 @@ unless `roles.reviewer.enabled` is true; do not turn it on without the user's re
 
 For ordinary tasks, implement in this main conversation. Do not start a
 separate coder for the main agent's work. Use the selected Pi, Antigravity or Codex coder only for narrow
-edits or test-writing tasks with explicit paths and approved test argv. The
-lightweight coder must not execute shell tests; the
-supervisor runs them. Do not delegate planning, broad integration, or final
+edits or test-writing tasks with explicit paths and approved test argv. Pi and
+Antigravity coders cannot run tests; a Codex coder may run the task's tests inside
+its sandbox before finishing. The supervisor always reruns them independently.
+
+Delegate only when it saves main-chat quota overall. Every delegated task costs
+you a spec, a review of its diff and an integration, each carrying this chat's
+whole context. If you can finish the work in one short pass, do it yourself; a
+measured ~800-line app took one main-chat pass in minutes, while splitting it into
+eleven delegates cost about five times the main-chat quota. When you delegate,
+send a few coarse tasks (a module with its tests), not one per function. When a
+delegate stops, use `retry RUN_ID --note "what to change"` instead of writing a
+new task file: it carries the failure reason and moves waiting dependents to the
+retry. After starting `night` or `work`, wait for it to finish and read `report`
+once; do not poll progress turn after turn. Do not delegate planning, broad integration, or final
 sign-off to the lightweight coder. Mark a delegated task `"independent": true` only when it has its own
 clear acceptance criteria, exact non-overlapping editable file paths, and no
 dependency on another task or shared test resource. Queue all independent tasks

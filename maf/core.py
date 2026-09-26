@@ -775,6 +775,9 @@ def execute(repo, run, agent_panes=False):
                       + "\nPrevious verification feedback:\n" + run["feedback"])
             if run["config"]["roles"]["coder"]["runtime"] == "antigravity":
                 prompt += "\nUse file tools only. Do not run terminal commands, browser actions, or MCP tools."
+            if run["config"]["roles"]["coder"]["runtime"] == "codex":
+                prompt += ("\nBefore your final reply, run the task's test commands inside your sandbox and fix any "
+                           "failure you can; the supervisor still runs them independently afterwards.")
             head_before = git(run["worktree"], "rev-parse", "HEAD")
             if head_before != run["owned_head"]:
                 raise FlowError("Commit history changed outside the supervisor; inspect before a new task.")
@@ -964,6 +967,42 @@ def queue_chains(repo, chains, mode=None, main_runtime="claude", approve_all=Fal
             runs.append(run)
             previous = run["id"]
     return runs
+
+
+def retry(repo, run_id, note="", main_runtime="claude"):
+    """Queue the same delegate task again with the previous stop reason, and move its waiting dependents to it.
+
+    The old run is kept as evidence and marked superseded. Dependents keep their approval: the task they were
+    approved for is unchanged, only the delegate they start from is replaced by an identical, freshly queued one.
+    """
+    old = load(repo, run_id)
+    if old.get("kind") != "delegate" or old.get("status") not in ("needs_human", "waiting_quota") or old.get("superseded_by"):
+        raise FlowError("Only a stopped or quota-waiting delegate that was not retried yet can be retried.")
+    failures = [t for t in old.get("tests") or [] if t.get("exit_code")]
+    context = [f"Previous attempt {old['id']} stopped: {old.get('feedback', '')}"[:3000]]
+    context += [f"Failing command {' '.join(t['argv'])} (exit {t['exit_code']}):\n{str(t.get('tail', ''))[-2000:]}"
+                for t in failures[:2]]
+    if note.strip():
+        context.append(f"Note from the main chat: {note.strip()}"[:2000])
+    task = copy.deepcopy(old["task"])
+    task["instructions"] = (task["instructions"] + "\n\n" + "\n".join(context))[-30000:]
+    new = submit(repo, task, mode=old["mode"], kind="delegate", main_runtime=main_runtime, depends_on=old.get("depends_on"))
+    if old.get("plan_id"):
+        new["plan_id"] = old["plan_id"]
+        save(repo, new)
+    old["superseded_by"] = new["id"]
+    save(repo, old)
+    for run in list_runs(repo):
+        if run.get("depends_on") != old["id"] or run.get("superseded_by"):
+            continue
+        if run.get("status") == "needs_human" and run.get("stage") == "dependency":
+            run.update(status="waiting_dependency", stage="coding", feedback="")
+        if run.get("status") not in ("waiting_dependency", "awaiting_approval"):
+            continue
+        run["depends_on"] = new["id"]
+        run["approval"]["scope_hash"] = approval_scope(run)
+        save(repo, run)
+    return new
 
 
 def can_progress(repo, run, seen=()):

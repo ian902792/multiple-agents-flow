@@ -340,7 +340,8 @@ def report(repo, hours=24):
     """Read-only summary of recent runs for a batch left running unattended: what needs you, chains, what to integrate."""
     since = time.time() - hours * 3600
     runs = {run["id"]: run for run in core.list_runs(repo)
-            if run.get("status") == "corrupt" or float(run.get("created_at") or 0) >= since}
+            if (run.get("status") == "corrupt" or float(run.get("created_at") or 0) >= since)
+            and not run.get("superseded_by")}  # A retried run is replaced by its retry.
     rows = {run_id: row_for(repo, run) for run_id, run in runs.items()}
     items = []
     for run_id, run in runs.items():

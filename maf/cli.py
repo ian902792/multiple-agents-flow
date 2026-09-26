@@ -93,6 +93,9 @@ def parser():
     p.add_argument("--approve", action="store_true", help="You have read these task files: approve every scope that needs approval")
     p.add_argument("--mode", help="Use this mode or named flow for these tasks only")
     p.add_argument("--poll", type=int, default=30)
+    p = commands.add_parser("retry", help="Queue a stopped delegate again with its failure reason; dependents follow")
+    p.add_argument("run_id")
+    p.add_argument("--note", default="", help="What to change this time, added to the task instructions")
     p = commands.add_parser("report", help="Summarize recent runs for unattended batches: what needs you, chains, what to integrate")
     p.add_argument("--hours", type=float, default=24, help="Include runs created in the last N hours (default 24)")
     p.add_argument("--json", action="store_true")
@@ -332,6 +335,8 @@ def main(argv=None):
                         result = core.submit(repo, core.read_json(args.task), mode=args.mode, kind=args.action,
                                              base_ref=getattr(args, "base", None), require_approval=args.require_approval,
                                              main_runtime=args.main, depends_on=getattr(args, "depends_on", None))
+                    elif args.action == "retry":
+                        result = core.retry(repo, args.run_id, args.note, args.main)
                     elif args.action == "approve":
                         result = core.approve(repo, args.run_id)
                     elif args.action == "resume":
