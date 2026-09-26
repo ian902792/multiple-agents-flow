@@ -20,6 +20,16 @@ python3 -m unittest discover -s tests -v
 
 測試全部離線執行，用假的 agent 與暫時的 Git repository，不會呼叫模型，也不需要登入。
 
+## 回報問題
+
+開 issue 時請附上足以重現問題的資訊，缺少這些我們通常只能猜：
+
+- 你的作業系統與 Python 版本（`python3 --version`）。
+- `python3 flow.py --repo <專案> doctor` 的完整輸出；這個指令不會呼叫模型，可以安心貼上。
+- run ID，以及 `python3 flow.py --repo <專案> progress --json` 中與問題相關的片段。
+- 你預期會發生什麼，以及實際上發生了什麼；有錯誤訊息就整段附上。
+- 不要把 API 密鑰、token、完整對話紀錄或個人絕對路徑貼進來；請先把它們塗掉，或改成 `/path/to/...`、`$FLOW` 這類佔位。
+
 ## 先開 issue 的情況
 
 以下變更請先開 issue 討論方向，避免白做：
