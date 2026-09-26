@@ -303,6 +303,8 @@ def cache_hit(usage):
         parts = [count("cacheRead"), count("input"), count("cacheWrite")]
     elif "cache_read_input_tokens" in usage:  # Claude: same split, different names
         parts = [count("cache_read_input_tokens"), count("input_tokens"), count("cache_creation_input_tokens")]
+    elif "cache_read_tokens" in usage:  # Antigravity: input_tokens excludes cache reads
+        parts = [count("cache_read_tokens"), count("input_tokens"), 0]
     elif "cached_input_tokens" in usage:  # Codex: input_tokens already includes cached tokens
         parts = [count("cached_input_tokens"), count("input_tokens"), 0]
         if None not in parts:

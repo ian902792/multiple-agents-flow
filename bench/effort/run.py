@@ -1,13 +1,14 @@
-"""Compare Pi coder thinking levels on one fixed task through the normal MAF delegate flow.
+"""Compare coder effort levels (Pi by default, or any built-in flow) on one fixed task through the normal MAF delegate flow.
 
 Each level runs in a fresh temporary Git repository with an isolated MAF config directory, so the
 user's global flows, defaults and billing confirmations are never touched. This makes real model
-calls on your Pi / OpenCode Go subscription; pass --confirm-subscription-only to attest that the
-route is subscription-only (OpenCode Go "Use balance" off) before anything runs.
+calls on the flow's subscription routes; pass --confirm-subscription-only to attest that they are
+subscription-only (for example OpenCode Go "Use balance" off) before anything runs.
 """
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -29,7 +30,7 @@ def flow_cli(env, *args, repo=None):
     return result.stdout
 
 
-def run_level(task, level, env, keep):
+def run_level(task, flow_name, level, env, keep):
     source = HERE / "tasks" / task
     repo = Path(tempfile.mkdtemp(prefix=f"maf-bench-{task}-{level}-"))
     try:
@@ -37,7 +38,7 @@ def run_level(task, level, env, keep):
         for argv in (["init", "-q", "-b", "main"], ["add", "."],
                      ["-c", "user.name=MAF bench", "-c", "user.email=bench@example.invalid", "commit", "-qm", "Fixture"]):
             subprocess.run(["git", *argv], cwd=repo, check=True)
-        flow_cli(env, "mode", f"bench-{level}", repo=repo)
+        flow_cli(env, "mode", f"bench-{flow_name}-{level}", repo=repo)
         flow_cli(env, "confirm-billing", "--no-overage", repo=repo)
         run_id = json.loads(flow_cli(env, "delegate", str(source / "task.json"), repo=repo))["id"]
         started = time.time()
@@ -45,25 +46,33 @@ def run_level(task, level, env, keep):
         wall = time.time() - started
         row = next(r for r in json.loads(flow_cli(env, "progress", "--json", repo=repo)) if r["run"] == run_id)
         coder = [a for a in row["agents"] if a["role"] == "coder"]
-        total = {k: sum((a.get("usage") or {}).get(k, 0) for a in coder)
-                 for k in ("input", "cacheRead", "cacheWrite", "output", "reasoning")}
-        cost = sum(((a.get("usage") or {}).get("cost") or {}).get("total", 0) for a in coder)
-        prompt = total["input"] + total["cacheRead"] + total["cacheWrite"]
-        return {"task": task, "level": level, "status": row["status"], "attempts": len(coder), "wall_seconds": round(wall, 1),
+        usages = [a.get("usage") or {} for a in coder]
+        names = {"input": ("input", "input_tokens"), "cacheRead": ("cacheRead", "cache_read_tokens"),
+                 "cacheWrite": ("cacheWrite",), "output": ("output", "output_tokens"),
+                 "reasoning": ("reasoning", "thinking_tokens")}  # Pi and Antigravity field names
+        pick = lambda u, keys: next((u[k] for k in keys if type(u.get(k)) is int), 0)
+        known = bool(usages) and all(any(k in u for k in names["output"]) for u in usages)
+        total = {k: sum(pick(u, keys) for u in usages) if known else None for k, keys in names.items()}
+        costs = [(u.get("cost") or {}).get("total") for u in usages]
+        cost = sum(costs) if known and all(isinstance(c, (int, float)) for c in costs) else None  # agy reports none
+        prompt = (total["input"] + total["cacheRead"] + total["cacheWrite"]) if known else 0
+        return {"task": task, "flow": flow_name, "level": level, "status": row["status"], "attempts": len(coder), "wall_seconds": round(wall, 1),
                 **total, "cache_hit": round(total["cacheRead"] / prompt, 3) if prompt else None,
-                "cost": round(cost, 5), "note": row.get("note", ""), "repo": str(repo) if keep else None}
+                "cost": None if cost is None else round(cost, 5), "usage": usages, "note": row.get("note", ""), "repo": str(repo) if keep else None}
     finally:
         if not keep:
             shutil.rmtree(repo, ignore_errors=True)
 
 
 def table(results):
-    lines = ["| task | level | result | attempts | seconds | output | reasoning | cache hit | cost |",
+    lines = ["| task | flow / level | result | attempts | seconds | output | reasoning | cache hit | cost |",
              "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for r in results:
         hit = "-" if r["cache_hit"] is None else f"{r['cache_hit']:.1%}"
-        lines.append(f"| {r['task']} | {r['level']} | {r['status']} | {r['attempts']} | {r['wall_seconds']} | {r['output']:,} | "
-                     f"{r['reasoning']:,} | {hit} | ${r['cost']:.4f} |")
+        num = lambda v: "-" if v is None else f"{v:,}"
+        cost = "-" if r["cost"] is None else f"${r['cost']:.4f}"
+        lines.append(f"| {r['task']} | {r['flow']} {r['level']} | {r['status']} | {r['attempts']} | {r['wall_seconds']} | "
+                     f"{num(r['output'])} | {num(r['reasoning'])} | {hit} | {cost} |")
     return "\n".join(lines)
 
 
@@ -71,10 +80,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     tasks = sorted(p.name for p in (HERE / "tasks").iterdir() if (p / "task.json").is_file())
     parser.add_argument("--task", choices=tasks, default="duration", help="benchmark task (default duration)")
-    parser.add_argument("--levels", default="off,low,medium,max",
-                        help="comma-separated Pi thinking levels (off, minimal, low, medium, high, xhigh, max)")
+    parser.add_argument("--flow", default="quick", choices=sorted(flows.templates()),
+                        help="built-in flow whose coder runs the task (default quick = Pi)")
+    parser.add_argument("--levels", help="comma-separated coder effort levels (default: the flow's own effort)")
     parser.add_argument("--repeat", type=int, default=1, help="runs per level (default 1)")
-    parser.add_argument("--model", default="deepseek-v4.1-flash")
+    parser.add_argument("--model", help="override the coder model")
     parser.add_argument("--confirm-subscription-only", action="store_true",
                         help="attest that the Pi / OpenCode Go route has no extra-usage billing enabled")
     parser.add_argument("--keep", action="store_true", help="keep the temporary repositories for inspection")
@@ -83,22 +93,30 @@ def main():
     if not args.confirm_subscription_only:
         raise SystemExit("This makes real Pi calls. Check that OpenCode Go 'Use balance' is off, "
                          "then rerun with --confirm-subscription-only.")
-    levels = [level.strip() for level in args.levels.split(",") if level.strip()]
+    base = flows.templates()[args.flow]
+    levels = ([level.strip() for level in args.levels.split(",") if level.strip()] if args.levels
+              else [base["roles"]["coder"].get("effort", "medium")])
     config = Path(tempfile.mkdtemp(prefix="maf-bench-config-"))
     env = dict(os.environ, XDG_CONFIG_HOME=str(config))
     results = []
     try:
         for level in levels:
-            flow = flows.templates()["quick"]
-            flow["description"] = f"Effort benchmark: Pi coder thinking {level}."
-            flow["roles"]["coder"].update(model=args.model, effort=level)
-            spec = config / f"bench-{level}.json"
-            spec.write_text(json.dumps({"name": f"bench-{level}", "flow": flow}))
+            flow = flows.templates()[args.flow]
+            flow["description"] = f"Benchmark: {args.flow} coder effort {level}."
+            coder = flow["roles"]["coder"]
+            coder["effort"] = level
+            if args.model:
+                coder["model"] = args.model
+            elif coder["runtime"] == "antigravity":  # each Gemini level is its own model ID
+                coder["model"] = re.sub(r"-(low|medium|high)$", "-" + level, coder["model"])
+            name = f"bench-{args.flow}-{level}"
+            spec = config / f"{name}.json"
+            spec.write_text(json.dumps({"name": name, "flow": flow}))
             flow_cli(env, "flow-save", str(spec))
         for level in levels:
             for _ in range(max(1, args.repeat)):
                 print(f"running {level} ...", file=sys.stderr, flush=True)
-                results.append(run_level(args.task, level, env, args.keep))
+                results.append(run_level(args.task, args.flow, level, env, args.keep))
     finally:
         shutil.rmtree(config, ignore_errors=True)
     print(json.dumps(results, indent=2) if args.json else table(results))

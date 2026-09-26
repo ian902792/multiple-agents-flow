@@ -57,6 +57,8 @@ class RoleValidation(unittest.TestCase):
             dict(HERMES, profile="../x"), dict(CODEX, profile="p"), dict(CODEX, runtime="opencode"), "codex",
             dict(PI, model="openai/gpt-6-astra"), dict(PI, model="glm-5.3:high"),
             dict(PI, model="deepseek-v4.1-flash\n"), dict(PI, effort="unlimited"),
+            {"runtime": "antigravity", "provider": "google-account", "model": "gemini-3.8-flash-high",
+             "access": "edit", "effort": "low"},
             dict(ANTIGRAVITY, provider="gemini-api"), dict(ANTIGRAVITY, access="read"),
         ]
         for role in bad:
