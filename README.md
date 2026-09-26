@@ -1,57 +1,24 @@
 # multiple-agents-flow
 
-**留在你習慣的 Claude Code 或 Codex 對話，讓其他 agent 接手明確的小工作。** MAF（multiple-agents-flow）會替子任務建立獨立工作樹、執行專案測試；你也可以選擇讓另一個 agent 審查同一個 Git commit。不必為每個專案重裝工具。
+**留在你習慣的 Claude Code 或 Codex 對話，把明確的小工作交給別的 agent，完成要有 commit 綁定的測試證據。**
 
-第一次使用？先看[動畫新手導覽](https://ian902792.github.io/multiple-agents-flow/)（原始檔在 `site/index.html`）。
+### ▶ [先看 3 分鐘動畫導覽](https://ian902792.github.io/multiple-agents-flow/)
 
-日常流程是：**主 Agent 開發 → 可選 Pi 或 Antigravity 小任務 → 測試 → 可選獨立審查**。你平常只要在主對話描述需求；Agent 會使用 MAF skill 處理委派與驗證。要指揮 MAF 時，**以「maf」開頭**，例如「maf 改用 quick」「maf 狀態」，避免 agent 把 flow、mode 等常見字誤會成 CI 或 Claude Code 自己的模式。大型任務建議先輸入 `/maf-plan`（Codex 用 `$maf-plan`），請**另一家的強模型**先規畫；它只在你手動呼叫時執行。工具使用現有訂閱，不會偷偷改用付費 API。
+一步步播放四個情境：日常委派、三件並行、開啟審查、被擋下時；也能切換 Herdr 觀看模式比較差異。
 
-## 為什麼選 MAF
+[![MAF 動畫導覽：一個需求從對話走到 commit](docs/assets/tour.png)](https://ian902792.github.io/multiple-agents-flow/)
 
-和其他多 agent 做法相比（prompt 型 skill、同一家的子 agent、並行工作樹管理工具、按用量計費的 API 框架），MAF 最在意兩件事：**宣稱完成時有沒有證據**，以及**會不會意外花錢**。
+## 它做什麼
 
-- **完成要有證據，而且綁定同一個 commit**：測試與可選審查都要對同一個 SHA 通過；commit 一變，舊證據就作廢。`tested` 與 `verified` 分開標示，不會把「agent 說做完了」當成做完。
-- **由程式把關，不靠模型自律**：可修改的路徑在排入時凍結，越界就停；狀態寫入不會半途損壞，中斷後不會自動重跑，額度或登入不明時停下。
-- **只用現有訂閱**：拒絕 API key 路由，先由你確認沒開額外付費，額度用完就停，不會改用按量計費繼續跑。
-- **規畫者與審查者一定換一家**：Claude 對話交給 Codex 規畫，Codex 對話交給 Claude；同一家的組合會被擋下，避免同一種盲點。
-- **留在你習慣的對話**：不必切到另一個管理介面，主 Agent 透過 skill 在背後委派與驗證。
-- **並行但不互相踩到**：最多同時 3 件，只限標記獨立、檔案不重疊、從同一個 commit 出發的任務，其餘照順序。
-- **輕量、看得懂**：只用 Python 標準庫，沒有常駐服務或資料庫；測試不呼叫模型，讀得完也查得到它做了什麼。
-
-**相對的限制**：概念比 prompt 型 skill 多，上手要花一點時間；只支援 Claude、Codex、Pi、Antigravity、Hermes 等訂閱路線；工作樹不是安全沙箱；並行上限 3 件，只支援 macOS／Linux。已實測與尚未實測的範圍記在[驗證紀錄](docs/VALIDATION.md)。
-
-### 和同一家的子 agent 怎麼分工
-
-Claude Code、Codex 內建的子 agent 和 MAF 不是二選一，兩者互補：子 agent 幫主對話**省上下文**，MAF 幫你**省額度，並且不相信 agent 自己的說法**。
-
-| | 同一家的子 agent | MAF |
-| --- | --- | --- |
-| 用誰的額度 | 和主對話同一份訂閱 | 小任務走別家訂閱，主對話額度只花在判斷與整合 |
-| 第二意見 | 同一家模型，容易有相同盲點 | 規畫者與審查者一定換一家，由程式強制 |
-| 完成的依據 | 子 agent 回報的文字 | supervisor 自己跑的測試，綁定精確 commit |
-| 範圍控制 | 靠 prompt 約束 | 排入時凍結可修改路徑，越界就停 |
-| 中斷後 | 跟著 session 結束 | run 存成狀態檔，可等額度、可恢復 |
-| 啟動成本 | 零設定、說一句就開始 | 要任務範圍、工作樹、測試與訂閱確認 |
-| 最適合 | 搜尋、探索、讀大量檔案後回報摘要；需要對話脈絡的小事 | 要改程式、有測試可驗收、想省主對話額度，或需要跨家規畫與審查的工作 |
-
-改幾行的小事直接做或交給子 agent 就好；MAF 的工作樹、測試與交接，在小事上反而比工作本身花時間。只有一家訂閱時，也享受不到換一家的好處。
-
-## 先了解三個詞
-
-| 名稱 | 意思 |
-| --- | --- |
-| **Flow** | 主對話、Planner、小任務 Agent、Reviewer 等角色的模型與 effort 設定。內建 `quick`、`planned`、`quick-antigravity`、`codex-pi`，也可在本機畫面儲存自己的 flow。 |
-| **Mode** | Claude 與 Codex 各有全域預設 flow，也各自保留同一專案的 mode。Agent 依自己的來源選用，不會互相覆蓋；Claude 可用 `/maf mode 名稱`，Codex 可用 `$maf mode 名稱`。不影響已開始的任務。 |
-| **Tested** | 未啟用獨立審查時，指定測試已對目前 commit 通過。 |
-| **Verified** | 已啟用獨立審查，測試與 reviewer 都通過**同一個 commit**。兩種狀態都不代表已 push 或合併。 |
-
-MAF 的網頁是**全域設定畫面**；任務的呼叫、單一專案的 mode 切換及進度查詢都在 terminal 完成。
+- **你照常聊天**：在主對話描述需求。範圍清楚的小工作，主 Agent 會交給 Pi 或 Antigravity 在獨立工作樹完成。
+- **證據綁定 commit**：測試由 MAF 自己跑，結果綁定精確的 commit SHA；需要時再請另一家模型審查同一個 commit。
+- **只用現有訂閱**：不會改用 API 計費；額度或登入狀態不明就停下。
 
 ## 快速開始
 
-需要 macOS 或 Linux、Python 3.11+、Git，以及主對話所用的 Claude Code 或 Codex。`quick`／`planned` 使用 Pi；`quick-antigravity` 使用已登入的 `agy`；`codex-pi` 使用 Pi，只有啟用審查時才需 Claude CLI。目標專案必須是已有第一個 commit 的 Git repository。
+需要 macOS 或 Linux、Python 3.11+、Git，以及 Claude Code 或 Codex。
 
-**1. 在電腦上安裝一次：**
+**1. 安裝一次**
 
 ```sh
 git clone https://github.com/ian902792/multiple-agents-flow.git
@@ -59,126 +26,62 @@ cd multiple-agents-flow
 python3 flow.py install-skills
 ```
 
-`install-skills` 註冊全域的 Claude `/maf`、`/maf-plan` 及 Codex `$maf`、`$maf-plan` skill。執行 `python3 flow.py ui` 會開啟只監聽本機的設定頁；「說明與理念」在另一頁。若主對話已經開著，請重新開一個 session，讓它載入 skill。
+裝完重開主對話。想換預設 flow，執行 `python3 flow.py ui` 開啟 Flow Studio。
 
-**2. 設定全域預設一次**：用 Flow Studio 選 flow 並按「設為全域預設」，會依 flow 的主對話工具設定 Claude 或 Codex 的預設，彼此獨立。也可在 MAF 專案 terminal 輸入：
-
-```sh
-python3 flow.py settings default-flow quick-antigravity
-python3 flow.py settings default-flow codex-pi
-python3 flow.py settings
-```
-
-Claude 預設原本是 `quick`，Codex 預設是 `codex-pi`。上例把 Claude 的明確小任務改交 Antigravity 的 Gemini 3.8 Flash High；Codex 則以 GPT-6 Sol 為主對話、Pi 做小任務，Claude Opus 5.5 可選擇審查。**獨立審查預設關閉**。首次使用某組角色前，請先在供應商確認模型包含在現有訂閱、額外付費用量／OpenCode Go 的 Use balance 已關閉，再執行：
+**2. 確認只用訂閱**：先到各家控制台確認額外付費用量、OpenCode Go 的 Use balance 都已關閉，再記錄一次：
 
 ```sh
-python3 flow.py confirm-billing --no-overage
-python3 flow.py --main codex confirm-billing --no-overage
+python3 flow.py confirm-billing --no-overage                # Claude 預設
+python3 flow.py --main codex confirm-billing --no-overage   # Codex 預設
 ```
 
-這份確認按模型角色組合**全域記錄一次**；換新模型或路由時須再次確認。兩行分別確認 Claude 與 Codex 預設的子任務路由；若路由相同，第二次不會重複要求。MAF 不會代你更改供應商帳單設定。
+換模型或工具時才需要再確認；調整推理強度不用。
 
-**3. 在任何 Git 專案開始工作**：不用 `init`，也不用每專案重新安裝 skill。照常在 Claude 或 Codex 對話描述工作，例如：
+**3. 在任何已有 commit 的 Git 專案直接說**：
 
-> maf：請按目前 flow 完成這項修改。路徑與驗收明確的小工作可以委派；完成後測試已提交的變更，告訴我結果與 commit SHA。
+> maf：完成這項修改。明確的小工作可以委派；完成後測試已提交的變更，告訴我結果與 commit SHA。
 
-主 Agent 的 `maf` skill 會準備任務資料，並在需要時執行委派與驗證。驗證針對已提交、乾淨的目前 commit 執行測試；若該 flow 勾選「獨立審查」，才會再呼叫 reviewer。結果為 `tested` 或 `verified`，清楚區分是否完成審查。
+## 日常怎麼說
 
-## 選擇適合的 flow
+指揮 MAF 時以 **maf** 開頭，避免 agent 把 flow、mode 等常見字誤會成別的東西。
 
-| 情境 | 對主 Agent 說 | 接下來 |
-| --- | --- | --- |
-| **日常小任務** | 「maf 改用 quick，請完成這項修改。」 | Claude 實作；明確的小工作可交 Pi。 |
-| **Gemini 小任務** | 「maf 改用 quick-antigravity。」 | 明確的小工作可交 Antigravity Gemini 3.8 Flash High。 |
-| **中大型任務** | 「maf 改用 planned，先整理需求。」 | 先手動輸入 `/maf-plan 需求` 請 Codex 規畫；Claude 負責後續實作、整合與驗證。 |
-| **Codex 主導** | 「maf 改用 codex-pi，請完成這項修改。」 | Codex 實作，明確小任務交 Pi；`$maf-plan` 由 Claude Opus 5.5 規畫；可選 Claude Opus 5.5 審查，預設關閉。 |
-| **自己的工作方式** | 「maf 改用我的 flow。」 | 先在 Flow Studio 儲存命名 flow，設為全域預設或於單一專案選用。 |
+| 想做的事 | 對主 Agent 說 |
+| --- | --- |
+| 換分工方式 | 「maf 改用 quick」、「maf 改回全域預設」 |
+| 同時處理幾件獨立的小事 | 「maf 同時處理 1. … 2. … 3. …，各自驗收」 |
+| 看進度 | `/maf status`（Codex 用 `$maf status`） |
+| 大任務先請另一家的強模型規畫 | `/maf-plan 需求`（Codex 用 `$maf-plan 需求`） |
+| 做完直接發布 | 「全部驗證通過後直接開 PR 並合併」 |
 
-`planned` 只設定角色及提醒；**選到它不會自動啟動 Planner**。Pi 與 Antigravity 適合路徑明確、可獨立驗收的小任務。委派完成後，主 Agent 仍需檢查並整合變更，再驗證整合後的新 commit。要回全域預設，可對主 Agent 說「maf 改回全域預設」，或使用對應的 `maf mode default` 指令。切到尚未確認訂閱的角色組合時，先核對供應商設定，再從 MAF 資料夾執行 `python3 flow.py --repo /path/to/project confirm-billing --no-overage`。
+MAF 預設只做到本機驗證；push、PR、合併要你說一次，一次就能涵蓋整批任務。
 
-**指令分工**：Claude 對話中可用 `/maf status`、`/maf mode` 和手動 `/maf-plan`；Codex 中用 `$maf status`、`$maf mode` 和手動 `$maf-plan`。委派、驗證、交接等是主 Agent 依需求使用的工作指令，平常不必逐條輸入。畫面儲存的主模型只是偏好，**不會切換目前 session**；請在所用 CLI／App 內切換。完整用途與輸出見 Flow Studio 的「說明與理念」頁。
+## 內建 flow
 
-### 大型任務：先用 maf-plan 請另一個強模型規畫
+| Flow | 主對話 | 小任務交給 | 規畫（手動 maf-plan） |
+| --- | --- | --- | --- |
+| `quick`（Claude 預設） | Claude Opus 5.5 | Pi · DeepSeek V4.1 Flash | Codex GPT-6 Astra |
+| `quick-antigravity` | Claude Opus 5.5 | Antigravity · Gemini 3.8 Flash High | Codex GPT-6 Astra |
+| `planned` | Claude Opus 5.5 | Pi · DeepSeek V4.1 Flash | Codex GPT-6 Astra，大任務先規畫 |
+| `codex-pi`（Codex 預設） | Codex GPT-6 Sol | Pi · DeepSeek V4.1 Flash | Claude Opus 5.5 |
 
-需求大、牽涉多個模組，或你自己也還沒想清楚時，先輸入 `/maf-plan 需求`（Codex 輸入 `$maf-plan 需求`）。MAF 會請**與主對話不同家**的強模型，只讀地規畫一次：
+獨立審查預設關閉，可在 Flow Studio 開啟；審查者與規畫者一定和主對話不同家。Pi coder 預設推理強度 `low`，依據見[基準測試](bench/effort/README.md)。
 
-| 主對話 | 規畫者（預設） | 可改成 |
-| --- | --- | --- |
-| Claude（`quick`、`planned` 等） | Codex GPT-6 Astra，high effort | 其他 Codex 模型 |
-| Codex（`codex-pi`） | Claude Opus 5.5，high effort | Claude Fable 5.1 等 Claude 模型 |
+## 為什麼選 MAF
 
-規畫者會交回依賴順序、介面約定、風險、可執行的驗收命令，以及可以直接委派的小任務草稿。換一家模型規畫，能抓到主對話自己看不見的假設。計畫只是建議，**不會自動執行**；主 Agent 會把範圍、測試與風險整理給你確認一次，再開始實作。規畫者若和主對話是同一家，MAF 會拒絕執行。可在 Flow Studio 的「規畫 Agent」切換工具與模型。
+- **不相信 agent 自己的說法**：完成與否看 MAF 自己跑的測試，commit 一變，舊證據就作廢。
+- **由程式把關**：可修改的檔案在排入時就鎖定，越界就停；中斷後可以恢復，不會盲目重跑。
+- **省主對話額度**：寫程式的工作交給別家訂閱，主對話只花在判斷與整合。
+- **換一家看**：規畫與審查由不同家的模型負責，避免同一種盲點。
 
-### 同時交給多個小任務 Agent
+和同一家的子 agent、其他多 agent 做法的比較，以及相對的限制，請看[導覽頁的特色一節](https://ian902792.github.io/multiple-agents-flow/#why)。
 
-如果有幾件**互不依賴**的小工作，可以在同一則需求中列出來，例如：「maf 同時處理 1. 補 `docs/install.md` 安裝範例；2. 補 `docs/faq.md` 常見問題；3. 補 `docs/troubleshooting.md` 疑難排解，各自驗收」。主 Agent 會先拆成不同任務、標記可並行，再一起排入；MAF 預設同時執行最多 **3 個 Pi／Antigravity delegate**。每個任務都有自己的 worktree、測試與 commit 證據；審查只在勾選時執行。編輯路徑重疊、使用通配路徑、需要人工核准，或不是同一來源 commit 的任務會等前一件完成。
+## 延伸閱讀
 
-同時執行主要縮短等待時間；小範圍委派也可減少主對話的上下文負擔，但**並行本身不保證總 token 變少**。主 Agent 仍負責逐件檢查、整合，最後驗證整合後的 commit。[CLI 範例](docs/CLI.md#任務資料與執行)說明如何指定 run ID 和調整並行上限。
+- [讓主對話自動使用 MAF](docs/AGENT-INSTRUCTIONS.md)：六行提示詞，含自己的 repo 自動合併的選用設定。
+- [指令參考](docs/CLI.md)：CLI、任務 JSON、核准與中斷恢復、Herdr 觀看模式。
+- [Pi 推理強度基準測試](bench/effort/README.md)：用固定題目自己比較 `off`～`max`。
+- [新增 agent adapter](docs/ADAPTERS.md)、[參與貢獻](CONTRIBUTING.md)、[實作契約](docs/IMPLEMENTATION.md)、[驗證紀錄](docs/VALIDATION.md)。
 
-Flow Studio 可複製 flow，切換主對話、小任務與審查工具，設定各角色 model／effort，並把新輸入的模型 ID 加入建議清單。畫面不會切換目前對話的模型；Claude 可用 `/model`、`/effort`，Codex 請用其模型選單或 CLI 設定。新模型是否可用，仍要以你自己的 CLI 與訂閱確認。
+只在你信任的 repository 使用：工作樹不是安全沙箱，測試會執行你核准的命令。
 
-**使用建議**：委派後讓它跑完，中途插話會讓主 Agent 停下來重新核對、白耗額度；臨時想法先記下，有新決定再說。一次只派現在就能驗收的任務，下一件常取決於上一件 `handoff` 裡的存疑項。
-
-### 自己實測：Pi coder 的推理強度
-
-Pi 的推理強度（`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`）可在 Flow Studio 的小任務 Agent 調整，內建 flow 的 Pi coder 預設是 `low`。想用自己的環境驗證，可以跑內建的基準測試：
-
-```sh
-python3 bench/effort/run.py --task duration --levels off,low,medium,max --repeat 2 --confirm-subscription-only
-python3 bench/effort/run.py --task webapp   --levels off,low,medium,max --repeat 2 --confirm-subscription-only
-```
-
-兩個題目都讓 Pi 走正常的 `delegate` 流程，不需要安裝任何套件：
-
-- `duration`：時間長度解析器，8 個測試、兩百多個驗收案例，含各種不合法輸入與來回轉換。
-- `webapp`：用標準庫 WSGI 寫待辦事項網站，包含 HTML 表單頁（`<label>`、HTML 跳脫防 XSS）、表單送出轉址，以及 JSON API 的 201／204／400／404／405／422 狀態碼與 `Location`、`Allow` 標頭，共 11 個測試。
-
-每個強度都在全新的暫時 repo 與隔離的 MAF 設定裡執行，不會動到你的全域 flow 與確認紀錄，最後印出比較表。會使用真實的 Pi／OpenCode Go 額度（每行指令約 $0.05～0.08 等值），所以要先確認 Use balance 已關閉，再加 `--confirm-subscription-only`。
-
-2026-09-26 以 DeepSeek V4.1 Flash、每題每個強度 2 次的結果（16 次最後全部通過）：
-
-| 強度 | duration 一次通過 | webapp 一次通過 | duration 平均成本 | webapp 平均成本 | webapp 平均秒數 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `off` | 1/2 | 2/2 | $0.0043 | $0.0058 | 49 |
-| `low` | 2/2 | 2/2 | $0.0031 | $0.0065 | 49 |
-| `medium` | 1/2 | 1/2 | $0.0064 | $0.0104 | 84 |
-| `max` | 2/2 | 2/2 | $0.0081 | $0.0143 | 102 |
-
-`low` 是唯一兩題都一次通過、成本又最低或接近最低的強度，因此成為預設。`max` 同樣穩定，但成本約 2.4 倍、時間約 2 倍；`off` 在網頁題與 `low` 打平，卻在另一題失敗一次，而且這個模型在 `off` 仍會產生推理 token。快取命中率主要跟來回輪數有關，和強度關係不大。樣本很少，不同任務的結果也會不同，建議用自己的工作再跑一次。
-
-## 想讓主對話自動使用 MAF
-
-安裝 skill 後，主 Agent 只在你提到 maf 時使用它。想讓它在一般開發中**主動**委派與驗證，把[六行提示詞](docs/AGENT-INSTRUCTIONS.md)貼進 `~/.claude/CLAUDE.md`（Codex 用 `~/.codex/AGENTS.md`）。提示詞只說何時委派、為什麼委派，操作細節留在只在需要時載入的 skill，讓每輪對話少花 token。
-
-提示詞是行為指引，不是權限機制。人工核准仍由你確認，MAF 程式會檢查凍結的任務範圍與驗證證據。
-
-## 核准與進度
-
-一般小任務照你的需求直接做。對敏感、範圍較大或需求不明的任務，Claude 先提出可檢查的計畫；你確認一次後，MAF 會在核准範圍內接續測試、可選審查與有限次修正。只有需求有誤、資安或權限風險、額度不足等情況，才停下來請你決定。
-
-`/maf status` 會顯示目前的任務與下一步。常見狀態是 `awaiting_approval`（等待你檢視範圍）、`running`、`tested`、`verified`、`waiting_quota`、`needs_human`。核准本機執行**不等於**允許 push 或合併。要 push、開 PR 或合併，開頭說一次就能涵蓋整批任務，例如「全部驗證通過後直接開 PR 並合併」；也可以在[提示詞](docs/AGENT-INSTRUCTIONS.md#選用自己的-repo-自動合併)設定成自己的 repo 預設自動合併。MAF 批次指令的 `--auto-merge` 另有更保守的政策，仍要求獨立審查。詳見[指令與恢復流程](docs/CLI.md#核准阻塞與恢復)。
-
-## 可選：在 Herdr 觀看 agent 進度
-
-若你在 Herdr 開不同專案 workspace，可開啟全域 Herdr 整合，然後**在 Herdr pane 內**啟動背景 supervisor：
-
-```sh
-FLOW=/absolute/path/multiple-agents-flow/flow.py
-TARGET=/absolute/path/your-project
-python3 "$FLOW" settings herdr on
-python3 "$FLOW" --repo "$TARGET" herdr
-```
-
-主 pane 會顯示進度標題。各個同時執行的 Pi／Antigravity 任務，其 Coder 與已啟用的 Reviewer 會各自開暫時 pane 顯示即時事件摘要，結束後自動關閉；你手動執行 `/maf-plan` 時也會有 Planner pane。Agent 仍由 MAF supervisor 執行與驗證。Herdr 整合預設關閉；沒有 Herdr 也能正常使用 MAF。
-
-## 使用界線與延伸閱讀
-
-- 只使用你已確認的訂閱路線；額度或登入不明時會停止，不會改用 API 計費。
-- 只在你信任的 repository 使用。工作樹不是安全沙箱，專案測試會執行你核准的命令。
-- 預設只做到本機驗證。要 push、開 PR 或合併，說一次就涵蓋整批任務；自己的 repo 可在提示詞設定成預設自動合併。
-- Antigravity 使用 `agy` 的 Google 帳號登入、`--sandbox` 與受限權限；MAF 拒絕 API key 路由或預先放行工具。`doctor` 會查詢模型清單，但**不會呼叫模型**。授權／額度不明時停止。
-- 並行只用於明確標記為獨立的窄範圍 Pi／Antigravity delegate；其他任務依序執行。
-
-需要直接使用 Python CLI、編寫任務 JSON、處理中斷或設定 PR 政策，請看[指令參考](docs/CLI.md)。想了解狀態機與安全檢查，請看[實作契約](docs/IMPLEMENTATION.md)；給 LLM 的詳細規則在[MAF skill](skills/maf/SKILL.md)，已實測與尚未實測的範圍記在[驗證紀錄](docs/VALIDATION.md)。想新增自己的 agent，請看[新增 agent adapter](docs/ADAPTERS.md)；送 PR 前請讀[參與貢獻](CONTRIBUTING.md)。
-
-專案以 [MIT](LICENSE) 授權。開發者可執行 `python3 -m unittest discover -s tests -v`。
+MIT 授權。開發者測試：`python3 -m unittest discover -s tests -v`。
