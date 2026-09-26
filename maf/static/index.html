@@ -68,7 +68,7 @@ const token="__MAF_TOKEN__";
 const el=id=>document.getElementById(id);
 let snapshot=null,currentName="",draft=null;
 const suggestedModels={claude:["claude-opus-5-5","claude-fable-5-1","sonnet","haiku"],codex:["gpt-6-sol","gpt-6-astra","gpt-6-luna"],pi:["deepseek-v4.1-flash"],hermes:["deepseek-v4.1-flash"],antigravity:["gemini-3.8-flash-high","gemini-3.8-flash-medium"]};
-const coderRoutes={pi:["opencode-go","deepseek-v4.1-flash","medium"],antigravity:["google-account","gemini-3.8-flash-high","high"],claude:["claude-subscription","claude-opus-5-5","medium"],codex:["chatgpt","gpt-6-sol","medium"],hermes:["opencode-go","deepseek-v4.1-flash","medium"]};
+const coderRoutes={pi:["opencode-go","deepseek-v4.1-flash","low"],antigravity:["google-account","gemini-3.8-flash-high","high"],claude:["claude-subscription","claude-opus-5-5","medium"],codex:["chatgpt","gpt-6-sol","medium"],hermes:["opencode-go","deepseek-v4.1-flash","medium"]};
 const mainDefaults={claude:["claude-opus-5-5","medium"],codex:["gpt-6-sol","high"]};
 const plannerRoutes={codex:["chatgpt","gpt-6-astra","high"],claude:["claude-subscription","claude-opus-5-5","high"]};
 function setPlanner(runtime){const [provider,model,effort]=plannerRoutes[runtime];draft.roles.planner={runtime,provider,model,access:"read",effort}}

@@ -29,17 +29,17 @@ def flow_cli(env, *args, repo=None):
     return result.stdout
 
 
-def run_level(level, model, env, keep):
-    repo = Path(tempfile.mkdtemp(prefix=f"maf-bench-{level}-"))
+def run_level(task, level, env, keep):
+    source = HERE / "tasks" / task
+    repo = Path(tempfile.mkdtemp(prefix=f"maf-bench-{task}-{level}-"))
     try:
-        for name in ("duration.py", "test_duration.py", ".gitignore"):
-            shutil.copy(HERE / "fixture" / name, repo / name)
+        shutil.copytree(source, repo, dirs_exist_ok=True, ignore=shutil.ignore_patterns("task.json", "__pycache__"))
         for argv in (["init", "-q", "-b", "main"], ["add", "."],
                      ["-c", "user.name=MAF bench", "-c", "user.email=bench@example.invalid", "commit", "-qm", "Fixture"]):
             subprocess.run(["git", *argv], cwd=repo, check=True)
         flow_cli(env, "mode", f"bench-{level}", repo=repo)
         flow_cli(env, "confirm-billing", "--no-overage", repo=repo)
-        run_id = json.loads(flow_cli(env, "delegate", str(HERE / "task.json"), repo=repo))["id"]
+        run_id = json.loads(flow_cli(env, "delegate", str(source / "task.json"), repo=repo))["id"]
         started = time.time()
         flow_cli(env, "work", "--once", "--run-id", run_id, repo=repo)
         wall = time.time() - started
@@ -49,7 +49,7 @@ def run_level(level, model, env, keep):
                  for k in ("input", "cacheRead", "cacheWrite", "output", "reasoning")}
         cost = sum(((a.get("usage") or {}).get("cost") or {}).get("total", 0) for a in coder)
         prompt = total["input"] + total["cacheRead"] + total["cacheWrite"]
-        return {"level": level, "status": row["status"], "attempts": len(coder), "wall_seconds": round(wall, 1),
+        return {"task": task, "level": level, "status": row["status"], "attempts": len(coder), "wall_seconds": round(wall, 1),
                 **total, "cache_hit": round(total["cacheRead"] / prompt, 3) if prompt else None,
                 "cost": round(cost, 5), "note": row.get("note", ""), "repo": str(repo) if keep else None}
     finally:
@@ -58,17 +58,19 @@ def run_level(level, model, env, keep):
 
 
 def table(results):
-    lines = ["| level | result | attempts | seconds | output | reasoning | cache hit | cost |",
-             "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    lines = ["| task | level | result | attempts | seconds | output | reasoning | cache hit | cost |",
+             "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for r in results:
         hit = "-" if r["cache_hit"] is None else f"{r['cache_hit']:.1%}"
-        lines.append(f"| {r['level']} | {r['status']} | {r['attempts']} | {r['wall_seconds']} | {r['output']:,} | "
+        lines.append(f"| {r['task']} | {r['level']} | {r['status']} | {r['attempts']} | {r['wall_seconds']} | {r['output']:,} | "
                      f"{r['reasoning']:,} | {hit} | ${r['cost']:.4f} |")
     return "\n".join(lines)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    tasks = sorted(p.name for p in (HERE / "tasks").iterdir() if (p / "task.json").is_file())
+    parser.add_argument("--task", choices=tasks, default="duration", help="benchmark task (default duration)")
     parser.add_argument("--levels", default="off,low,medium,max",
                         help="comma-separated Pi thinking levels (off, minimal, low, medium, high, xhigh, max)")
     parser.add_argument("--repeat", type=int, default=1, help="runs per level (default 1)")
@@ -96,7 +98,7 @@ def main():
         for level in levels:
             for _ in range(max(1, args.repeat)):
                 print(f"running {level} ...", file=sys.stderr, flush=True)
-                results.append(run_level(level, args.model, env, args.keep))
+                results.append(run_level(args.task, level, env, args.keep))
     finally:
         shutil.rmtree(config, ignore_errors=True)
     print(json.dumps(results, indent=2) if args.json else table(results))
