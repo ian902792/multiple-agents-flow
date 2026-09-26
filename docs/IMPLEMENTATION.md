@@ -145,6 +145,8 @@ One worker lock prevents competing supervisors; the repository writer lock prote
 serial execution, then is released during parallel delegate execution so more work can be submitted.
 Per-run locks prevent resume/publication of a run while its parallel worker is active. Worker interruption
 stops new scheduling and waits for active delegates to reach a safe checkpoint before exiting.
+An agent that writes nothing to stdout or stderr for `IDLE_TIMEOUT` (600 s) is treated as stalled: its process
+group is killed and the attempt fails with `no output for 600s`, well before `agent_timeout`.
 After each test command MAF kills that command's whole process group, and after each agent attempt and each
 test pass it kills orphaned processes (parent pid 1) whose working directory is still inside the run's worktree;
 the count is recorded as `reaped_orphans`. A person's shell in the worktree has a live parent and is never touched.
