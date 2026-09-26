@@ -197,6 +197,6 @@ python3 "$FLOW" --repo "$TARGET" submit /private/path/task.json --publish --auto
 
 在 Flow Studio 可直接切換小任務 Agent 的 runtime、model、effort 並儲存全域 flow。若要讓新專案沿用，按「設為全域預設」；若只影響目前專案，使用 `mode NAME`。模型必須是該訂閱實際支援的 ID；不要把登入成功當成模型可用性證明。已開始的任務保留自己的模型快照。
 
-Codex coder（`quick-codex`）使用 `codex exec -s workspace-write`，預設模型 `gpt-6-luna`、推理 `low`，走 ChatGPT 登入。Antigravity coder 預設使用 `agy --model gemini-3.8-flash-low --effort low`；每個強度是不同的模型 ID（`-low`／`-medium`／`-high`），兩者必須一致，模型清單可用 `agy models` 查看。MAF 只接受 Google 帳號登入，不允許 `modelProvider: gemini` 的 API key 路由或預先放行工具；使用 CLI sandbox 與 headless `request-review` 權限，且只讓 Antigravity 擔任可編輯 coder。這個 CLI 沒有像 Pi 一樣的工具白名單；請只在信任的 repository 使用，正式測試仍由 MAF supervisor 執行。登入、額度或模型可用性不明時停止，不自動換模型。
+Codex coder（`quick-codex`）使用 `codex exec -s workspace-write`，預設模型 `gpt-6-luna`、推理 `none`（Luna 支援 none／low／medium／high／xhigh／max，不支援 minimal），走 ChatGPT 登入。Antigravity coder 預設使用 `agy --model gemini-3.8-flash-low --effort low`；每個強度是不同的模型 ID（`-low`／`-medium`／`-high`），兩者必須一致，模型清單可用 `agy models` 查看。MAF 只接受 Google 帳號登入，不允許 `modelProvider: gemini` 的 API key 路由或預先放行工具；使用 CLI sandbox 與 headless `request-review` 權限，且只讓 Antigravity 擔任可編輯 coder。這個 CLI 沒有像 Pi 一樣的工具白名單；請只在信任的 repository 使用，正式測試仍由 MAF supervisor 執行。登入、額度或模型可用性不明時停止，不自動換模型。
 
 Run 狀態、agent log、測試證據存在目標 repo 的 Git common directory 下 `maf/`，不進 Git；工作樹在 `.maf-worktrees/`。全域 flow、設定與角色模型確認存在使用者設定目錄，不進 Git。Log 可能含程式片段或敏感資訊，分享前先檢查。不要提交 token、個人設定或完整 transcript。

@@ -21,7 +21,7 @@ def templates():
     antigravity["coder"] = {"runtime": "antigravity", "provider": "google-account",
                              "model": "gemini-3.8-flash-low", "access": "edit", "effort": "low"}
     luna = deepcopy(roles)
-    luna["coder"] = {"runtime": "codex", "provider": "chatgpt", "model": "gpt-6-luna", "access": "edit", "effort": "low"}
+    luna["coder"] = {"runtime": "codex", "provider": "chatgpt", "model": "gpt-6-luna", "access": "edit", "effort": "none"}
     codex = deepcopy(roles)
     codex["planner"] = {"runtime": "claude", "provider": "claude-subscription",
                         "model": "claude-opus-5-5", "access": "read", "effort": "high"}

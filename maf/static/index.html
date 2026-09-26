@@ -102,7 +102,7 @@ function drawModelLists(){
   for(const [runtime,values] of Object.entries(models)){const list=el("models-"+runtime);list.replaceChildren();for(const value of values){const option=document.createElement("option");option.value=value;list.append(option)}}
 }
 function drawEfforts(select,runtime,value){
-  select.replaceChildren();const choices=runtime==="pi"?["off","minimal","low","medium","high","xhigh","max"]:["low","medium","high",...(runtime==="claude"||runtime==="codex"?["xhigh","max"]:[])];
+  select.replaceChildren();const choices=runtime==="pi"?["off","minimal","low","medium","high","xhigh","max"]:[...(runtime==="codex"?["none"]:[]),"low","medium","high",...(runtime==="claude"||runtime==="codex"?["xhigh","max"]:[])];
   for(const effort of choices){const option=document.createElement("option");option.value=effort;option.textContent=effort;select.append(option)}
   select.value=value||"medium";
 }
