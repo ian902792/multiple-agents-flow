@@ -280,14 +280,21 @@ class FlowTests(unittest.TestCase):
             core.select_mode(other, "default")
             self.assertEqual(core.execution_config(other)[0], "quick-antigravity")
 
-    def test_current_model_suggestions_allow_deeper_codex_effort_but_not_pi(self):
+    def test_effort_levels_follow_each_cli(self):
         flow = flows.templates()["quick"]
         flow["main"]["effort"] = "max"
         flow["roles"]["reviewer"]["effort"] = "xhigh"
         flows.save("deep-review", flow)
-        flow["roles"]["coder"]["effort"] = "xhigh"
+        for effort in ("off", "minimal", "xhigh", "max"):
+            flow["roles"]["coder"]["effort"] = effort
+            flows.save("pi-" + effort, flow)
+        flow["roles"]["coder"]["effort"] = "unlimited"
         with self.assertRaises(ValueError):
             flows.save("invalid-pi-effort", flow)
+        flow["roles"]["coder"] = {"runtime": "antigravity", "provider": "google-account",
+                                  "model": "gemini-3.8-flash-high", "access": "edit", "effort": "off"}
+        with self.assertRaises(ValueError):
+            flows.save("invalid-agy-effort", flow)
 
     def test_codex_main_flow_keeps_claude_review_optional_and_independent(self):
         flow = flows.templates()["codex-pi"]
