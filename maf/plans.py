@@ -195,9 +195,11 @@ def preflight(repo, plan, timeout):
                         core.terminate(proc)
                         results.append({"task": task["id"], "argv": argv, "outcome": "timeout", "detail": f"{timeout}s"})
                         continue
+                    core.reap_group(proc)
                     outcome = "passes" if code == 0 else "cannot_run" if code in (126, 127) else "fails"
                     results.append({"task": task["id"], "argv": argv, "outcome": outcome, "detail": f"exit {code}"})
     finally:
+        core.reap_orphans(folder)
         core.git(repo, "worktree", "remove", "--force", str(folder))
     return results
 

@@ -135,6 +135,12 @@ One worker lock prevents competing supervisors; the repository writer lock prote
 serial execution, then is released during parallel delegate execution so more work can be submitted.
 Per-run locks prevent resume/publication of a run while its parallel worker is active. Worker interruption
 stops new scheduling and waits for active delegates to reach a safe checkpoint before exiting.
+After each test command MAF kills that command's whole process group, and after each agent attempt and each
+test pass it kills orphaned processes (parent pid 1) whose working directory is still inside the run's worktree;
+the count is recorded as `reaped_orphans`. A person's shell in the worktree has a live parent and is never touched.
+`work --run-id …` without `--once` exits once none of the selected runs can progress without a person
+(`can_progress`: queued, running, a confirmed quota reset, an auto-merge PR check, or a dependency that can itself
+progress); `night` relies on the same rule.
 Every agent stage records a running checkpoint BEFORE invocation, with an activity label,
 start time, timeout (including up to 60 seconds for auth), and diagnostic log path.
 Each test command records its own activity checkpoint. Agent attempts also record provider and elapsed time.
