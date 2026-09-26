@@ -452,6 +452,103 @@ class FlowTests(unittest.TestCase):
             self.assertEqual(core.handoff(self.repo, completed)["head_sha"], completed["tested_sha"])
         self.assertEqual(later["status"], "queued")
 
+    def night_task(self, name, needs=()):
+        files = [f"docs/{item}.md" for item in (*needs, name)]
+        check = "; ".join(f"assert Path('{path}').read_text() == 'After\\n'" for path in files)
+        return {"id": f"night-{name}", "title": f"Write {name}", "instructions": f"Create docs/{name}.md.",
+                "paths": [f"docs/{name}.md"], "tests": [[sys.executable, "-c", "from pathlib import Path; " + check]],
+                "risk": "docs"}
+
+    def night_agent(self, stuck=(), quota=()):
+        def agent(role, prompt, cwd, log, timeout):
+            name = cwd.name.split("-")[1]
+            if role["access"] == "edit":
+                if name in quota:
+                    return {"status": "quota", "text": "", "session_id": None, "usage": None, "detail": "usage limit"}
+                if name in stuck:
+                    return {"status": "ok", "text": "MAF_NEEDS_HUMAN: requirements conflict", "session_id": "fake",
+                            "usage": None, "detail": ""}
+                (cwd / "docs").mkdir(exist_ok=True)
+                (cwd / "docs" / f"{name}.md").write_text("After\n")
+                text = "Done\nUNVERIFIED: none"
+            else:
+                text = json.dumps({"decision": "approve", "head_sha": core.git(cwd, "rev-parse", "HEAD"),
+                                   "risk": "low", "summary": "Reviewed", "findings": []})
+            return {"status": "ok", "text": text, "session_id": "fake", "usage": None, "detail": ""}
+        return agent
+
+    def test_overnight_chain_starts_each_task_from_its_dependency(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        a = core.submit(self.repo, self.night_task("a"), kind="delegate")
+        b = core.submit(self.repo, self.night_task("b", ["a"]), kind="delegate", depends_on=a["id"])
+        c = core.submit(self.repo, self.night_task("c", ["a", "b"]), kind="delegate", depends_on=b["id"])
+        d = core.submit(self.repo, self.night_task("d"), kind="delegate")
+        self.assertEqual((b["status"], b["source_sha"]), ("waiting_dependency", None))
+        self.assertFalse(Path(b["worktree"]).exists())
+        ids = [run["id"] for run in (a, b, c, d)]
+        with patch.object(core.agents, "run_agent", side_effect=self.night_agent()), \
+                contextlib.redirect_stdout(io.StringIO()):
+            core.work(self.repo, once=True, poll=0.1, run_id=ids, delegate_concurrency=1)
+        a, b, c, d = (core.load(self.repo, run_id) for run_id in ids)
+        self.assertEqual([run["status"] for run in (a, b, c, d)], ["verified"] * 4)
+        self.assertEqual(b["source_sha"], a["tested_sha"])
+        self.assertEqual(c["source_sha"], b["tested_sha"])
+        self.assertEqual(core.handoff(self.repo, c)["depends_on"], b["id"])
+        data = progress.report(self.repo)
+        self.assertEqual(data["chains"], [[a["id"], b["id"], c["id"]]])
+        self.assertIn({"runs": [a["id"], b["id"], c["id"]], "range": f"{a['source_sha']}..{c['tested_sha']}"},
+                      data["integrate"])
+        self.assertIn({"runs": [d["id"]], "range": f"{d['source_sha']}..{d['tested_sha']}"}, data["integrate"])
+        text = progress.render_report(data)
+        self.assertIn("Ready to integrate", text)
+        self.assertIn(f"git cherry-pick {a['source_sha']}..{c['tested_sha']}", text)
+        self.assertNotIn("Needs you", text)
+
+    def test_overnight_chain_stops_downstream_but_waits_for_quota(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        a = core.submit(self.repo, self.night_task("a"), kind="delegate")
+        b = core.submit(self.repo, self.night_task("b", ["a"]), kind="delegate", depends_on=a["id"])
+        c = core.submit(self.repo, self.night_task("c", ["a", "b"]), kind="delegate", depends_on=b["id"])
+        x = core.submit(self.repo, self.night_task("x"), kind="delegate")
+        y = core.submit(self.repo, self.night_task("y", ["x"]), kind="delegate", depends_on=x["id"])
+        ids = [run["id"] for run in (a, b, c, x, y)]
+        with patch.object(core.agents, "doctor_role", return_value=[]), \
+                patch.object(core.agents, "run_agent", side_effect=self.night_agent(stuck={"b"}, quota={"x"})), \
+                contextlib.redirect_stdout(io.StringIO()):
+            core.work(self.repo, once=True, poll=0.1, run_id=ids, delegate_concurrency=1)
+        a, b, c, x, y = (core.load(self.repo, run_id) for run_id in ids)
+        self.assertEqual(a["status"], "verified")
+        self.assertEqual((b["status"], b["stage"]), ("needs_human", "replan"))
+        self.assertEqual((c["status"], c["stage"]), ("needs_human", "dependency"))
+        self.assertIn(b["id"], c["feedback"])
+        self.assertEqual(x["status"], "waiting_quota")
+        self.assertEqual(y["status"], "waiting_dependency")  # Quota is not failure: it continues once x finishes.
+        with self.assertRaisesRegex(core.FlowError, "dependency cannot finish"):
+            core.resume(self.repo, c["id"], acknowledge=True)
+        text = progress.render_report(progress.report(self.repo))
+        self.assertIn("Needs you", text)
+        self.assertIn("Chains", text)
+        self.assertIn(f"{a['id']} (verified) -> {b['id']} (needs_human) -> {c['id']} (needs_human)", text)
+        self.assertNotIn("Ready to integrate", text)
+
+    def test_chained_task_approval_waits_without_a_worktree(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        a = core.submit(self.repo, self.night_task("a"), kind="delegate")
+        sensitive = dict(self.night_task("b", ["a"]), paths=["docs/auth.md"])
+        b = core.submit(self.repo, sensitive, kind="delegate", depends_on=a["id"])
+        self.assertEqual(b["status"], "awaiting_approval")
+        b = core.approve(self.repo, b["id"])
+        self.assertEqual(b["status"], "waiting_dependency")
+        self.assertFalse(Path(b["worktree"]).exists())
+        core.check_approval(b)
+        with self.assertRaisesRegex(core.FlowError, "Only delegate"):
+            core.submit(self.repo, self.night_task("v"), kind="verify", depends_on=a["id"])
+        with self.assertRaises(core.FlowError):
+            core.submit(self.repo, self.night_task("z"), kind="delegate", depends_on="night-missing-0123456789")
+
     def test_failed_external_verify_never_starts_a_coder(self):
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")

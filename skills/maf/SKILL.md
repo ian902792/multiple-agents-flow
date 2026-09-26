@@ -161,6 +161,17 @@ requires enabled independent review.
 If current HEAD has moved since submission, the evidence is for the earlier
 SHA; submit a new verify run. Never auto-publish or merge a delegated run.
 
+## Overnight chains
+
+When the user wants a batch to run unattended (for example overnight), plan first: small tasks,
+correct acceptance tests, decisions made now. Submit tasks that build on earlier ones with
+`delegate TASK --depends-on RUN_ID`; the run waits in `waiting_dependency` and starts from the
+dependency's tested commit. Approve any `awaiting_approval` scope the user has confirmed, then run
+`work --delegate-concurrency 1` (or `herdr`). In the morning read `report`: handle "Needs you"
+first, then integrate each "Ready to integrate" range, inspect the diff and `verify` the integrated
+commit. A run stopped at stage `dependency` is never resumed; resolve its dependency and submit a
+new chain from there.
+
 ## Explicit batch run
 
 1. Read `mode` and `progress --json`. Honor billing/auth blockers. If a previous
