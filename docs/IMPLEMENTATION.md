@@ -76,7 +76,7 @@ require billing reconfirmation if model routes are unchanged.
 `maf/mode.json` under the common Git directory stores an optional project override. Without it,
 new work uses the global default flow. `mode default` removes the override.
 `$XDG_CONFIG_HOME/multiple-agents-flow/flows.json` (default `~/.config/multiple-agents-flow/flows.json`)
-stores editable user-wide named flows; built-in `quick`, `planned`, and `quick-antigravity` are available without writing that file.
+stores editable user-wide named flows; built-in `quick`, `quick-antigravity`, `quick-codex`, `planned` and `codex-pi` are available without writing that file.
 The adjacent `settings.json` holds `default_flow` (default `quick`) and `herdr_enabled` (default false). Import/export uses explicit JSON.
 Named modes replace only roles; policy/timeouts stay in the optional `.maf.json` or built-in defaults. Submit snapshots the effective config
 and selected mode, with `config_hash` separately binding the project policy. Changing selection never

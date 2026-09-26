@@ -6,7 +6,7 @@
 
 ### ▶ [先看 3 分鐘動畫導覽](https://ian902792.github.io/multiple-agents-flow/)
 
-一步步播放四個情境：日常委派、三件並行、開啟審查、被擋下時；也能切換 Herdr 觀看模式比較差異。
+一步步播放五個情境：日常委派、三件並行、一晚跑一批、開啟審查、被擋下時；也能切換 Herdr 觀看模式比較差異。
 
 [![MAF 動畫導覽：一個需求從對話走到 commit](docs/assets/tour.png)](https://ian902792.github.io/multiple-agents-flow/)
 

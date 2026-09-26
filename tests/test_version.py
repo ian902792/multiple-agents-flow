@@ -28,6 +28,14 @@ class Version(unittest.TestCase):
         with self.assertRaises(SystemExit):
             changelog.section("v99.0.0")
 
+    def test_site_lists_every_built_in_flow(self):
+        from maf import flows
+        site = (ROOT / "site" / "index.html").read_text()
+        names = set(re.findall(r'<div class="card flow"><h3>([^<]+)</h3>', site))
+        self.assertEqual(names, set(flows.templates()))
+        digits = "零一二三四五六七八九十"
+        self.assertIn(f"<h2>{digits[len(names)]}種內建 flow</h2>", site)
+
     def test_cli_prints_version(self):
         output = io.StringIO()
         with self.assertRaises(SystemExit), contextlib.redirect_stdout(output):
