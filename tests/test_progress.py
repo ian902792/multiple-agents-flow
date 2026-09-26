@@ -288,7 +288,7 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(calls[0], ["herdr", "pane", "get", "w1:p1"])
         launch = calls[-1]
         self.assertEqual(launch[:4], ["herdr", "pane", "run", "w2:p2"])
-        self.assertEqual(shlex.split(launch[-1])[-4:], ["work", "--planner-pane", "w1:p1", "--agent-panes"])
+        self.assertEqual(shlex.split(launch[-1])[-5:], ["work", "--daemon", "--planner-pane", "w1:p1", "--agent-panes"])
         self.assertIn("--no-focus", calls[-2])
         with patch.dict(os.environ, {"HERDR_ENV": "1", "HERDR_PANE_ID": ""}), patch.object(core, "command") as command:
             with self.assertRaises(core.FlowError):

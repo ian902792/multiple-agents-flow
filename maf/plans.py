@@ -181,12 +181,20 @@ def preflight(repo, plan, timeout):
     results, seen = [], set()
     try:
         for chain in plan["chains"]:
+            planned = []  # Paths this chain may create up to and including the current task.
             for task in chain["tasks"]:
+                planned += task["paths"]
                 for argv in task["tests"]:
                     key = json.dumps(argv)
                     if key in seen:
                         continue
                     seen.add(key)
+                    missing = [a for a in argv if not a.startswith("-") and core.matches(a, planned)
+                               and not (folder / a).exists()]
+                    if missing:  # A test that runs a file the plan itself creates cannot run yet; that is expected.
+                        results.append({"task": task["id"], "argv": argv, "outcome": "fails",
+                                        "detail": "created by the plan: " + ", ".join(missing)})
+                        continue
                     try:
                         proc = subprocess.Popen(argv, cwd=folder, env=agents.clean_env(), stdin=subprocess.DEVNULL,
                                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

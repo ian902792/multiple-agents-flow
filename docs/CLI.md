@@ -28,9 +28,9 @@ python3 "$FLOW" --repo "$TARGET" --main codex mode
 | `verify TASK.json` | 排入目前 commit 的測試；若 flow 啟用獨立審查才呼叫 reviewer。回傳 run ID 與來源 SHA。 |
 | `submit TASK.json` | 排入獨立 coder 的批次任務；回傳 run ID 與狀態。 |
 | `approve RUN_ID` | 放行一份已檢視的凍結任務範圍；回傳更新後的 run。 |
-| `work [--once] [--run-id ID ...] [--delegate-concurrency N]` | 執行佇列；多個獨立 Pi／Antigravity／Codex 任務預設最多同時 3 個，印出各自階段與結果。 |
+| `work [--once] [--run-id ID ...] [--delegate-concurrency N] [--daemon]` | 執行佇列；多個獨立 Pi／Antigravity／Codex 任務預設最多同時 3 個，印出各自階段與結果。沒有任務能自己往下走（都完成或都要人處理）時自動結束，背景執行的主對話會收到完成通知；`--daemon` 才會一直等新任務（Herdr supervisor 用）。 |
 | `status [RUN_ID]`、`progress [--json\|--watch]` | 查 run 的證據或只讀進度摘要；有用量時列出每次 agent 呼叫的快取命中率（`cache hit`）。 |
-| `night --plan PLAN_ID [--approve]` | 所有問題都決定後，本機試跑每個驗收指令（不呼叫模型），再依序執行計畫中的鏈並印出報告。 |
+| `night --plan PLAN_ID [--approve] [--integrate]` | 所有問題都決定後，本機試跑每個驗收指令（不呼叫模型；要跑的檔案由計畫建立時視為正常），再依序執行計畫中的鏈並印出報告。有任務需要核准又沒加 `--approve` 時，開始前一次列出全部、不執行。`--integrate`：跑完後把全部通過的鏈依序 cherry-pick 到目前分支（衝突的鏈跳過並還原），再用所有任務的驗收指令驗證整合後的 commit，最後只印一份報告。 |
 | `night 任務.json … [+ 任務.json …] [--approve]` | 把依序列出的任務串成鏈（`+` 分開不同的鏈）、依序執行到全部完成或卡住，最後印出中文報告。`--approve` 代表你已看過任務檔並核准需要核准的範圍。 |
 | `retry RUN_ID [--note 說明]` | 帶著上次失敗原因（與你的說明）重排同一件小任務；等它的下游自動改接到新任務，舊任務保留為紀錄。 |
 | `report [--hours N] [--json]` | 無人看管批次的中文總結：需要你處理的、仍在等待的、已完成的，依賴鏈進度，以及可直接整合的 commit 範圍。見[一晚跑一批任務](OVERNIGHT.md)。 |
