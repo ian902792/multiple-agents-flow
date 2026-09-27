@@ -693,10 +693,11 @@ def run_tests(run, directory):
 
 
 def review_result(text, head):
+    fenced = re.fullmatch(r"\s*```(?:json)?\s*\n(.*?)\n?```\s*", text, re.S)  # models often fence JSON anyway
     try:
-        value = json.loads(text)
+        value = json.loads(fenced.group(1) if fenced else text)
     except ValueError as exc:
-        raise FlowError("Reviewer must return valid JSON, without Markdown fences.") from exc
+        raise FlowError("Reviewer must return valid JSON.") from exc
     keys = {"decision", "head_sha", "risk", "summary", "findings"}
     if not isinstance(value, dict) or set(value) - {"notes"} != keys or value["head_sha"] != head:
         raise FlowError("Invalid reviewer schema or stale review SHA.")
