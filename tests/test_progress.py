@@ -9,6 +9,7 @@ import shlex
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -44,6 +45,33 @@ class ProgressTests(unittest.TestCase):
         row = {"agents": [{"role": "coder", "runtime": "pi", "cache_hit": 0.945}, {"role": "reviewer", "runtime": "codex", "cache_hit": None}],
                "status": "tested", "next": "", "attention": False, "log": ""}
         self.assertEqual(progress.detail_lines(row), ["  cache hit: coder pi 94.5%"])
+
+    def test_stats_groups_by_flow_and_model_without_counting_missing_as_zero(self):
+        now = time.time()
+        pi = {"input": 1000, "output": 100, "cacheRead": 3000, "cacheWrite": 0, "cost": {"total": 0.01}}
+        coder = lambda usage, seconds: {"role": "coder", "runtime": "pi", "model": "m", "status": "ok",
+                                        "duration_seconds": seconds, "usage": usage}
+        runs = [{"id": "a", "mode": "quick", "status": "tested", "stage": "tested", "repairs": 1, "created_at": now,
+                 "agents": [coder(pi, 60), coder(pi, 30)]},
+                {"id": "b", "mode": "quick", "status": "needs_human", "stage": "coding", "repairs": 0, "created_at": now,
+                 "agents": [coder(None, None) | {"status": "error"}]},
+                {"id": "c", "mode": "quick", "status": "tested", "stage": "tested", "repairs": 0, "created_at": now, "agents": []},
+                {"id": "bad", "status": "corrupt", "feedback": "unreadable"},
+                {"id": "old", "mode": "quick", "status": "tested", "stage": "tested", "created_at": now - 40 * 86400, "agents": []}]
+        with patch.object(core, "list_runs", return_value=runs):
+            data = progress.stats(Path("."), days=30)
+        self.assertEqual((data["runs"], data["calls"], data["stopped"]), (3, 3, {"corrupt": 1, "needs_human": 1}))
+        flow = data["flows"][0]
+        self.assertEqual((flow["flow"], flow["runs"], flow["complete_rate"]), ("quick", 3, 0.667))
+        self.assertEqual(flow["seconds"], {"mean": 45, "reported": 2, "of": 3})
+        self.assertEqual(flow["input_tokens"], {"mean": 4000, "reported": 2, "of": 3})
+        model = data["models"][0]
+        self.assertEqual((model["role"], model["model"], model["calls"], model["ok_rate"]), ("coder", "pi/m", 3, 0.667))
+        self.assertEqual(model["cost_usd"], {"mean": 0.01, "reported": 2, "of": 3})
+        text = progress.render_stats(data)
+        self.assertIn("3 件任務、3 次 agent 呼叫", text)
+        self.assertIn("token 4k（2/3） / 0k（2/3）", text)
+        self.assertIn("卡住 1", text)
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
