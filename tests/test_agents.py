@@ -201,6 +201,10 @@ class Parsers(unittest.TestCase):
                          "session_id": "s1", "usage": {"input_tokens": 1}})
         self.assertEqual(agents._parse_claude(ok)["text"], "done")
         self.assertEqual(agents._parse_claude(ok)["session_id"], "s1")
+        costed = json.loads(ok) | {"total_cost_usd": 0.25}
+        self.assertEqual(agents._parse_claude(json.dumps(costed))["usage"], {"input_tokens": 1, "total_cost_usd": 0.25})
+        costed["total_cost_usd"] = "0.25"
+        self.assertEqual(agents._parse_claude(json.dumps(costed))["usage"], {"input_tokens": 1})
         self.assertEqual(agents._parse_claude(json.dumps({"type": "system"}) + "\n" + ok)["text"], "done")
         quota = json.dumps({"type": "result", "subtype": "error_during_execution", "is_error": True,
                             "result": "Rate limit reached: out of extra usage", "session_id": "s2"})

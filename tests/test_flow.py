@@ -70,8 +70,8 @@ class FlowTests(unittest.TestCase):
         self.assertEqual([a["role"] for a in run["agents"]], ["coder", "reviewer"])
         self.assertEqual(core.handoff(self.repo, run)["coder_notes"], "Done")
         self.assertEqual(run["maf_version"], maf.__version__)
-        self.assertEqual(core.handoff(self.repo, run)["cache_hit"],
-                         [{"role": "coder", "runtime": "pi", "cache_hit": None}, {"role": "reviewer", "runtime": "pi", "cache_hit": None}])
+        self.assertEqual([(a["role"], a["runtime"], a["cache_hit"], a["input_tokens"]) for a in core.handoff(self.repo, run)["agents"]],
+                         [("coder", "pi", None, None), ("reviewer", "pi", None, None)])
         tampered = copy.deepcopy(run)
         tampered["review"] = {}
         with self.assertRaises(core.FlowError):

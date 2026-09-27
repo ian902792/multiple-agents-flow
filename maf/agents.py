@@ -319,6 +319,9 @@ def _parse_claude(out):
         return None
     r = res[-1]
     sid, usage = r.get("session_id"), r.get("usage")
+    cost = r.get("total_cost_usd")  # Notional API-price estimate; subscription use is not billed per call.
+    if isinstance(usage, dict) and type(cost) in (int, float) and math.isfinite(cost) and cost >= 0:
+        usage = {**usage, "total_cost_usd": cost}
     failure = None
     if r.get("is_error") or r.get("subtype") != "success":
         errs = r.get("errors") or []
