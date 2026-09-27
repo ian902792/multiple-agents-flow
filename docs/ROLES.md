@@ -29,7 +29,16 @@ Claude Opus 5.5 當主對話，只做判斷、拆任務與整合；實作、測�
 
 **不適合**：幾乎都是幾行的小改動（主對話自己改就好，委派反而多花輪數）；或手上沒有 Pi 額度。
 
-**用法**：`maf 改用 quick-flash`。省 Opus 的關鍵不在 flow，而在用法：
+**設定**：先確認 OpenCode Go 的 Use balance 已關閉，再設成全域預設並記錄一次：
+
+```sh
+python3 flow.py settings default-flow quick-flash
+python3 flow.py confirm-billing --no-overage
+```
+
+只想在單一專案用，就在那個專案說 `maf 改用 quick-flash`。
+
+**用法**：省 Opus 的關鍵不在 flow，而在用法：
 
 - 把多個任務寫成一份計畫，用 `night --approve --integrate` 一次跑完，主對話只讀最後的報告。
 - 任務切大一點（一個模組加測試），規格與測試寫清楚。
