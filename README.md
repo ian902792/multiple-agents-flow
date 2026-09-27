@@ -24,7 +24,8 @@ python3 flow.py install-skills
 
 ```sh
 python3 flow.py settings default-flow quick-flash   # 選用；不設就是 quick，怎麼選見下方「選 flow」
-python3 flow.py confirm-billing --no-overage
+python3 flow.py confirm-billing --no-overage                # Claude 主對話
+python3 flow.py --main codex confirm-billing --no-overage   # Codex 主對話（它的預設 flow 是 codex-pi）
 ```
 
 **3. 讓主對話自動分流**：把[六行提示詞](docs/AGENT-INSTRUCTIONS.md#可直接複製的提示詞)貼進 `~/.claude/CLAUDE.md`（Codex 是 `~/.codex/AGENTS.md`），重開主對話。
@@ -36,8 +37,8 @@ python3 flow.py confirm-billing --no-overage
 | 任務 | 主 Agent 怎麼做 |
 | --- | --- |
 | 碰到認證、金流、資料、權限、部署 | 先問你，自己做並開審查 |
-| 需求模糊、要做好幾個決定、跨模組 | 建議你先跑 `/maf-plan` |
-| 一次短回合做得完 | 自己改 |
+| 需求模糊、要做好幾個決定、跨模組或超過約 5 個檔案 | 建議你先跑 `/maf-plan` |
+| 一次短回合做得完，或得先探索才知道改哪裡 | 自己改 |
 | 路徑明確、有測試能驗收 | 交給小任務 Agent，多件一起送出 |
 
 完成時它會給你 commit SHA 與 MAF 跑出的測試證據。委派失敗到修復次數用完，它會換做法或自己接手，不原樣重試，因為重試比 token 單價更貴。小改動、非 Git 資料夾、沒有能驗收的測試時看不到委派，是正常的。push、PR、合併要你說一次。
