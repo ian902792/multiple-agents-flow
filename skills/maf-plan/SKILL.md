@@ -11,9 +11,8 @@ Run only when the human explicitly invokes `/maf-plan` (Claude) or `$maf-plan`
 workflow decision. The current main chat remains the implementer after planning.
 
 The planner is the selected flow's `planner` role and must be a different agent
-from the current main chat: a Claude chat uses the flow's Codex planner (default
-`gpt-6-astra`, high effort); a Codex chat uses the flow's Claude planner (default
-`claude-opus-5-5`, high effort; the user may select `claude-fable-5-1` in Flow
+from the current main chat: a Claude chat uses the flow's Codex planner and a Codex
+chat uses its Claude planner (`flows` shows the models; the user changes them in Flow
 Studio). A second, independent model catches assumptions the main chat shares
 with itself. If the selected flow's planner uses the same runtime, the CLI refuses;
 report that and suggest a flow or Flow Studio change instead of working around it.
