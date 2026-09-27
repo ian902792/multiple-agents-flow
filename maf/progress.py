@@ -600,16 +600,19 @@ def _mean(values):
 def stats(repo, days=30):
     """Read-only spend and outcome totals over this repository's runs, for tuning flows and models."""
     since = time.time() - days * 3600 * 24
-    runs = [run for run in core.list_runs(repo) if float(run.get("created_at") or 0) >= since]
-    flows, models, stopped = {}, {}, {}
+    every = core.list_runs(repo)
+    runs = [run for run in every if run.get("status") != "corrupt" and float(run.get("created_at") or 0) >= since]
+    # A corrupt run has no readable timestamp or agents; count it as a stop, like report does.
+    flows, models = {}, {}
+    stopped = {"corrupt": n} if (n := sum(run.get("status") == "corrupt" for run in every)) else {}
     for run in runs:
         agents = [a for a in run.get("agents") or [] if isinstance(a, dict)]
-        done = run.get("status") != "corrupt" and completed(run)
-        flows.setdefault(run.get("mode") or "未記錄", []).append((run, agents, done))
+        done = completed(run)
+        flows.setdefault(clean(run.get("mode") or "未記錄", 40), []).append((run, agents, done))
         if not done and run.get("status") not in ("queued", "running", "creating", "awaiting_approval", "waiting_dependency"):
             stopped[run.get("status", "?")] = stopped.get(run.get("status", "?"), 0) + 1
         for a in agents:
-            models.setdefault((a.get("role", "?"), f"{a.get('runtime', '?')}/{a.get('model', '?')}"), []).append(a)
+            models.setdefault((clean(a.get("role", "?"), 40), clean(f"{a.get('runtime', '?')}/{a.get('model', '?')}", 80)), []).append(a)
     flow_rows = []
     for mode, items in sorted(flows.items()):
         # A run with no agent calls (tests-only verify) spent nothing, which is known, not missing.

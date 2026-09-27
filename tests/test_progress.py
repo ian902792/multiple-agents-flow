@@ -56,10 +56,11 @@ class ProgressTests(unittest.TestCase):
                 {"id": "b", "mode": "quick", "status": "needs_human", "stage": "coding", "repairs": 0, "created_at": now,
                  "agents": [coder(None, None) | {"status": "error"}]},
                 {"id": "c", "mode": "quick", "status": "tested", "stage": "tested", "repairs": 0, "created_at": now, "agents": []},
+                {"id": "bad", "status": "corrupt", "feedback": "unreadable"},
                 {"id": "old", "mode": "quick", "status": "tested", "stage": "tested", "created_at": now - 40 * 86400, "agents": []}]
         with patch.object(core, "list_runs", return_value=runs):
             data = progress.stats(Path("."), days=30)
-        self.assertEqual((data["runs"], data["calls"], data["stopped"]), (3, 3, {"needs_human": 1}))
+        self.assertEqual((data["runs"], data["calls"], data["stopped"]), (3, 3, {"corrupt": 1, "needs_human": 1}))
         flow = data["flows"][0]
         self.assertEqual((flow["flow"], flow["runs"], flow["complete_rate"]), ("quick", 3, 0.667))
         self.assertEqual(flow["seconds"], {"mean": 45, "reported": 2, "of": 3})
