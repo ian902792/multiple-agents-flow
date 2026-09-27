@@ -2,6 +2,17 @@
 
 版本號採用 [語意化版本](https://semver.org/lang/zh-TW/)：`主版號.次版號.修訂號`。1.0 以前，次版號代表新功能或行為改變，修訂號代表修正。每次發布的最新版本寫在最上面，且必須和 `maf/__init__.py` 的 `__version__` 相同。
 
+## [0.8.0] - 2026-09-28
+
+### 新功能
+
+- 記錄每個 agent 的 token 用量與花費：`report` 會在每件任務後面顯示秒數、輸入與輸出 token，以及約略金額。Claude 的金額取自 `total_cost_usd`，是依 API 價格換算的估計值，不是訂閱實際扣款；Pi 的金額是它自己回報的 `cost.total`。
+- skill 在回報任務完成時，會逐一列出每個 agent 的耗時、token 與花費，留作之後調整 flow 的參考。
+
+### 行為改變
+
+- `handoff` 的 `cache_hit` 清單改名為 `agents`，每筆多了 `model`、`seconds`、`input_tokens`、`output_tokens` 與 `cost_usd`；沒有回報的欄位是 `null`。
+
 ## [0.7.0] - 2026-09-27
 
 ### 新功能

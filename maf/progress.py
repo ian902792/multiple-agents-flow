@@ -298,8 +298,8 @@ def row_for(repo, run):
     return row
 
 
-def cache_hit(usage):
-    """Share of prompt tokens served from the provider cache, or None when counts are missing."""
+def _prompt_parts(usage):
+    """[cache reads, uncached input, cache writes] prompt tokens, or None when counts are missing."""
     if not isinstance(usage, dict):
         return None
     count = lambda key: usage.get(key, 0) if type(usage.get(key, 0)) is int and usage.get(key, 0) >= 0 else None
@@ -317,7 +317,41 @@ def cache_hit(usage):
         return None
     if None in parts or parts[1] < 0 or not sum(parts):
         return None
-    return round(parts[0] / sum(parts), 3)
+    return parts
+
+
+def cache_hit(usage):
+    """Share of prompt tokens served from the provider cache, or None when counts are missing."""
+    parts = _prompt_parts(usage)
+    return round(parts[0] / sum(parts), 3) if parts else None
+
+
+def spend(usage):
+    """Prompt tokens (cached included), output tokens and reported USD cost; each None when not reported."""
+    parts = _prompt_parts(usage)
+    usage = usage if isinstance(usage, dict) else {}
+    output = usage.get("output", usage.get("output_tokens"))
+    cost = usage.get("total_cost_usd", usage["cost"].get("total") if isinstance(usage.get("cost"), dict) else None)
+    return {"input_tokens": sum(parts) if parts else None,
+            "output_tokens": output if type(output) is int and output >= 0 else None,
+            "cost_usd": round(cost, 4) if type(cost) in (int, float) and math.isfinite(cost) and cost >= 0 else None}
+
+
+def total_spend(agents):
+    """Sum spend over attempts; a field is None unless every attempt reported it."""
+    rows = [spend(a.get("usage")) for a in agents]
+    return {k: (round(sum(r[k] for r in rows), 4) if rows and all(r[k] is not None for r in rows) else None)
+            for k in ("input_tokens", "output_tokens", "cost_usd")}
+
+
+def spend_zh(item):
+    """Seconds, tokens and cost where known, e.g. '95 秒  入 20.3k / 出 0.8k tokens  約 $0.12'."""
+    parts = [f"{item['agent_seconds']:.0f} 秒"] if item.get("agent_seconds", 0) >= 1 else []
+    if item.get("input_tokens") is not None and item.get("output_tokens") is not None:
+        parts.append(f"入 {item['input_tokens'] / 1000:.1f}k / 出 {item['output_tokens'] / 1000:.1f}k tokens")
+    if item.get("cost_usd") is not None:
+        parts.append(f"約 ${item['cost_usd']:.2f}")
+    return "  ".join(parts)
 
 
 def rows(repo):
@@ -354,6 +388,7 @@ def report(repo, hours=24):
                       "attention": row["attention"], "next": next_zh(run), "feedback": reason_zh(run, runs),
                       "unverified": clean(unverified, 200),
                       "agent_seconds": round(sum(a.get("duration_seconds") or 0 for a in row.get("agents", [])), 1),
+                      **total_spend(run.get("agents", [])),
                       "cache_hit": round(sum(hits) / len(hits), 3) if hits else None})
     rank = {status: index for index, status in enumerate(REPORT_ORDER)}
     items.sort(key=lambda item: (rank.get(item["status"], len(rank)), item["task"]))
@@ -444,7 +479,7 @@ def render_report(data):
             continue
         lines.append(f"\n{title}（{len(group)}）")
         for item in group:
-            extra = (f"  {item['agent_seconds']:.0f} 秒" if item["agent_seconds"] >= 1 else "") + (
+            extra = (f"  {spend_zh(item)}" if spend_zh(item) else "") + (
                 f"  快取 {item['cache_hit']:.0%}" if item["cache_hit"] is not None else "")
             lines.append(f"  {item['run']}  {status_zh(item['status'])}{extra}")
             if item["attention"] and item["feedback"]:

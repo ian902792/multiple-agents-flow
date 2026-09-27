@@ -576,7 +576,7 @@ def verified(repo, run):
 
 
 def handoff(repo, run):
-    from .progress import cache_hit, eligible
+    from .progress import cache_hit, eligible, spend
     head = eligible(repo, run)
     return {"run": run["id"], "kind": run.get("kind", "batch"), "status": run["status"],
             "source_sha": run.get("source_sha", run["base_sha"]), "head_sha": head,
@@ -584,8 +584,9 @@ def handoff(repo, run):
             "tests": [{"argv": item["argv"], "exit_code": item["exit_code"]} for item in run["tests"]],
             "review": run.get("review") if review_enabled(run["config"]) else None,
             "coder_notes": run.get("coder_notes"), "depends_on": run.get("depends_on"),
-            "cache_hit": [{"role": a["role"], "runtime": a["runtime"], "cache_hit": cache_hit(a.get("usage"))}
-                          for a in run.get("agents", [])]}
+            "agents": [{"role": a["role"], "runtime": a["runtime"], "model": a.get("model"),
+                        "seconds": a.get("duration_seconds"), "cache_hit": cache_hit(a.get("usage")), **spend(a.get("usage"))}
+                       for a in run.get("agents", [])]}
 
 
 def terminate(proc):

@@ -176,6 +176,9 @@ Reviewers misread code: open each review finding's path:line and confirm it befo
 one-line reason for any finding you reject.
 
 Only claim completion if `handoff` succeeds for the current exact commit.
+When reporting completion, add one line per `handoff` `agents` entry: role, runtime/model, seconds,
+input/output tokens and `cost_usd`, writing 未回報 for null. Claude's cost is a notional API-price
+estimate, not a subscription charge. This is reference data for tuning later flows.
 When review is off, report `tested` and do not claim independent review. When
 enabled and approved on the same SHA, report `verified`. Publish/auto-merge
 requires enabled independent review.

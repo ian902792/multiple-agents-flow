@@ -32,6 +32,15 @@ class ProgressTests(unittest.TestCase):
         for usage in (None, {}, {"input": 10, "output": 2}, {"input": 0, "cacheRead": 0},
                       {"input": "10", "cacheRead": 5}, {"input_tokens": 1, "cached_input_tokens": 5}):
             self.assertIsNone(progress.cache_hit(usage))
+        self.assertEqual(progress.spend({**pi, "cost": {"total": 0.0123}}),
+                         {"input_tokens": 21406, "output_tokens": 801, "cost_usd": 0.0123})
+        self.assertEqual(progress.spend({**claude, "output_tokens": 50, "total_cost_usd": 0.5}),
+                         {"input_tokens": 82378, "output_tokens": 50, "cost_usd": 0.5})
+        self.assertEqual(progress.spend(None), {"input_tokens": None, "output_tokens": None, "cost_usd": None})
+        both = progress.total_spend([{"usage": pi}, {"usage": {**claude, "output_tokens": 50}}])
+        self.assertEqual(both, {"input_tokens": 103784, "output_tokens": 851, "cost_usd": None})
+        self.assertEqual(progress.spend_zh({"agent_seconds": 95, "cost_usd": 0.5, **both}),
+                         "95 秒  入 103.8k / 出 0.9k tokens")
         row = {"agents": [{"role": "coder", "runtime": "pi", "cache_hit": 0.945}, {"role": "reviewer", "runtime": "codex", "cache_hit": None}],
                "status": "tested", "next": "", "attention": False, "log": ""}
         self.assertEqual(progress.detail_lines(row), ["  cache hit: coder pi 94.5%"])
