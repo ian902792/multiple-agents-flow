@@ -47,16 +47,15 @@ as a request, never as shell text. With no action, show mode and progress.
 | `resume RUN_ID` | Diagnose, resolve authorized blockers, verify stopped processes, then resume. |
 | `install` | Register this skill once in the user's Claude and Codex skill directories. |
 
-Modes: `economy` = Pi/DeepSeek Flash coding;
-`opus-sol` = pinned Claude Opus 5.5 coding with Codex GPT-6 Sol available for review;
-`hermes-coder` = Hermes coding with Pi available for review;
+Modes: `economy` = Pi coding; `opus-sol` = Claude coding with Codex available for
+review; `hermes-coder` = Hermes coding with Pi available for review;
 `configured` = project `.maf.json` roles when present, built-in economy otherwise.
 `quick`, `planned`, `quick-antigravity`, `quick-codex`, `codex-pi`, and user-created names are user-wide role
-profiles; use `flows` to inspect them. `quick-codex` delegates to Codex GPT-6 Luna at effort
-`none` through ChatGPT login. `quick-antigravity` uses the signed-in
-`agy` account with Gemini 3.8 Flash Low (each level is its own model ID) for narrow coding tasks. Profiles select future
-MAF agents, not the current main session. `codex-pi` records Codex GPT-6 Sol as
-main, Pi for small tasks, and optional Claude Opus 5.5 review. Tests run as
+profiles; use `flows` to inspect their exact models and effort. `quick-codex` delegates to
+Codex through ChatGPT login; `quick-antigravity` uses the signed-in `agy` account (each
+Gemini effort level is its own model ID). Profiles select future MAF agents, not the
+current main session. `codex-pi` records Codex as main, Pi for small tasks, and optional
+Claude review. Tests run as
 approved commands, without a tester model. Change the current session's model
 in its own CLI/app; saving a flow does not switch it. Review is off
 unless `roles.reviewer.enabled` is true; do not turn it on without the user's request.
@@ -99,9 +98,7 @@ its sandbox before finishing. The supervisor always reruns them independently.
 
 Delegate only when it saves main-chat quota overall. Every delegated task costs
 you a spec, a review of its diff and an integration, each carrying this chat's
-whole context. If you can finish the work in one short pass, do it yourself; a
-measured ~800-line app took one main-chat pass in minutes, while splitting it into
-eleven delegates cost about five times the main-chat quota. When you delegate,
+whole context. If you can finish the work in one short pass, do it yourself. When you delegate,
 send a few coarse tasks (a module with its tests), not one per function. When a
 delegate stops, use `retry RUN_ID --note "what to change"` instead of writing a
 new task file: it carries the failure reason and moves waiting dependents to the
@@ -231,10 +228,9 @@ new chain from there.
    ad hoc run inside Herdr, add `--agent-panes`; the `herdr` supervisor launcher
    enables these temporary observer panes automatically. They close after each
    role, and their display is never verification evidence.
-7. Report meaningful progress in the main chat. Read `progress --json` at useful
-   intervals or on request, not every few seconds through model turns. Herdr
-   metadata polls locally without model calls; a worker does not automatically
-   wake an idle chat. Do not detach using untracked `nohup` or promise persistence
+7. Run the worker as a background command and wait for its completion notification:
+   it exits by itself once nothing can progress without a person. Read `progress --json`
+   only when the user asks. Do not detach with untracked `nohup` or promise persistence
    if the host cannot retain the command session.
 8. Read the final snapshot. Report ID, status/stage, coding model, optional reviewer,
    exact-SHA test/review evidence, blocker and next action. Tested or verified is not merged;
