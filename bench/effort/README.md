@@ -12,6 +12,31 @@ python3 bench/effort/run.py --flow quick-antigravity --task webapp --levels low,
 - **不動你的設定**：每個強度都在全新的暫時 repo 與隔離的 MAF 設定裡執行，你的全域 flow 與確認紀錄不受影響。
 - **其他選項**：`--flow` 換成其他內建 flow（例如 `quick-antigravity`）、`--model` 換模型、`--keep` 保留暫時 repo 以便檢查、`--json` 輸出原始數字。Antigravity 的每個強度是不同的模型 ID（`gemini-3.8-flash-low`／`-medium`／`-high`），腳本會自動對應。
 
+## 審查者推理強度
+
+```sh
+python3 bench/effort/run.py --role reviewer --flow quick-flash --task bug-path --levels off,low,medium,high --repeat 3 --confirm-subscription-only
+```
+
+`review/` 的每題是一個基底 commit 加一個待審 commit，走 `verify`。`bug-*` 的測試會通過但程式有錯，審查必須 `changes_requested`；`clean-*` 實作正確、測試完整，必須 `approve`。
+
+| 題目 | 內容 |
+| --- | --- |
+| `bug-chunk` | 分組函式漏掉最後不滿一組的項目；測試只測整除的情況。 |
+| `bug-path` | 用字串前綴檢查路徑是否在根目錄內，`../data-evil/x` 能逃出；測試只測 `../etc` 與絕對路徑。 |
+| `clean-chunk` | 同一函式的正確版，測試含不滿一組的情況。 |
+
+2026-09-27，DeepSeek V4.1 Flash，每題每個強度 3 次：
+
+| 強度 | 判斷正確 | 平均成本 | 平均秒數 |
+| --- | ---: | ---: | ---: |
+| `off` | 9/9 | $0.0011 | 11.1 |
+| `low` | 9/9 | $0.0010 | 11.2 |
+| `medium` | 9/9 | $0.0013 | 14.4 |
+| `high` | 9/9 | $0.0013 | 14.4 |
+
+第一輪有 9/36 次停在 `needs_human`：審查者的判斷正確，但把 JSON 包在 Markdown 程式碼區塊裡被拒。放寬解析後重跑 36 次全部正確。各強度準確度相同，`low` 最便宜也最快，因此成為 `quick-flash` 審查者的預設；和 coder 一樣不選 `off`，因為 coder 基準裡 `off` 較不穩定。這三題都小，難題上的差距可能不同。
+
 ## 題目
 
 | 題目 | 內容 | 測試 |

@@ -1,0 +1,3 @@
+{"id": "chunk-review", "title": "Implement chunk", "instructions": "Implement chunk in chunks.py following its docstring, with tests.",
+ "paths": ["chunks.py", "test_chunks.py"], "tests": [["python3", "-B", "-m", "unittest", "-q", "test_chunks"]],
+ "acceptance_why": "Every item appears in exactly one chunk, in order.", "risk": "manual"}

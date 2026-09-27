@@ -411,6 +411,20 @@ class FlowTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             flows.save("luna-minimal", flow)
 
+    def test_quick_flash_reviews_claude_commits_with_pi(self):
+        flow = flows.validate("quick-flash-copy", flows.templates()["quick-flash"])
+        self.assertEqual(flow["main"]["runtime"], "claude")
+        self.assertEqual((flow["roles"]["coder"]["runtime"], flow["roles"]["reviewer"]["runtime"]), ("pi", "pi"))
+        self.assertTrue(core.review_enabled(flow))
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        core.confirm_billing(self.repo, core.execution_config(self.repo, "quick-flash")[1])
+        (self.repo / "README.md").write_text("After\n")
+        core.git(self.repo, "add", "README.md")
+        core.git(self.repo, "commit", "-qm", "Claude implementation")
+        run = core.submit(self.repo, self.task, kind="verify", mode="quick-flash", base_ref="HEAD^")
+        self.assertEqual(run["config"]["roles"]["reviewer"]["model"], "deepseek-v4.1-flash")
+
     def test_main_chats_keep_separate_defaults_and_project_modes(self):
         self.assertEqual(core.execution_config(self.repo, main_runtime="codex")[0], "codex-pi")
         flows.set_default("planned")
@@ -1088,6 +1102,9 @@ class FlowTests(unittest.TestCase):
         base = {"decision": "approve", "head_sha": "a", "risk": "low", "summary": "ok", "findings": []}
         self.assertEqual(core.review_result(json.dumps(dict(base, notes=["maybe rename"])), "a")["notes"], ["maybe rename"])
         self.assertEqual(core.review_result(json.dumps(base), "a")["notes"], [])
+        self.assertEqual(core.review_result("```json\n" + json.dumps(base) + "\n```\n", "a")["decision"], "approve")
+        with self.assertRaises(core.FlowError):
+            core.review_result("Looks good.\n```json\n" + json.dumps(base) + "\n```", "a")
         for bad in (dict(base, notes="x"), dict(base, notes=[1]), dict(base, extra=[])):
             with self.assertRaises(core.FlowError):
                 core.review_result(json.dumps(bad), "a")

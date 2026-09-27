@@ -550,7 +550,7 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
     <div class="wrap">
       <div class="sec-head">
         <span class="kicker">選分工</span>
-        <h2>五種內建 flow</h2>
+        <h2>六種內建 flow</h2>
         <p>Flow 決定主對話、小任務和審查各由誰來做。Claude 與 Codex 各有自己的預設，互不覆蓋。</p>
       </div>
       <div class="flows">
@@ -566,6 +566,10 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
           <div class="chain"><span class="av main">主</span><i>→</i><span class="av rev">CX</span><span>Claude Opus 5.5 → GPT-6 Luna（none）</span></div>
           <p>小任務交給 Codex 的 GPT-6 Luna，推理強度 none、不產生推理 token，用 ChatGPT 訂閱額度。</p>
           <div class="say"><span class="kw">maf</span>改用 quick-codex。<button class="copy" type="button">複製</button></div></div>
+        <div class="card flow"><h3>quick-flash</h3>
+          <div class="chain"><span class="av main">主</span><i>→</i><span class="av pi">Pi</span><span>Claude Opus 5.5 → Flash 實作與審查</span></div>
+          <p>Opus 額度少、Pi 額度多時用。實作、修復、審查都交 DeepSeek V4.1 Flash，審查預設開啟；Opus 只做判斷與整合。</p>
+          <div class="say"><span class="kw">maf</span>改用 quick-flash。<button class="copy" type="button">複製</button></div></div>
         <div class="card flow"><h3>planned</h3>
           <div class="chain"><span class="av rev">規</span><i>→</i><span class="av main">主</span><i>→</i><span class="av pi">Pi</span><span>Codex 規畫，Claude 實作</span></div>
           <p>中大型需求。先手動輸入 <code>/maf-plan</code> 請 Codex 規畫，Claude 實作。</p>
@@ -575,7 +579,7 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
           <p>以 Codex 為主對話；<code>$maf-plan</code> 由 Claude Opus 5.5 規畫，可選 Claude 審查。Codex 的預設。</p>
           <div class="say"><span class="kw">maf</span>改用 codex-pi。<button class="copy" type="button">複製</button></div></div>
       </div>
-      <p class="fine">獨立審查預設關閉，要在 Flow Studio 勾選。開啟後，審查者必須和主對話來自不同工具。</p>
+      <p class="fine">除了 quick-flash，獨立審查預設關閉，要在 Flow Studio 勾選。開啟後，審查者必須和主對話來自不同工具。</p>
     </div>
   </section>
 

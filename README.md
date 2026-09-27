@@ -74,10 +74,11 @@ MAF 預設只做到本機驗證；push、PR、合併要你說一次，一次就�
 | `quick`（Claude 預設） | Claude Opus 5.5 | Pi · DeepSeek V4.1 Flash | Codex GPT-6 Astra |
 | `quick-antigravity` | Claude Opus 5.5 | Antigravity · Gemini 3.8 Flash Low | Codex GPT-6 Astra |
 | `quick-codex` | Claude Opus 5.5 | Codex · GPT-6 Luna（推理 `none`） | Codex GPT-6 Astra |
+| `quick-flash` | Claude Opus 5.5 | Pi · DeepSeek V4.1 Flash，審查也交 Pi（預設開啟） | Codex GPT-6 Astra |
 | `planned` | Claude Opus 5.5 | Pi · DeepSeek V4.1 Flash | Codex GPT-6 Astra，大任務先規畫 |
 | `codex-pi`（Codex 預設） | Codex GPT-6 Sol | Pi · DeepSeek V4.1 Flash | Claude Opus 5.5 |
 
-獨立審查預設關閉，可在 Flow Studio 開啟；審查者與規畫者一定和主對話不同家。Pi 與 Antigravity coder 預設推理強度都是 `low`，依據見[基準測試](bench/effort/README.md)。
+獨立審查除 `quick-flash` 外預設關閉，可在 Flow Studio 開啟；Opus 額度少、Pi 額度多時選 `quick-flash`，理由見[誰實作、誰審查](docs/ROLES.md)；審查者與規畫者一定和主對話不同家。Pi 與 Antigravity coder 預設推理強度都是 `low`，依據見[基準測試](bench/effort/README.md)。
 
 ## 為什麼選 MAF
 

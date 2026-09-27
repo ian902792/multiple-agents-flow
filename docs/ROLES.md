@@ -20,3 +20,22 @@
 - **困難或模糊**：主對話自己實作並 commit，再用 `verify`。要第二雙眼睛就在 flow 開啟獨立審查（和主對話不同家）。`verify` 審查不通過時停下來由主對話修，不會自動來回。
 - **迴圈有上限**：`max_repairs` 預設 1、最多 5，用完停在 `needs_human`。
 - **只有能證明的問題會擋**：審查的 `findings` 只放能在程式碼中證明的正確性、安全或回歸問題，會觸發修復；疑慮與建議放 `notes`，不擋 approve，由主對話在 `handoff` 判斷。
+
+## `quick-flash`：Opus 額度少、Pi 額度多時
+
+Claude Opus 5.5 當主對話，只做判斷、拆任務與整合；實作、測試失敗後的修復、審查都交 Pi · DeepSeek V4.1 Flash。和 `quick` 的差別只有審查：`quick-flash` 的 Pi 審查預設開啟，`quick` 的 Codex 審查預設關閉。
+
+**適合**：Opus 訂閱額度是瓶頸，Pi／OpenCode Go 額度寬裕；多數任務能寫成「一個模組加測試」。
+
+**不適合**：幾乎都是幾行的小改動（主對話自己改就好，委派反而多花輪數）；或手上沒有 Pi 額度。
+
+**用法**：`maf 改用 quick-flash`。省 Opus 的關鍵不在 flow，而在用法：
+
+- 把多個任務寫成一份計畫，用 `night --approve --integrate` 一次跑完，主對話只讀最後的報告。
+- 任務切大一點（一個模組加測試），規格與測試寫清楚。
+- 一個主題做完就開新對話，不要讓主對話 context 越堆越長。
+- 專案可在 `.maf.json` 把 `max_repairs` 調成 2，讓 Flash 自己多修一輪，少回頭找 Opus。
+
+**限制**：委派任務時，審查者和 coder 是同一個模型，盲點相同，把關主要仍靠測試；審查主對話自己的 commit（`verify`）時才是真正的交叉檢查。
+
+**推理強度**：coder 與審查者都用 `low`。依據見[基準測試](../bench/effort/README.md)：審查三題在 off／low／medium／high 判斷全對，`low` 最省。
