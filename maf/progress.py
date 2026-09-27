@@ -591,6 +591,74 @@ def ttl_for(poll):
     return max(TTL_MS, (int(poll) + 15) * 1000)
 
 
+def _mean(values):
+    """Mean of reported values and how many were reported; None values are missing, not zero."""
+    known = [v for v in values if v is not None]
+    return {"mean": round(sum(known) / len(known), 4) if known else None, "reported": len(known), "of": len(values)}
+
+
+def stats(repo, days=30):
+    """Read-only spend and outcome totals over this repository's runs, for tuning flows and models."""
+    since = time.time() - days * 3600 * 24
+    runs = [run for run in core.list_runs(repo) if float(run.get("created_at") or 0) >= since]
+    flows, models, stopped = {}, {}, {}
+    for run in runs:
+        agents = [a for a in run.get("agents") or [] if isinstance(a, dict)]
+        done = run.get("status") != "corrupt" and completed(run)
+        flows.setdefault(run.get("mode") or "未記錄", []).append((run, agents, done))
+        if not done and run.get("status") not in ("queued", "running", "creating", "awaiting_approval", "waiting_dependency"):
+            stopped[run.get("status", "?")] = stopped.get(run.get("status", "?"), 0) + 1
+        for a in agents:
+            models.setdefault((a.get("role", "?"), f"{a.get('runtime', '?')}/{a.get('model', '?')}"), []).append(a)
+    flow_rows = []
+    for mode, items in sorted(flows.items()):
+        # A run with no agent calls (tests-only verify) spent nothing, which is known, not missing.
+        totals = [{**(total_spend(agents) if agents else dict.fromkeys(("input_tokens", "output_tokens", "cost_usd"), 0)), "seconds": sum(a["duration_seconds"] for a in agents)
+                   if all(type(a.get("duration_seconds")) in (int, float) for a in agents) else None}
+                  for _, agents, _ in items]
+        flow_rows.append({"flow": mode, "runs": len(items),
+                          "complete_rate": round(sum(done for *_, done in items) / len(items), 3),
+                          "repairs": _mean([run.get("repairs") for run, *_ in items]),
+                          **{k: _mean([t[k] for t in totals]) for k in ("seconds", "input_tokens", "output_tokens", "cost_usd")}})
+    model_rows = []
+    for (role, model), items in sorted(models.items()):
+        spends = [spend(a.get("usage")) for a in items]
+        model_rows.append({"role": role, "model": model, "calls": len(items),
+                           "ok_rate": round(sum(a.get("status") == "ok" for a in items) / len(items), 3),
+                           "seconds": _mean([a.get("duration_seconds") for a in items]),
+                           "cache_hit": _mean([cache_hit(a.get("usage")) for a in items]),
+                           **{k: _mean([x[k] for x in spends]) for k in ("input_tokens", "output_tokens", "cost_usd")}})
+    return {"days": days, "runs": len(runs), "calls": sum(len(v) for v in models.values()),
+            "flows": flow_rows, "models": model_rows, "stopped": stopped}
+
+
+def render_stats(data):
+    def num(m, fmt):
+        if m["mean"] is None:
+            return "未回報"
+        return fmt(m["mean"]) + (f"（{m['reported']}/{m['of']}）" if m["reported"] < m["of"] else "")
+    tok = lambda v: f"{v / 1e6:.1f}M" if v >= 1e6 else f"{v / 1000:.0f}k"
+    pair = lambda row: (f"{num(row['input_tokens'], tok)} / {num(row['output_tokens'], tok)}"
+                        if row["input_tokens"]["mean"] is not None or row["output_tokens"]["mean"] is not None else "未回報")
+    lines = [f"MAF 統計：最近 {data['days']:g} 天，{data['runs']} 件任務、{data['calls']} 次 agent 呼叫"]
+    if data["flows"]:
+        lines.append("\n按 flow（每件任務平均）")
+        for row in data["flows"]:
+            lines.append(f"  {row['flow']}  {row['runs']} 件  完成 {row['complete_rate']:.0%}  修復 {num(row['repairs'], lambda v: f'{v:.1f}')}"
+                         f"  {num(row['seconds'], lambda v: f'{v / 60:.1f} 分')}  token {pair(row)}"
+                         f"  {num(row['cost_usd'], lambda v: f'${v:.3f}')}")
+    if data["models"]:
+        lines.append("\n按角色與模型（每次呼叫平均）")
+        for row in data["models"]:
+            lines.append(f"  {row['role']}  {row['model']}  {row['calls']} 次  成功 {row['ok_rate']:.0%}"
+                         f"  {num(row['seconds'], lambda v: f'{v:.0f} 秒')}  快取 {num(row['cache_hit'], lambda v: f'{v:.0%}')}"
+                         f"  token {pair(row)}  {num(row['cost_usd'], lambda v: f'${v:.3f}')}")
+    if data["stopped"]:
+        lines.append("\n停下的原因：" + " · ".join(f"{status_zh(k)} {n}" for k, n in sorted(data["stopped"].items())))
+    lines.append("\n（n/N）= 只有 n 筆有回報；Claude 金額是 API 價格估計，不是訂閱扣款。")
+    return "\n".join(lines)
+
+
 def report_pane(repo, pane, title, poll=5):
     from . import flows
     if not flows.settings()["herdr_enabled"]:

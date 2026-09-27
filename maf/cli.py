@@ -106,6 +106,9 @@ def parser():
     p = commands.add_parser("report", help="Summarize recent runs for unattended batches: what needs you, chains, what to integrate")
     p.add_argument("--hours", type=float, default=24, help="Include runs created in the last N hours (default 24)")
     p.add_argument("--json", action="store_true")
+    p = commands.add_parser("stats", help="Spend and outcome totals by flow and by role/model, for tuning")
+    p.add_argument("--days", type=float, default=30, help="Include runs created in the last N days (default 30)")
+    p.add_argument("--json", action="store_true")
     p = commands.add_parser("resume", help="Resume only after inspecting an interrupted/quota-blocked run")
     p.add_argument("run_id")
     p.add_argument("--acknowledge-stopped", action="store_true")
@@ -299,6 +302,10 @@ def main(argv=None):
         elif args.action == "report":
             data = progress.report(repo, args.hours)
             print(json.dumps(data, ensure_ascii=False, indent=2) if args.json else progress.render_report(data))
+            return
+        elif args.action == "stats":
+            data = progress.stats(repo, args.days)
+            print(json.dumps(data, ensure_ascii=False, indent=2) if args.json else progress.render_stats(data))
             return
         elif args.action == "live-view":
             progress.follow_live(repo, args.file, args.worktree)
