@@ -138,7 +138,9 @@ merge still require their own explicit authorization.
 
 Prepare private task JSON with `id`, `title`, `instructions`, `paths`, `tests`,
 `risk`, optional boolean `independent`, and optional `acceptance_why` (the real purpose the tests
-must protect, so passing tests that assert nothing are caught), as described below. Keep it outside the Git worktree. Before
+must protect, so passing tests that assert nothing are caught), as described below. For `tests`, pick the
+smallest command that proves this task (one test module, not the full suite); run the full suite once on
+the final integrated commit. Keep it outside the Git worktree. Before
 `delegate` or `verify`, commit the current work and ensure the tree is fully
 clean; these commands snapshot exact HEAD. Do not stash or reset user changes.
 Read `mode` first. Follow the selected global or project flow; do not switch
