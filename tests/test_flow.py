@@ -1084,6 +1084,14 @@ class FlowTests(unittest.TestCase):
             with self.assertRaises(core.FlowError):
                 core.review_result(json.dumps(value), "a")
 
+    def test_review_notes_do_not_block(self):
+        base = {"decision": "approve", "head_sha": "a", "risk": "low", "summary": "ok", "findings": []}
+        self.assertEqual(core.review_result(json.dumps(dict(base, notes=["maybe rename"])), "a")["notes"], ["maybe rename"])
+        self.assertEqual(core.review_result(json.dumps(base), "a")["notes"], [])
+        for bad in (dict(base, notes="x"), dict(base, notes=[1]), dict(base, extra=[])):
+            with self.assertRaises(core.FlowError):
+                core.review_result(json.dumps(bad), "a")
+
     def test_checks_fail_closed(self):
         for checks in (None, [], [{"status": "IN_PROGRESS"}], [{"status": "COMPLETED", "conclusion": "FAILURE"}]):
             self.assertFalse(github.checks_pass({"statusCheckRollup": checks}))

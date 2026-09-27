@@ -160,6 +160,7 @@ question. Do not resume that run; settle the issue and submit a new scoped task.
 Ordinary test/review failures use the configured repair budget automatically.
 
 Read `coder_notes` (the coder's `UNVERIFIED:` items) before integrating; they often name the next task.
+The review's `notes` are non-blocking doubts that did not trigger a repair; weigh them yourself.
 Reviewers misread code: open each review finding's path:line and confirm it before acting; state a
 one-line reason for any finding you reject.
 
