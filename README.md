@@ -94,6 +94,7 @@ MAF 預設只做到本機驗證；push、PR、合併要你說一次，一次就�
 
 - [一晚跑一批任務](docs/OVERNIGHT.md)：規畫、決定、夜間執行、早上報告。
 - [讓主對話自動使用 MAF](docs/AGENT-INSTRUCTIONS.md)：六行提示詞，含自己的 repo 自動合併的選用設定。
+- [誰實作、誰審查](docs/ROLES.md)：強弱模型怎麼分工才省又好，以及審查迴圈為什麼會失控。
 - [指令參考](docs/CLI.md)：CLI、任務 JSON、核准與中斷恢復、Herdr 觀看模式。
 - [Pi 推理強度基準測試](bench/effort/README.md)：用固定題目自己比較 `off`～`max`。
 - [版本紀錄](CHANGELOG.md)：目前版本可用 `python3 flow.py --version` 查看。

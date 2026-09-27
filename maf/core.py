@@ -698,14 +698,15 @@ def review_result(text, head):
     except ValueError as exc:
         raise FlowError("Reviewer must return valid JSON, without Markdown fences.") from exc
     keys = {"decision", "head_sha", "risk", "summary", "findings"}
-    if not isinstance(value, dict) or set(value) != keys or value["head_sha"] != head:
+    if not isinstance(value, dict) or set(value) - {"notes"} != keys or value["head_sha"] != head:
         raise FlowError("Invalid reviewer schema or stale review SHA.")
+    value.setdefault("notes", [])
     if value["decision"] not in ("approve", "changes_requested") or value["risk"] not in ("low", "manual"):
         raise FlowError("Invalid review decision/risk.")
-    if not isinstance(value["summary"], str) or not isinstance(value["findings"], list):
-        raise FlowError("Invalid review summary/findings.")
-    if any(not isinstance(item, str) for item in value["findings"]):
-        raise FlowError("Review findings must be strings.")
+    if not isinstance(value["summary"], str) or not all(isinstance(value[key], list) for key in ("findings", "notes")):
+        raise FlowError("Invalid review summary/findings/notes.")
+    if any(not isinstance(item, str) for item in value["findings"] + value["notes"]):
+        raise FlowError("Review findings and notes must be strings.")
     if value["decision"] == "approve" and value["findings"]:
         raise FlowError("Approval cannot contain unresolved findings.")
     return value
@@ -835,8 +836,11 @@ def execute(repo, run, agent_panes=False):
                       "Find correctness/security/regression issues; assess whether this is genuinely low risk. "
                       "Check the tests actually assert the task's purpose (acceptance_why when present), not merely pass. "
                       "Write each finding as path:line | problem | code evidence | fix; no style nits or padding. "
+                      "findings are blocking only: a correctness/security/regression bug you can show in the code. "
+                      "Put doubts, suggestions and anything you cannot prove in notes; notes never block. "
                       "Return ONLY JSON with keys decision (approve|changes_requested), head_sha, "
-                      "risk (low|manual), summary (string), findings (array of actionable strings). "
+                      "risk (low|manual), summary (string), findings (array of actionable strings), "
+                      "notes (array of strings). "
                       "An approve decision requires empty findings. Use changes_requested + manual risk for "
                       "security, permissions or requirements needing human judgment; ordinary fixable bugs use low risk.\n"
                       + "HEAD: " + run["tested_sha"] + "\nTASK: " + json.dumps(run["task"], ensure_ascii=False)

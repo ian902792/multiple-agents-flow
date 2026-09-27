@@ -1,2 +1,2 @@
 """Subscription-first, resumable agent workflow."""
-__version__ = "0.5.1"  # Bump with a CHANGELOG.md entry; a vX.Y.Z tag publishes the release.
+__version__ = "0.6.0"  # Bump with a CHANGELOG.md entry; a vX.Y.Z tag publishes the release.
