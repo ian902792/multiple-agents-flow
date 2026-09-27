@@ -28,7 +28,7 @@ cd multiple-agents-flow
 python3 flow.py install-skills
 ```
 
-裝完重開主對話。想換預設 flow，執行 `python3 flow.py ui` 開啟 Flow Studio。
+裝完重開主對話。想換預設 flow，執行 `python3 flow.py ui` 開啟 Flow Studio，或直接 `python3 flow.py settings default-flow 名稱`。Opus 額度少、Pi 額度多的人選 `quick-flash`，怎麼選見[誰實作、誰審查](docs/ROLES.md)。
 
 **2. 確認只用訂閱**：先到各家控制台確認額外付費用量、OpenCode Go 的 Use balance 都已關閉，再記錄一次：
 
@@ -49,7 +49,7 @@ python3 flow.py --main codex confirm-billing --no-overage   # Codex 預設
 
 | 想做的事 | 對主 Agent 說 |
 | --- | --- |
-| 換分工方式 | 「maf 改用 quick」、「maf 改回全域預設」 |
+| 換分工方式 | 「maf 改用 quick-flash」、「maf 改回全域預設」 |
 | 同時處理幾件獨立的小事（任何 flow 都可以，Pi、Antigravity 或 Codex 最多並行 3 件） | 「maf 同時處理 1. … 2. … 3. …，各自驗收」 |
 | 看進度 | `/maf status`（Codex 用 `$maf status`） |
 | 大任務先請另一家的強模型規畫 | `/maf-plan 需求`（Codex 用 `$maf-plan 需求`） |
