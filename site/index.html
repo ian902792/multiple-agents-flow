@@ -357,7 +357,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-bet
       <div class="sec-head">
         <span class="kicker">互動示範</span>
         <h2>一個需求，從對話走到 commit</h2>
-        <p>選一個情境按播放。打開右上角的 Herdr 開關，可以比較勾選 Herdr 後畫面多了什麼。</p>
+        <p>第一個情境是簡單版：你只說需求，主 Agent 自己分流。其他情境示範以 maf 開頭的手動指揮。選一個情境按播放。打開右上角的 Herdr 開關，可以比較勾選 Herdr 後畫面多了什麼。</p>
       </div>
       <div class="stage" id="stage">
         <div class="bar">
@@ -644,6 +644,31 @@ python3 flow.py install-skills<button class="copy" type="button">複製</button>
 const NODES=["需求","任務範圍","工作樹施工","測試","獨立審查","整合交接"];
 const P='python3 "$FLOW" --repo . ';
 const S={
+ auto:{label:"自動分流",main:"Claude Code · quick-flash",skip:false,
+  desc:"<b>簡單版：照常說需求，不用記指令。</b>主 Agent 依分流表決定：一行的自己改、有測試能驗收的交給 Pi、動到認證的先問你再自己做。flow：<b>quick-flash</b>（Pi 實作也審查）。需先把六行提示詞放進 CLAUDE.md。",
+  ev:[
+  {t:"you",x:"幫我三件事：1. footer 年份改成 2026；2. 新增訂單 CSV 匯出，要有測試；3. 登入 session 改成 7 天過期。",s:0,st:"—"},
+  {t:"ai",x:"我依分流表處理：\n① footer 只有一行 → 我直接改。\n② CSV 匯出路徑明確、有測試能驗收 → 交給 Pi。\n③ 動到登入 session，屬於認證 → 我自己做並開審查。\n關於 ③ 先問你：7 天過期要套用到現有的 session，還是只套用新登入？",s:1},
+  {t:"you",x:"只套用新登入。"},
+  {t:"ai",x:"好。① 已改好並 commit。② 交給 Pi，這是凍結的任務範圍：",code:'{\n  "id": "orders-csv",\n  "paths": ["src/export/csv.ts", "tests/export.test.ts"],\n  "tests": [["npm", "test", "--", "export"]],\n  "acceptance_why": "匯出的每一列都能還原成原本的訂單",\n  "risk": "manual"\n}'},
+  {t:"cmd",x:P+"delegate /private/tmp/orders-csv.json"},
+  {t:"out",x:'{ "id": "orders-csv-2b7d90e4c1", "status": "queued", … }',st:"queued"},
+  {t:"cmd",x:P+"work --once --run-id orders-csv-2b7d90e4c1"},
+  {t:"out",x:"[orders-csv-2b7d90e4c1] coding",s:2,st:"running"},
+  {t:"cmt",x:"# 等 Pi 的時候，主 Agent 自己做 ③"},
+  {t:"out",x:"[orders-csv-2b7d90e4c1] testing",s:3},
+  {t:"out",x:"[orders-csv-2b7d90e4c1] reviewing",s:4},
+  {t:"out",c:"ok",x:"[orders-csv-2b7d90e4c1] verified:",s:5,st:"verified"},
+  {t:"cmt",x:"# Pi 審查：findings 為空才核准；只是疑慮的 notes 不擋，交給主 Agent 判斷"},
+  {t:"ai",x:"② 完成。我把它和 ①、③ 整合，再對最終 commit 驗證一次，Pi 也會審查我寫的 session 改動。"},
+  {t:"cmd",x:P+"verify /private/tmp/final.json"},
+  {t:"out",x:'{ "id": "final-7e13a8d05b", "source_sha": "5d7e2a1…", "status": "queued", … }',st:"queued"},
+  {t:"cmd",x:P+"work --once --run-id final-7e13a8d05b"},
+  {t:"out",x:"[final-7e13a8d05b] testing",s:3,st:"running"},
+  {t:"out",x:"[final-7e13a8d05b] reviewing",s:4},
+  {t:"out",c:"ok",x:"[final-7e13a8d05b] verified:",s:5,st:"verified"},
+  {t:"ai",x:"三件都完成，verified @ 5d7e2a1：① 我直接改；② Pi 實作；③ 我實作、Pi 審查。你只說了需求，怎麼分工由我決定。仍只在本機，要 push 再跟我說。",s:6}
+ ]},
  daily:{label:"日常小任務",main:"Claude Code · quick",skip:true,
   desc:"<b>flow：quick</b>。Claude 把一件路徑明確的小工作交給 Pi，沒開審查，結果是 <b>tested</b>。",
   ev:[
@@ -917,7 +942,7 @@ $("speed").addEventListener("click",e=>{speed=speed===1?2:speed===2?3:1;e.curren
 $("herdr-toggle").addEventListener("click",()=>{setHerdr(!herdr);restart()});
 $("try-herdr").addEventListener("click",()=>{if(!herdr)setHerdr(true);if(cur==="blocked")choose("parallel",false);$("demo").scrollIntoView({behavior:reduce?"auto":"smooth"});setTimeout(restart,reduce?0:500)});
 
-setHerdr(false);choose("daily",false);
+setHerdr(false);choose("auto",false);
 if(!reduce&&"IntersectionObserver" in window){
   let started=false;
   const io=new IntersectionObserver(es=>{if(!started&&es[0].isIntersecting){started=true;io.disconnect();restart()}},{threshold:.3});
