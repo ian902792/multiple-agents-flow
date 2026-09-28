@@ -184,8 +184,8 @@ When reporting completion, paste `handoff`'s `usage_text` verbatim in a code blo
 round or translate it. It is reference data for tuning later flows. In Claude Code, add the main chat's
 own usage in the same code block from one run of
 `npx -y ccusage@latest claude session --id "$CLAUDE_CODE_SESSION_ID" --compact 2>/dev/null | tail -3`
-(its cost is an API-price estimate, not a subscription charge). If the variable is unset or the command
-fails, write `主對話用量：無法取得` and move on; never retry it or read transcripts instead. When the user asks
+(its cost is an API-price estimate, not a subscription charge). If the variable is unset or the command prints nothing
+(it fails silently), write `主對話用量：無法取得` and move on; never retry it or read transcripts instead. When the user asks
 how flows or models compare over time, run `stats` (default 30 days) and quote its table.
 When review is off, report `tested` and do not claim independent review. When
 enabled and approved on the same SHA, report `verified`. Publish/auto-merge
