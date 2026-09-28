@@ -102,6 +102,29 @@ class FlowTests(unittest.TestCase):
         core.git(self.repo, "cherry-pick", run["tested_sha"])
         self.assertEqual(core.clean(self.repo, apply=True)["removed"], [{"run": run["id"], "reason": "卡住，但內容已在 main"}])
 
+    def test_cancel_drops_one_stopped_run_and_clean_removes_it(self):
+        run = self.complete()
+        dependent = {**run, "id": "later-0000000001", "worktree": str(core.worktrees_for(self.repo) / "later-0000000001"),
+                     "branch": "maf/later-0000000001", "depends_on": run["id"], "status": "waiting_dependency"}
+        core.save(self.repo, dependent)
+        with self.assertRaisesRegex(core.FlowError, "later-0000000001"):
+            core.cancel(self.repo, run["id"])
+        core.cancel(self.repo, dependent["id"], "not needed")
+        with core.worker_exclusive(self.repo), self.assertRaisesRegex(core.FlowError, "worker"):
+            core.cancel(self.repo, run["id"])
+        result = core.cancel(self.repo, run["id"], "superseded")
+        self.assertEqual((result["status"], len(result["unintegrated"])), ("cancelled", 1))
+        with self.assertRaisesRegex(core.FlowError, "stopped run"):
+            core.cancel(self.repo, run["id"])
+        with self.assertRaises(core.FlowError):
+            core.resume(self.repo, run["id"], acknowledge=True)
+        saved = core.load(self.repo, run["id"])
+        self.assertEqual((saved["cancelled"]["note"], saved["cancelled"]["from_status"]), ("superseded", "verified"))
+        self.assertEqual(progress.rows(self.repo), [])
+        self.assertEqual(progress.stats(self.repo)["stopped"], {"cancelled": 2})
+        self.assertEqual(core.clean(self.repo, apply=True)["removed"], [{"run": run["id"], "reason": "已取消"}])
+        self.assertFalse(Path(run["worktree"]).exists())
+
     def test_offline_full_workflow(self):
         run = self.complete()
         self.assertEqual(core.verified(self.repo, run), run["tested_sha"])
