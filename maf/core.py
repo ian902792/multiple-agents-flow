@@ -643,7 +643,8 @@ def clean(repo, apply=False):
         elif run.get("superseded_by"):
             removable.append((run, f"已被 {run['superseded_by']} 取代"))
         elif run.get("status") == "cancelled":  # A person chose to drop it, unintegrated commits included.
-            removable.append((run, "已取消"))
+            lost = (run.get("cancelled") or {}).get("unintegrated") or []
+            removable.append((run, "已取消" + (f"，會捨棄 {len(lost)} 個未整合 commit：" + "；".join(lost) if lost else "")))
         elif any(line.startswith("+") for line in git(repo, "cherry", run["config"]["base_branch"], head).splitlines()):
             kept.append((run, f"還沒整合進 {run['config']['base_branch']}"))
         else:

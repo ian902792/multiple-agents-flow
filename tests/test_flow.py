@@ -122,7 +122,9 @@ class FlowTests(unittest.TestCase):
         self.assertEqual((saved["cancelled"]["note"], saved["cancelled"]["from_status"]), ("superseded", "verified"))
         self.assertEqual(progress.rows(self.repo), [])
         self.assertEqual(progress.stats(self.repo)["stopped"], {"cancelled": 2})
-        self.assertEqual(core.clean(self.repo, apply=True)["removed"], [{"run": run["id"], "reason": "已取消"}])
+        self.assertTrue(Path(run["worktree"]).exists())  # cancel itself deletes nothing.
+        reason = core.clean(self.repo, apply=True)["removed"][0]["reason"]
+        self.assertTrue(reason.startswith("已取消，會捨棄 1 個未整合 commit："), reason)
         self.assertFalse(Path(run["worktree"]).exists())
 
     def test_offline_full_workflow(self):
