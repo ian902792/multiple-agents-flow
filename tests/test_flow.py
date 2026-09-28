@@ -73,6 +73,10 @@ class FlowTests(unittest.TestCase):
         (Path(run["worktree"]) / "stray.txt").unlink()
         self.assertEqual(core.clean(self.repo), {"applied": False, "removed": [{"run": run["id"], "reason": "已在 main"}], "kept": []})
         self.assertTrue(Path(run["worktree"]).exists())
+        stale = [{**r, "updated_at": r["updated_at"] - 1} for r in core.list_runs(self.repo)]
+        with patch.object(core, "list_runs", return_value=stale):  # Another command saved it after clean read it.
+            self.assertEqual(core.clean(self.repo, apply=True)["kept"], [{"run": run["id"], "reason": "狀態剛變動，下次再判斷"}])
+        self.assertTrue(Path(run["worktree"]).exists())
         core.clean(self.repo, apply=True)
         self.assertFalse(Path(run["worktree"]).exists())
         self.assertEqual(core.git(self.repo, "branch", "--list", run["branch"]), "")

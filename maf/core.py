@@ -607,7 +607,7 @@ def clean(repo, apply=False):
             kept.append((run, "後續任務還依賴它"))
         elif not run.get("superseded_by") and run.get("status") not in ("tested", "verified", "merged"):
             kept.append((run, f"狀態 {run.get('status')}"))
-        elif worktree.exists() and git(worktree, "status", "--porcelain"):
+        elif worktree.exists() and git(worktree, "status", "--porcelain", "--untracked-files=all"):
             kept.append((run, "worktree 有未提交的改動"))
         elif run.get("superseded_by"):
             removable.append((run, f"已被 {run['superseded_by']} 取代"))
@@ -618,14 +618,22 @@ def clean(repo, apply=False):
         else:
             removable.append((run, f"已在 {run['config']['base_branch']}"))
     if apply and removable:
-        with worker_exclusive(repo):
-            for run, _ in removable:
-                if Path(run["worktree"]).exists():
-                    git(repo, "worktree", "remove", run["worktree"])
-                if run.get("branch") and git(repo, "branch", "--list", run["branch"]):
-                    git(repo, "branch", "-D", run["branch"])
-                run["cleaned_at"] = time.time()
-                save(repo, run)
+        # Hold every lock a run-state writer uses, and skip any run that changed since it was judged.
+        with exclusive(repo), worker_exclusive(repo):
+            judged, removable = removable, []
+            for run, why in judged:
+                with run_exclusive(repo, run["id"]):
+                    fresh = load(repo, run["id"])
+                    if fresh.get("updated_at") != run.get("updated_at"):
+                        kept.append((fresh, "狀態剛變動，下次再判斷"))
+                        continue
+                    if Path(fresh["worktree"]).exists():
+                        git(repo, "worktree", "remove", fresh["worktree"])
+                    if fresh.get("branch") and git(repo, "branch", "--list", fresh["branch"]):
+                        git(repo, "branch", "-D", fresh["branch"])  # Patches are in base, or a retry replaced them.
+                    fresh["cleaned_at"] = time.time()
+                    save(repo, fresh)
+                    removable.append((fresh, why))
             git(repo, "worktree", "prune")
     return {"applied": apply, "removed": [{"run": run["id"], "reason": why} for run, why in removable],
             "kept": [{"run": run["id"], "reason": why} for run, why in kept]}
