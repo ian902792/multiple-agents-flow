@@ -567,6 +567,11 @@ class FlowTests(unittest.TestCase):
                 "paths": [f"docs/{name}.md"], "tests": [[sys.executable, "-c", "from pathlib import Path; " + check]],
                 "risk": "docs"}
 
+    def fast_poll(self):
+        """night requires --poll >= 1s; shrink only the idle wait so tests do not sleep whole seconds."""
+        real = time.sleep
+        return patch.object(core.time, "sleep", lambda seconds: real(min(seconds, 0.01)))
+
     def night_agent(self, stuck=(), quota=()):
         def agent(role, prompt, cwd, log, timeout):
             name = cwd.name.split("-")[1]
@@ -652,7 +657,7 @@ class FlowTests(unittest.TestCase):
             files[name] = folder / f"{name}.json"
             files[name].write_text(json.dumps(self.night_task(name, needs)))
         output = io.StringIO()
-        with patch.object(core.agents, "run_agent", side_effect=self.night_agent()), contextlib.redirect_stdout(output):
+        with self.fast_poll(), patch.object(core.agents, "run_agent", side_effect=self.night_agent()), contextlib.redirect_stdout(output):
             cli.main(["--repo", str(self.repo), "night", str(files["a"]), str(files["b"]), "+", str(files["d"]), "--poll", "1"])
         runs = {run["task"]["id"]: run for run in core.list_runs(self.repo)}
         self.assertEqual({run["status"] for run in runs.values()}, {"verified"})
@@ -734,7 +739,7 @@ class FlowTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             cli.main(["--repo", str(self.repo), "decide", plan_id, "1", "現有政策"])
         output = io.StringIO()
-        with patch.object(core.agents, "run_agent", side_effect=self.night_agent()), contextlib.redirect_stdout(output):
+        with self.fast_poll(), patch.object(core.agents, "run_agent", side_effect=self.night_agent()), contextlib.redirect_stdout(output):
             cli.main(["--repo", str(self.repo), "night", "--plan", plan_id, "--poll", "1"])
         text = output.getvalue()
         self.assertEqual(text.count("✓ 尚未通過（正常）"), 3)
@@ -753,7 +758,7 @@ class FlowTests(unittest.TestCase):
         plan["decisions"] = []
         plan_id = plans.new_id()
         plans.save(self.repo, plan_id, plan)
-        with patch.object(core.agents, "run_agent", side_effect=self.night_agent(quota={"a"})), \
+        with self.fast_poll(), patch.object(core.agents, "run_agent", side_effect=self.night_agent(quota={"a"})), \
                 contextlib.redirect_stdout(io.StringIO()):
             cli.main(["--repo", str(self.repo), "night", "--plan", plan_id, "--poll", "1"])
         first = [run for run in core.list_runs(self.repo) if run.get("plan_id") == plan_id]
@@ -804,7 +809,7 @@ class FlowTests(unittest.TestCase):
         self.assertIn("night-d：Sensitive or broad edit scope: .env.example", errors.getvalue())
         self.assertEqual(core.list_runs(self.repo), [])
         output = io.StringIO()
-        with patch.object(core.agents, "run_agent", side_effect=self.night_agent()), contextlib.redirect_stdout(output):
+        with self.fast_poll(), patch.object(core.agents, "run_agent", side_effect=self.night_agent()), contextlib.redirect_stdout(output):
             cli.main(argv + ["--approve"])
         self.assertEqual({path.name for path in (self.repo / "docs").iterdir()}, {"a.md", "b.md", "d.md"})
         self.assertEqual(core.git(self.repo, "status", "--porcelain"), "")
