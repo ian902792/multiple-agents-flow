@@ -603,20 +603,23 @@ def clean(repo, apply=False):
         has_branch = bool(branch) and bool(git(repo, "branch", "--list", branch))
         if not worktree.exists() and not has_branch:
             continue
+        # Without the branch (deleted by hand), compare the worktree's HEAD; a missing ref proves nothing.
+        head = git(repo, "rev-parse", branch) if has_branch else git(worktree, "rev-parse", "HEAD")
+        # A stuck verify tested the main agent's own commit; a stuck delegate counts only once its coder committed.
+        # Otherwise it may hold a question for the person and must stay visible in report.
+        stuck = run.get("status") == "needs_human" and (run.get("kind") == "verify" or head != run.get("source_sha"))
         if run["id"] in needed:
             kept.append((run, "後續任務還依賴它"))
-        elif not run.get("superseded_by") and run.get("status") not in ("tested", "verified", "merged"):
+        elif not run.get("superseded_by") and run.get("status") not in ("tested", "verified", "merged") and not stuck:
             kept.append((run, f"狀態 {run.get('status')}"))
         elif worktree.exists() and git(worktree, "status", "--porcelain", "--untracked-files=all"):
             kept.append((run, "worktree 有未提交的改動"))
         elif run.get("superseded_by"):
             removable.append((run, f"已被 {run['superseded_by']} 取代"))
-        # Without the branch (deleted by hand), compare the worktree's HEAD; a missing ref proves nothing.
-        elif any(line.startswith("+") for line in git(repo, "cherry", run["config"]["base_branch"],
-                                                      branch if has_branch else git(worktree, "rev-parse", "HEAD")).splitlines()):
+        elif any(line.startswith("+") for line in git(repo, "cherry", run["config"]["base_branch"], head).splitlines()):
             kept.append((run, f"還沒整合進 {run['config']['base_branch']}"))
         else:
-            removable.append((run, f"已在 {run['config']['base_branch']}"))
+            removable.append((run, ("卡住，但內容" if stuck else "") + f"已在 {run['config']['base_branch']}"))
     if apply and removable:
         # Hold every lock a run-state writer uses, and skip any run that changed since it was judged.
         with exclusive(repo), worker_exclusive(repo):
