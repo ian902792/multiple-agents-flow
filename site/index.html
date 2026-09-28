@@ -645,7 +645,7 @@ const NODES=["需求","任務範圍","工作樹施工","測試","獨立審查","
 const P='python3 "$FLOW" --repo . ';
 const S={
  auto:{label:"自動分流",main:"Claude Code · quick-flash",skip:false,
-  desc:"<b>簡單版：照常說需求，不用記指令。</b>主 Agent 依分流表決定：一行的自己改、有測試能驗收的交給 Pi、動到認證的先問你再自己做。flow：<b>quick-flash</b>（Pi 實作也審查）。需先把六行提示詞放進 CLAUDE.md。",
+  desc:"<b>簡單版：照常說需求，不用記指令。</b>主 Agent 依分流表決定：一行的自己改、有測試能驗收的交給 Pi、動到認證的先問你再自己做。flow：<b>quick-flash</b>（Pi 實作也審查）。需先把七行提示詞放進 CLAUDE.md。",
   ev:[
   {t:"you",x:"幫我三件事：1. footer 年份改成 2026；2. 新增訂單 CSV 匯出，要有測試；3. 登入 session 改成 7 天過期。",s:0,st:"—"},
   {t:"ai",x:"我依分流表處理：\n① footer 只有一行 → 我直接改。\n② CSV 匯出路徑明確、有測試能驗收 → 交給 Pi。\n③ 動到登入 session，屬於認證 → 我自己做並開審查。\n關於 ③ 先問你：7 天過期要套用到現有的 session，還是只套用新登入？",s:1},
