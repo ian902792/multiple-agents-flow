@@ -64,6 +64,9 @@ class FlowTests(unittest.TestCase):
     def test_clean_removes_only_integrated_clean_runs_and_keeps_history(self):
         run = self.complete()
         self.assertEqual(core.clean(self.repo)["kept"], [{"run": run["id"], "reason": "還沒整合進 main"}])
+        core.git(Path(run["worktree"]), "checkout", "-q", "--detach")
+        core.git(self.repo, "branch", "-D", run["branch"])  # A branch deleted by hand is no proof of integration.
+        self.assertEqual(core.clean(self.repo)["kept"], [{"run": run["id"], "reason": "還沒整合進 main"}])
         core.git(self.repo, "cherry-pick", run["tested_sha"])  # Integrated with a new SHA, same content.
         (Path(run["worktree"]) / "stray.txt").write_text("x")
         self.assertEqual(core.clean(self.repo)["kept"][0]["reason"], "worktree 有未提交的改動")

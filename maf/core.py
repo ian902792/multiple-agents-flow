@@ -611,8 +611,9 @@ def clean(repo, apply=False):
             kept.append((run, "worktree 有未提交的改動"))
         elif run.get("superseded_by"):
             removable.append((run, f"已被 {run['superseded_by']} 取代"))
-        elif has_branch and any(line.startswith("+") for line in
-                                git(repo, "cherry", run["config"]["base_branch"], branch).splitlines()):
+        # Without the branch (deleted by hand), compare the worktree's HEAD; a missing ref proves nothing.
+        elif any(line.startswith("+") for line in git(repo, "cherry", run["config"]["base_branch"],
+                                                      branch if has_branch else git(worktree, "rev-parse", "HEAD")).splitlines()):
             kept.append((run, f"還沒整合進 {run['config']['base_branch']}"))
         else:
             removable.append((run, f"已在 {run['config']['base_branch']}"))
