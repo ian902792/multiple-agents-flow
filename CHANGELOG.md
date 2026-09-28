@@ -2,6 +2,18 @@
 
 版本號採用 [語意化版本](https://semver.org/lang/zh-TW/)：`主版號.次版號.修訂號`。1.0 以前，次版號代表新功能或行為改變，修訂號代表修正。每次發布的最新版本寫在最上面，且必須和 `maf/__init__.py` 的 `__version__` 相同。
 
+## [0.10.0] - 2026-09-28
+
+### 新功能
+
+- `report`、`stats` 與任務完成回報改用同一種用量格式，由程式產生：`1m28s  入 191k / 出 8.0k  91 tok/s  快取 85%  $0.010`。沒回報的寫 `-`；Claude 金額加 `*`，代表依 API 價格估計。
+- 新增 `tok/s`：輸出 token ÷ 呼叫的總耗時。耗時包含 agent 讀檔、跑工具的時間，所以是實際有效速率，不是模型純生成速度。
+- `handoff` 新增 `usage_text`：每個 agent 一行，兩個以上時加合計行。skill 要求主對話原樣貼出，不再自行排版。
+
+### 行為改變
+
+- `report --json` 每件任務的 `input_tokens`、`output_tokens`、`cost_usd`、`cache_hit` 移到 `usage` 物件裡，另外多了 `seconds`、`rate`、`estimated`。多個 agent 的快取命中率改成依 prompt token 加權，不再是簡單平均。
+
 ## [0.9.1] - 2026-09-28
 
 ### 行為改變

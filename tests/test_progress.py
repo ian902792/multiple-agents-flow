@@ -40,8 +40,15 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(progress.spend(None), {"input_tokens": None, "output_tokens": None, "cost_usd": None})
         both = progress.total_spend([{"usage": pi}, {"usage": {**claude, "output_tokens": 50}}])
         self.assertEqual(both, {"input_tokens": 103784, "output_tokens": 851, "cost_usd": None})
-        self.assertEqual(progress.spend_zh({"agent_seconds": 95, "cost_usd": 0.5, **both}),
-                         "95 秒  入 103.8k / 出 0.9k tokens")
+        usage = progress.total_usage([{"runtime": "pi", "duration_seconds": 60, "usage": pi},
+                                      {"runtime": "claude", "duration_seconds": 35, "usage": {**claude, "output_tokens": 50, "total_cost_usd": 0.5}}])
+        self.assertEqual((usage["seconds"], usage["rate"], usage["cache_hit"], usage["estimated"]), (95, 9.0, 0.836, True))
+        self.assertEqual(progress.usage_cells(usage), ["1m35s", "入 104k / 出 0.9k", "9 tok/s", "快取 84%", "-"])
+        self.assertEqual(progress.usage_cells({"seconds": 12.4, "input_tokens": 0, "output_tokens": 2_500_000, "rate": None,
+                                               "cache_hit": None, "cost_usd": 1.234, "estimated": True}),
+                         ["12s", "入 0 / 出 2.5M", "-", "快取 -", "$1.23*"])
+        self.assertEqual(progress.usage_cells({"seconds": {"mean": 30, "reported": 2, "of": 3}}), ["30s（2/3）", "入 - / 出 -", "-", "快取 -", "-"])
+        self.assertEqual(progress.table([["a", "入 1k"], ["角色", "x"]]), ["  a     入 1k", "  角色  x"])
         row = {"agents": [{"role": "coder", "runtime": "pi", "cache_hit": 0.945}, {"role": "reviewer", "runtime": "codex", "cache_hit": None}],
                "status": "tested", "next": "", "attention": False, "log": ""}
         self.assertEqual(progress.detail_lines(row), ["  cache hit: coder pi 94.5%"])
@@ -70,7 +77,7 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(model["cost_usd"], {"mean": 0.01, "reported": 2, "of": 3})
         text = progress.render_stats(data)
         self.assertIn("3 件任務、3 次 agent 呼叫", text)
-        self.assertIn("token 4k（2/3） / 0k（2/3）", text)
+        self.assertIn("45s（2/3）  入 4.0k（2/3） / 出 0.1k（2/3）  2 tok/s（1/3）", text)
         self.assertIn("卡住 1", text)
 
     def setUp(self):

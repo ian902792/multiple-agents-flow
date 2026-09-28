@@ -16,6 +16,7 @@ import tempfile
 import textwrap
 import threading
 import time
+import unicodedata
 
 from . import core
 
@@ -344,14 +345,88 @@ def total_spend(agents):
             for k in ("input_tokens", "output_tokens", "cost_usd")}
 
 
-def spend_zh(item):
-    """Seconds, tokens and cost where known, e.g. '95 秒  入 20.3k / 出 0.8k tokens  約 $0.12'."""
-    parts = [f"{item['agent_seconds']:.0f} 秒"] if item.get("agent_seconds", 0) >= 1 else []
-    if item.get("input_tokens") is not None and item.get("output_tokens") is not None:
-        parts.append(f"入 {item['input_tokens'] / 1000:.1f}k / 出 {item['output_tokens'] / 1000:.1f}k tokens")
-    if item.get("cost_usd") is not None:
-        parts.append(f"約 ${item['cost_usd']:.2f}")
-    return "  ".join(parts)
+def rate(output_tokens, seconds):
+    """Output tokens per wall-clock second of the call, tool time included; None when either is missing."""
+    ok = type(output_tokens) is int and type(seconds) in (int, float) and seconds > 0
+    return round(output_tokens / seconds, 1) if ok else None
+
+
+def agent_usage(a):
+    """One attempt's display fields; Claude cost is flagged as a notional estimate."""
+    sp = spend(a.get("usage"))
+    seconds = a.get("duration_seconds") if type(a.get("duration_seconds")) in (int, float) else None
+    return {"seconds": seconds, **sp, "rate": rate(sp["output_tokens"], seconds), "cache_hit": cache_hit(a.get("usage")),
+            "estimated": a.get("runtime") == "claude" and sp["cost_usd"] is not None}
+
+
+def total_usage(agents):
+    """Sum of attempts; a field is None unless every attempt reported it. Cache hit is prompt-weighted."""
+    rows = [agent_usage(a) for a in agents]
+    total = lambda k: round(sum(r[k] for r in rows), 4) if rows and all(r[k] is not None for r in rows) else None
+    out = {k: total(k) for k in ("seconds", "input_tokens", "output_tokens", "cost_usd")}
+    weighted = [(r["cache_hit"], r["input_tokens"]) for r in rows]
+    out["cache_hit"] = (round(sum(h * n for h, n in weighted) / out["input_tokens"], 3)
+                        if out["input_tokens"] and all(h is not None for h, _ in weighted) else None)
+    out["rate"] = rate(out["output_tokens"], out["seconds"])
+    out["estimated"] = any(r["estimated"] for r in rows)
+    return out
+
+
+def _cell(value, fmt):
+    """Format a number or a stats mean {mean, reported, of}; '-' when not reported, (n/N) when partial."""
+    if isinstance(value, dict):
+        suffix = f"（{value['reported']}/{value['of']}）" if 0 < value["reported"] < value["of"] else ""
+        value = value["mean"]
+    else:
+        suffix = ""
+    return "-" if value is None else fmt(value) + suffix
+
+
+def fmt_seconds(v):
+    return f"{v:.0f}s" if v < 59.5 else f"{int(v + .5) // 60}m{int(v + .5) % 60:02d}s"
+
+
+def fmt_tokens(v):
+    return f"{v / 1e6:.1f}M" if v >= 1e6 else f"{v / 1000:.0f}k" if v >= 1e4 else f"{v / 1000:.1f}k" if v else "0"
+
+
+def usage_cells(u):
+    """Shared columns for report, stats and handoff: time, tokens in/out, tok/s, cache, cost."""
+    cost = _cell(u.get("cost_usd"), lambda v: f"${v:.2f}" if v >= 1 else f"${v:.3f}")
+    return [_cell(u.get("seconds"), fmt_seconds),
+            f"入 {_cell(u.get('input_tokens'), fmt_tokens)} / 出 {_cell(u.get('output_tokens'), fmt_tokens)}",
+            _cell(u.get("rate"), lambda v: f"{v:.0f} tok/s"),
+            "快取 " + _cell(u.get("cache_hit"), lambda v: f"{v:.0%}"),
+            cost + ("*" if u.get("estimated") and cost != "-" else "")]
+
+
+def _width(text):
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text)
+
+
+def table(rows, indent="  "):
+    """Left-align columns by display width so CJK and ASCII rows line up."""
+    widths = [max(_width(r[i]) for r in rows if i < len(r)) for i in range(max(map(len, rows)))]
+    return [indent + "  ".join(c + " " * (widths[i] - _width(c)) for i, c in enumerate(r)).rstrip() for r in rows]
+
+
+ESTIMATE_NOTE = "* Claude 金額是 API 價格估計，不是訂閱扣款。"
+
+
+def usage_text(run, head):
+    """Completion usage block the main chat pastes verbatim: one row per attempt, a total when several."""
+    agents = [a for a in run.get("agents") or [] if isinstance(a, dict)]
+    lines = [f"MAF 用量 · {clean(run['id'], 80)} · {run['status']} {(head or '-')[:7]}"]
+    if not agents:
+        return lines[0] + "\n  沒有 agent 呼叫（只跑測試）"
+    rows = [[clean(a.get("role", "?"), 40), clean(f"{a.get('runtime', '?')}/{a.get('model', '?')}", 80),
+             *usage_cells(agent_usage(a))] for a in agents]
+    if len(agents) > 1:
+        rows.append(["合計", "", *usage_cells(total_usage(agents))])
+    lines += table(rows)
+    if any(agent_usage(a)["estimated"] for a in agents):
+        lines.append("  " + ESTIMATE_NOTE)
+    return "\n".join(lines)
 
 
 def rows(repo):
@@ -382,14 +457,12 @@ def report(repo, hours=24):
         row = rows[run_id]
         notes = str(run.get("coder_notes") or "")
         unverified = next((line.strip() for line in reversed(notes.splitlines()) if "UNVERIFIED" in line), "")
-        hits = [a["cache_hit"] for a in row.get("agents", []) if a.get("cache_hit") is not None]
         items.append({"run": row["run"], "task": row["task"], "status": row["status"], "stage": row["stage"],
                       "depends_on": run.get("depends_on"), "complete": row["complete"] == "yes",
                       "attention": row["attention"], "next": next_zh(run), "feedback": reason_zh(run, runs),
                       "unverified": clean(unverified, 200),
                       "agent_seconds": round(sum(a.get("duration_seconds") or 0 for a in row.get("agents", [])), 1),
-                      **total_spend(run.get("agents", [])),
-                      "cache_hit": round(sum(hits) / len(hits), 3) if hits else None})
+                      "usage": total_usage([a for a in run.get("agents") or [] if isinstance(a, dict)])})
     rank = {status: index for index, status in enumerate(REPORT_ORDER)}
     items.sort(key=lambda item: (rank.get(item["status"], len(rank)), item["task"]))
     children = {}
@@ -479,8 +552,7 @@ def render_report(data):
             continue
         lines.append(f"\n{title}（{len(group)}）")
         for item in group:
-            extra = (f"  {spend_zh(item)}" if spend_zh(item) else "") + (
-                f"  快取 {item['cache_hit']:.0%}" if item["cache_hit"] is not None else "")
+            extra = "  " + "  ".join(usage_cells(item["usage"]))
             lines.append(f"  {item['run']}  {status_zh(item['status'])}{extra}")
             if item["attention"] and item["feedback"]:
                 lines.append(f"    原因：{item['feedback']}")
@@ -597,6 +669,9 @@ def _mean(values):
     return {"mean": round(sum(known) / len(known), 4) if known else None, "reported": len(known), "of": len(values)}
 
 
+USAGE_KEYS = ("seconds", "input_tokens", "output_tokens", "cost_usd")
+
+
 def stats(repo, days=30):
     """Read-only spend and outcome totals over this repository's runs, for tuning flows and models."""
     since = time.time() - days * 3600 * 24
@@ -616,49 +691,38 @@ def stats(repo, days=30):
     flow_rows = []
     for mode, items in sorted(flows.items()):
         # A run with no agent calls (tests-only verify) spent nothing, which is known, not missing.
-        totals = [{**(total_spend(agents) if agents else dict.fromkeys(("input_tokens", "output_tokens", "cost_usd"), 0)), "seconds": sum(a["duration_seconds"] for a in agents)
-                   if all(type(a.get("duration_seconds")) in (int, float) for a in agents) else None}
+        totals = [total_usage(agents) if agents else dict.fromkeys(USAGE_KEYS, 0) | {"rate": None, "cache_hit": None, "estimated": False}
                   for _, agents, _ in items]
         flow_rows.append({"flow": mode, "runs": len(items),
                           "complete_rate": round(sum(done for *_, done in items) / len(items), 3),
                           "repairs": _mean([run.get("repairs") for run, *_ in items]),
-                          **{k: _mean([t[k] for t in totals]) for k in ("seconds", "input_tokens", "output_tokens", "cost_usd")}})
+                          **{k: _mean([t[k] for t in totals]) for k in USAGE_KEYS + ("rate", "cache_hit")},
+                          "estimated": any(t["estimated"] for t in totals)})
     model_rows = []
     for (role, model), items in sorted(models.items()):
-        spends = [spend(a.get("usage")) for a in items]
+        uses = [agent_usage(a) for a in items]
         model_rows.append({"role": role, "model": model, "calls": len(items),
                            "ok_rate": round(sum(a.get("status") == "ok" for a in items) / len(items), 3),
-                           "seconds": _mean([a.get("duration_seconds") for a in items]),
-                           "cache_hit": _mean([cache_hit(a.get("usage")) for a in items]),
-                           **{k: _mean([x[k] for x in spends]) for k in ("input_tokens", "output_tokens", "cost_usd")}})
+                           **{k: _mean([u[k] for u in uses]) for k in USAGE_KEYS + ("rate", "cache_hit")},
+                           "estimated": any(u["estimated"] for u in uses)})
     return {"days": days, "runs": len(runs), "calls": sum(len(v) for v in models.values()),
             "flows": flow_rows, "models": model_rows, "stopped": stopped}
 
 
 def render_stats(data):
-    def num(m, fmt):
-        if m["mean"] is None:
-            return "未回報"
-        return fmt(m["mean"]) + (f"（{m['reported']}/{m['of']}）" if m["reported"] < m["of"] else "")
-    tok = lambda v: f"{v / 1e6:.1f}M" if v >= 1e6 else f"{v / 1000:.0f}k"
-    pair = lambda row: (f"{num(row['input_tokens'], tok)} / {num(row['output_tokens'], tok)}"
-                        if row["input_tokens"]["mean"] is not None or row["output_tokens"]["mean"] is not None else "未回報")
     lines = [f"MAF 統計：最近 {data['days']:g} 天，{data['runs']} 件任務、{data['calls']} 次 agent 呼叫"]
     if data["flows"]:
         lines.append("\n按 flow（每件任務平均）")
-        for row in data["flows"]:
-            lines.append(f"  {row['flow']}  {row['runs']} 件  完成 {row['complete_rate']:.0%}  修復 {num(row['repairs'], lambda v: f'{v:.1f}')}"
-                         f"  {num(row['seconds'], lambda v: f'{v / 60:.1f} 分')}  token {pair(row)}"
-                         f"  {num(row['cost_usd'], lambda v: f'${v:.3f}')}")
+        lines += table([[row["flow"], f"{row['runs']} 件", f"完成 {row['complete_rate']:.0%}",
+                         "修復 " + _cell(row["repairs"], lambda v: f"{v:.1f}"), *usage_cells(row)] for row in data["flows"]])
     if data["models"]:
         lines.append("\n按角色與模型（每次呼叫平均）")
-        for row in data["models"]:
-            lines.append(f"  {row['role']}  {row['model']}  {row['calls']} 次  成功 {row['ok_rate']:.0%}"
-                         f"  {num(row['seconds'], lambda v: f'{v:.0f} 秒')}  快取 {num(row['cache_hit'], lambda v: f'{v:.0%}')}"
-                         f"  token {pair(row)}  {num(row['cost_usd'], lambda v: f'${v:.3f}')}")
+        lines += table([[row["role"], row["model"], f"{row['calls']} 次", f"成功 {row['ok_rate']:.0%}", *usage_cells(row)]
+                        for row in data["models"]])
     if data["stopped"]:
         lines.append("\n停下的原因：" + " · ".join(f"{status_zh(k)} {n}" for k, n in sorted(data["stopped"].items())))
-    lines.append("\n（n/N）= 只有 n 筆有回報；Claude 金額是 API 價格估計，不是訂閱扣款。")
+    estimated = any(row["estimated"] for row in data["flows"] + data["models"])
+    lines.append("\n-：沒有回報；（n/N）：N 筆裡只有 n 筆有回報。" + (ESTIMATE_NOTE if estimated else ""))
     return "\n".join(lines)
 
 
