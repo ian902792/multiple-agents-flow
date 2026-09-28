@@ -36,7 +36,7 @@ python3 "$FLOW" --repo "$TARGET" --main codex mode
 | `retry RUN_ID [--note 說明]` | 帶著上次失敗原因（與你的說明）重排同一件小任務；等它的下游自動改接到新任務，舊任務保留為紀錄。 |
 | `cancel RUN_ID [--note 原因]` | 放棄一個已停下的 run（等核准、卡住、等額度、等上游，或測試通過但不整合）。worker 執行中或有未完成的後續任務依賴時拒絕；回傳還沒整合的 commit。之後 `clean --apply` 會刪除它的 worktree 與 branch。只在你明確決定不要時使用。 |
 | `clean [--apply] [--json]` | 列出可以刪除的 worktree 與 `maf/*` branch，加 `--apply` 才刪除。可以刪的是：已完成且內容已在 base branch 的 run（用 `git cherry` 比對）、已被 retry 取代的 run，以及卡住但要驗的 commit 或 coder 的 commit 已在 base 的 run。其餘都保留：進行中、未整合、有未提交改動、還有後續任務依賴，或卡住時 coder 還沒 commit（可能在問你問題）。run 紀錄保留給 `stats`。 |
-| `stats [--days N] [--json]` | 這個 repo 最近 N 天（預設 30）的中文統計：按 flow 看完成率、修復次數、耗時、token 與花費；按角色與模型看成功率、耗時、快取命中率、token 與花費；另列停下的原因。沒回報的數字標示「（n/N）」，不算成 0。唯讀，不會啟動 agent。 |
+| `stats [--days N] [--json]` | 這個 repo 最近 N 天（預設 30）的中文統計：按 flow 看完成率、修復次數、耗時、token 與花費，以及「每完成」一件任務的 token（失敗 run 的花費也攤進去）；按角色與模型看成功率、耗時、快取命中率、token 與花費；另列停下的原因。沒回報的數字標示「（n/N）」，不算成 0。唯讀，不會啟動 agent。 |
 | `report [--hours N] [--json]` | 無人看管批次的中文總結：需要你處理的、仍在等待的、已完成的，依賴鏈進度，以及可直接整合的 commit 範圍。見[一晚跑一批任務](OVERNIGHT.md)。 |
 | `handoff RUN_ID` | 完成任務的精確 SHA、測試與可選審查摘要，以及各次 agent 呼叫的快取命中率。 |
 | `resume RUN_ID` | 診斷中斷後明確恢復；回傳更新後的 run。 |

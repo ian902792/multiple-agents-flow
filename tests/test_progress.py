@@ -79,22 +79,32 @@ class ProgressTests(unittest.TestCase):
                 {"id": "b", "mode": "quick", "status": "needs_human", "stage": "coding", "repairs": 0, "created_at": now,
                  "agents": [coder(None, None) | {"status": "error"}]},
                 {"id": "c", "mode": "quick", "status": "tested", "stage": "tested", "repairs": 0, "created_at": now, "agents": []},
+                {"id": "n1", "mode": "night", "status": "tested", "stage": "tested", "repairs": 1, "created_at": now,
+                 "agents": [coder(pi, 10), coder(pi, 10)]},
+                {"id": "n2", "mode": "night", "status": "needs_human", "stage": "coding", "repairs": 0, "created_at": now,
+                 "agents": [coder(pi, 10)]},
                 {"id": "bad", "status": "corrupt", "feedback": "unreadable"},
                 {"id": "old", "mode": "quick", "status": "tested", "stage": "tested", "created_at": now - 40 * 86400, "agents": []}]
         with patch.object(core, "list_runs", return_value=runs):
             data = progress.stats(Path("."), days=30)
-        self.assertEqual((data["runs"], data["calls"], data["stopped"]), (3, 3, {"corrupt": 1, "needs_human": 1}))
-        flow = data["flows"][0]
+        self.assertEqual((data["runs"], data["calls"], data["stopped"]), (5, 6, {"corrupt": 1, "needs_human": 2}))
+        flow = data["flows"][1]
         self.assertEqual((flow["flow"], flow["runs"], flow["complete_rate"]), ("quick", 3, 0.667))
         self.assertEqual(flow["seconds"], {"mean": 45, "reported": 2, "of": 3})
         self.assertEqual(flow["input_tokens"], {"mean": 4000, "reported": 2, "of": 3})
+        self.assertIsNone(flow["per_completed"]["input_tokens"])  # run b reported nothing
+        night = data["flows"][0]
+        self.assertEqual((night["flow"], night["complete_rate"]), ("night", 0.5))
+        self.assertEqual(night["per_completed"]["input_tokens"], 12000)  # 3 calls' 4k over 1 completed run
+        self.assertEqual(night["per_completed"]["output_tokens"], 300)
         model = data["models"][0]
-        self.assertEqual((model["role"], model["model"], model["calls"], model["ok_rate"]), ("coder", "pi/m", 3, 0.667))
-        self.assertEqual(model["cost_usd"], {"mean": 0.01, "reported": 2, "of": 3})
+        self.assertEqual((model["role"], model["model"], model["calls"], model["ok_rate"]), ("coder", "pi/m", 6, 0.833))
+        self.assertEqual(model["cost_usd"], {"mean": 0.01, "reported": 5, "of": 6})
         text = progress.render_stats(data)
-        self.assertIn("3 件任務、3 次 agent 呼叫", text)
+        self.assertIn("5 件任務、6 次 agent 呼叫", text)
         self.assertIn("45s（2/3）  入 4.0k（2/3） / 出 100（2/3）  2 tok/s（1/3）", text)
-        self.assertIn("卡住 1", text)
+        self.assertIn("卡住 2", text)
+        self.assertIn("每完成 入 12k / 出 300", text)
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

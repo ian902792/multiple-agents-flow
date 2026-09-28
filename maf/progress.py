@@ -696,8 +696,13 @@ def stats(repo, days=30):
         # A run with no agent calls (tests-only verify) spent nothing, which is known, not missing.
         totals = [total_usage(agents) if agents else dict.fromkeys(USAGE_KEYS, 0) | {"rate": None, "cache_hit": None, "estimated": False}
                   for _, agents, _ in items]
+        # Failed runs' spend is charged to the completed ones: the cost of getting one task done.
+        completed_n = sum(done for *_, done in items)
         flow_rows.append({"flow": mode, "runs": len(items),
-                          "complete_rate": round(sum(done for *_, done in items) / len(items), 3),
+                          "complete_rate": round(completed_n / len(items), 3),
+                          "per_completed": {k: round(sum(t[k] for t in totals) / completed_n, 4)
+                                            if completed_n and all(t[k] is not None for t in totals) else None
+                                            for k in USAGE_KEYS},
                           "repairs": _mean([run.get("repairs") for run, *_ in items]),
                           **{k: _mean([t[k] for t in totals]) for k in USAGE_KEYS + ("rate", "cache_hit")},
                           "estimated": any(t["estimated"] for t in totals)})
@@ -717,7 +722,9 @@ def render_stats(data):
     if data["flows"]:
         lines.append("\n按 flow（每件任務平均）")
         lines += table([[row["flow"], f"{row['runs']} 件", f"完成 {row['complete_rate']:.0%}",
-                         "修復 " + _cell(row["repairs"], lambda v: f"{v:.1f}"), *usage_cells(row)] for row in data["flows"]])
+                         "修復 " + _cell(row["repairs"], lambda v: f"{v:.1f}"), *usage_cells(row),
+                         "每完成 入 " + _cell(row["per_completed"]["input_tokens"], fmt_tokens)
+                         + " / 出 " + _cell(row["per_completed"]["output_tokens"], fmt_tokens)] for row in data["flows"]])
     if data["models"]:
         lines.append("\n按角色與模型（每次呼叫平均）")
         lines += table([[row["role"], row["model"], f"{row['calls']} 次", f"成功 {row['ok_rate']:.0%}", *usage_cells(row)]
