@@ -28,7 +28,7 @@ python3 flow.py confirm-billing --no-overage                # Claude 主對話
 python3 flow.py --main codex confirm-billing --no-overage   # Codex 主對話（它的預設 flow 是 codex-pi）
 ```
 
-**3. 讓主對話自動分流**：把[六行提示詞](docs/AGENT-INSTRUCTIONS.md#可直接複製的提示詞)貼進 `~/.claude/CLAUDE.md`（Codex 是 `~/.codex/AGENTS.md`），重開主對話。
+**3. 讓主對話自動分流**：把[七行提示詞](docs/AGENT-INSTRUCTIONS.md#可直接複製的提示詞)貼進 `~/.claude/CLAUDE.md`（Codex 是 `~/.codex/AGENTS.md`），重開主對話。
 
 ## 簡單版：照常說需求
 
@@ -84,7 +84,7 @@ Opus 額度少、Pi 額度多就選 `quick-flash`，理由見[誰實作、誰審
 ## 延伸閱讀
 
 - [一晚跑一批任務](docs/OVERNIGHT.md)：規畫、決定、夜間執行、早上報告。
-- [讓主對話自動使用 MAF](docs/AGENT-INSTRUCTIONS.md)：六行提示詞，含自己的 repo 自動合併的選用設定。
+- [讓主對話自動使用 MAF](docs/AGENT-INSTRUCTIONS.md)：七行提示詞，含自己的 repo 自動合併的選用設定。
 - [誰實作、誰審查](docs/ROLES.md)：強弱模型怎麼分工才省又好，以及審查迴圈為什麼會失控。
 - [指令參考](docs/CLI.md)：CLI、任務 JSON、核准與中斷恢復、Herdr 觀看模式。
 - [Pi 推理強度基準測試](bench/effort/README.md)：用固定題目自己比較 `off`～`max`。
