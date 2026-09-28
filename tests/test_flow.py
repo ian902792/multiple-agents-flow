@@ -568,7 +568,7 @@ class FlowTests(unittest.TestCase):
                 "risk": "docs"}
 
     def fast_poll(self):
-        """night requires --poll >= 1s; shrink only the idle wait so tests do not sleep whole seconds."""
+        """night requires --poll >= 1s; cap every time.sleep (here only the idle poll is reached) at 10ms."""
         real = time.sleep
         return patch.object(core.time, "sleep", lambda seconds: real(min(seconds, 0.01)))
 
