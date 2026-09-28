@@ -140,7 +140,11 @@ Prepare private task JSON with `id`, `title`, `instructions`, `paths`, `tests`,
 `risk`, optional boolean `independent`, and optional `acceptance_why` (the real purpose the tests
 must protect, so passing tests that assert nothing are caught), as described below. For `tests`, pick the
 smallest command that proves this task (one test module, not the full suite); run the full suite once on
-the final integrated commit. Keep it outside the Git worktree. Before
+the final integrated commit. While you develop, run only the test modules for the code you changed; do
+not also run the full suite locally when a `verify` whose `tests` is the full-suite command will run it on the
+same commit. After fixing review
+notes, commit and `verify` again instead of repeating the full suite first. Keep the task file outside the
+Git worktree. Before
 `delegate` or `verify`, commit the current work and ensure the tree is fully
 clean; these commands snapshot exact HEAD. Do not stash or reset user changes.
 Read `mode` first. Follow the selected global or project flow; do not switch
