@@ -2,6 +2,12 @@
 
 版本號採用 [語意化版本](https://semver.org/lang/zh-TW/)：`主版號.次版號.修訂號`。1.0 以前，次版號代表新功能或行為改變，修訂號代表修正。每次發布的最新版本寫在最上面，且必須和 `maf/__init__.py` 的 `__version__` 相同。
 
+## [0.13.1] - 2026-09-29
+
+### 行為改變
+
+- maf skill：在 Claude Code 裡回報完成時，「MAF 用量」下面會多一段主對話這個 session 的用量。資料來自 `npx ccusage claude session --id "$CLAUDE_CODE_SESSION_ID" --compact`，跑一次約 0.6 秒，輸出 3 行，金額是 API 價格估計。取不到時只寫「主對話用量：無法取得」，不重試，也不去讀逐字稿。
+
 ## [0.13.0] - 2026-09-28
 
 ### 新功能
