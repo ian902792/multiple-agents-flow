@@ -106,6 +106,9 @@ def parser():
     p = commands.add_parser("report", help="Summarize recent runs for unattended batches: what needs you, chains, what to integrate")
     p.add_argument("--hours", type=float, default=24, help="Include runs created in the last N hours (default 24)")
     p.add_argument("--json", action="store_true")
+    p = commands.add_parser("clean", help="List worktrees/branches of runs already in the base branch or replaced by a retry; --apply removes them")
+    p.add_argument("--apply", action="store_true", help="Remove them; run state is kept for report/stats")
+    p.add_argument("--json", action="store_true")
     p = commands.add_parser("stats", help="Spend and outcome totals by flow and by role/model, for tuning")
     p.add_argument("--days", type=float, default=30, help="Include runs created in the last N days (default 30)")
     p.add_argument("--json", action="store_true")
@@ -302,6 +305,19 @@ def main(argv=None):
         elif args.action == "report":
             data = progress.report(repo, args.hours)
             print(json.dumps(data, ensure_ascii=False, indent=2) if args.json else progress.render_report(data))
+            return
+        elif args.action == "clean":
+            data = core.clean(repo, args.apply)
+            if args.json:
+                print(json.dumps(data, ensure_ascii=False, indent=2))
+                return
+            print(f"{'已清理' if data['applied'] else '可以清理'}（{len(data['removed'])}）")
+            print("\n".join(f"  {item['run']}  {item['reason']}" for item in data["removed"]) or "  （無）")
+            if data["kept"]:
+                print(f"保留（{len(data['kept'])}）")
+                print("\n".join(f"  {item['run']}  {item['reason']}" for item in data["kept"]))
+            if data["removed"] and not data["applied"]:
+                print("加 --apply 才會刪除 worktree 與 branch；run 紀錄會保留。")
             return
         elif args.action == "stats":
             data = progress.stats(repo, args.days)

@@ -387,7 +387,7 @@ def fmt_seconds(v):
 
 
 def fmt_tokens(v):
-    return f"{v / 1e6:.1f}M" if v >= 1e6 else f"{v / 1000:.0f}k" if v >= 1e4 else f"{v / 1000:.1f}k" if v else "0"
+    return f"{v / 1e6:.1f}M" if v >= 1e6 else f"{v / 1000:.0f}k" if v >= 1e4 else f"{v / 1000:.1f}k" if v >= 1000 else f"{v:.0f}"
 
 
 def usage_cells(u):
@@ -433,6 +433,8 @@ def rows(repo):
     """One row per run, grouped by task id then age. Reads state and local Git only; no lock, no agents."""
     result = []
     for run in core.list_runs(repo):
+        if run.get("cleaned_at"):
+            continue  # Integrated and removed by clean; history stays in stats.
         try:
             result.append(row_for(repo, run))
         except CAUGHT as exc:
@@ -450,7 +452,7 @@ def report(repo, hours=24):
     since = time.time() - hours * 3600
     runs = {run["id"]: run for run in core.list_runs(repo)
             if (run.get("status") == "corrupt" or float(run.get("created_at") or 0) >= since)
-            and not run.get("superseded_by")}  # A retried run is replaced by its retry.
+            and not run.get("superseded_by") and not run.get("cleaned_at")}  # Replaced by a retry, or integrated and cleaned.
     rows = {run_id: row_for(repo, run) for run_id, run in runs.items()}
     items = []
     for run_id, run in runs.items():

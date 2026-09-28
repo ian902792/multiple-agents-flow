@@ -577,6 +577,8 @@ def verified(repo, run):
 
 def handoff(repo, run):
     from .progress import cache_hit, eligible, spend, usage_text
+    if run.get("cleaned_at"):
+        raise FlowError("Run was cleaned: its worktree and branch are gone, so exact-SHA evidence is no longer available.")
     head = eligible(repo, run)
     return {"run": run["id"], "kind": run.get("kind", "batch"), "status": run["status"],
             "source_sha": run.get("source_sha", run["base_sha"]), "head_sha": head,
@@ -588,6 +590,44 @@ def handoff(repo, run):
                         "seconds": a.get("duration_seconds"), "cache_hit": cache_hit(a.get("usage")), **spend(a.get("usage"))}
                        for a in run.get("agents", [])],
             "usage_text": usage_text(run, head)}
+
+
+def clean(repo, apply=False):
+    """Remove worktrees and maf/* branches of finished runs already in the base branch, or replaced by a retry.
+    Run state is kept for report/stats history. Dry run unless apply; never forces a dirty worktree."""
+    runs = [run for run in list_runs(repo) if run.get("status") != "corrupt" and not run.get("cleaned_at")]
+    needed = {run.get("depends_on") for run in runs if run.get("depends_on")}
+    removable, kept = [], []
+    for run in runs:
+        worktree, branch = Path(run["worktree"]), run.get("branch") or ""
+        has_branch = bool(branch) and bool(git(repo, "branch", "--list", branch))
+        if not worktree.exists() and not has_branch:
+            continue
+        if run["id"] in needed:
+            kept.append((run, "後續任務還依賴它"))
+        elif not run.get("superseded_by") and run.get("status") not in ("tested", "verified", "merged"):
+            kept.append((run, f"狀態 {run.get('status')}"))
+        elif worktree.exists() and git(worktree, "status", "--porcelain"):
+            kept.append((run, "worktree 有未提交的改動"))
+        elif run.get("superseded_by"):
+            removable.append((run, f"已被 {run['superseded_by']} 取代"))
+        elif has_branch and any(line.startswith("+") for line in
+                                git(repo, "cherry", run["config"]["base_branch"], branch).splitlines()):
+            kept.append((run, f"還沒整合進 {run['config']['base_branch']}"))
+        else:
+            removable.append((run, f"已在 {run['config']['base_branch']}"))
+    if apply and removable:
+        with worker_exclusive(repo):
+            for run, _ in removable:
+                if Path(run["worktree"]).exists():
+                    git(repo, "worktree", "remove", run["worktree"])
+                if run.get("branch") and git(repo, "branch", "--list", run["branch"]):
+                    git(repo, "branch", "-D", run["branch"])
+                run["cleaned_at"] = time.time()
+                save(repo, run)
+            git(repo, "worktree", "prune")
+    return {"applied": apply, "removed": [{"run": run["id"], "reason": why} for run, why in removable],
+            "kept": [{"run": run["id"], "reason": why} for run, why in kept]}
 
 
 def terminate(proc):
