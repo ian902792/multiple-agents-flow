@@ -592,11 +592,37 @@ def handoff(repo, run):
             "usage_text": usage_text(run, head)}
 
 
+CANCELLABLE = ("awaiting_approval", "needs_human", "waiting_quota", "waiting_dependency", "tested", "verified")
+
+
+def cancel(repo, run_id, note=""):
+    """A person's explicit decision to drop one stopped run. Refuses while a worker runs or an unfinished run
+    depends on it; lists commits clean would then discard. Nothing is deleted here."""
+    with worker_exclusive(repo), run_exclusive(repo, run_id):
+        run = load(repo, run_id)
+        if run.get("status") not in CANCELLABLE:
+            raise FlowError(f"Only a stopped run can be cancelled; this one is {run.get('status')}.")
+        dependents = [r["id"] for r in list_runs(repo) if r.get("depends_on") == run_id
+                      and r.get("status") not in ("tested", "verified", "merged", "cancelled")]
+        if dependents:
+            raise FlowError("Unfinished runs depend on it; cancel them first: " + ", ".join(dependents))
+        has_branch = bool(git(repo, "branch", "--list", run["branch"]))
+        head = (git(repo, "rev-parse", run["branch"]) if has_branch
+                else git(run["worktree"], "rev-parse", "HEAD") if Path(run["worktree"]).exists() else None)
+        unintegrated = [line[2:] for line in (git(repo, "cherry", "-v", run["config"]["base_branch"], head) if head else "").splitlines()
+                        if line.startswith("+")]
+        run["cancelled"] = {"at": time.time(), "note": note, "from_status": run["status"], "unintegrated": unintegrated}
+        run["status"] = "cancelled"
+        save(repo, run)
+    return {"run": run_id, "status": "cancelled", "unintegrated": unintegrated,
+            "next": "clean --apply removes its worktree and branch" + (", discarding the commits above." if unintegrated else ".")}
+
+
 def clean(repo, apply=False):
     """Remove worktrees and maf/* branches of finished runs already in the base branch, or replaced by a retry.
     Run state is kept for report/stats history. Dry run unless apply; never forces a dirty worktree."""
     runs = [run for run in list_runs(repo) if run.get("status") != "corrupt" and not run.get("cleaned_at")]
-    needed = {run.get("depends_on") for run in runs if run.get("depends_on")}
+    needed = {run.get("depends_on") for run in runs if run.get("depends_on") and run.get("status") != "cancelled"}
     removable, kept = [], []
     for run in runs:
         worktree, branch = Path(run["worktree"]), run.get("branch") or ""
@@ -610,12 +636,15 @@ def clean(repo, apply=False):
         stuck = run.get("status") == "needs_human" and (run.get("kind") == "verify" or head != run.get("source_sha"))
         if run["id"] in needed:
             kept.append((run, "後續任務還依賴它"))
-        elif not run.get("superseded_by") and run.get("status") not in ("tested", "verified", "merged") and not stuck:
+        elif not run.get("superseded_by") and run.get("status") not in ("tested", "verified", "merged", "cancelled") and not stuck:
             kept.append((run, f"狀態 {run.get('status')}"))
         elif worktree.exists() and git(worktree, "status", "--porcelain", "--untracked-files=all"):
             kept.append((run, "worktree 有未提交的改動"))
         elif run.get("superseded_by"):
             removable.append((run, f"已被 {run['superseded_by']} 取代"))
+        elif run.get("status") == "cancelled":  # A person chose to drop it, unintegrated commits included.
+            lost = (run.get("cancelled") or {}).get("unintegrated") or []
+            removable.append((run, "已取消" + (f"，會捨棄 {len(lost)} 個未整合 commit：" + "；".join(lost) if lost else "")))
         elif any(line.startswith("+") for line in git(repo, "cherry", run["config"]["base_branch"], head).splitlines()):
             kept.append((run, f"還沒整合進 {run['config']['base_branch']}"))
         else:

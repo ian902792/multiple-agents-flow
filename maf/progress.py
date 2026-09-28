@@ -433,8 +433,8 @@ def rows(repo):
     """One row per run, grouped by task id then age. Reads state and local Git only; no lock, no agents."""
     result = []
     for run in core.list_runs(repo):
-        if run.get("cleaned_at"):
-            continue  # Integrated and removed by clean; history stays in stats.
+        if run.get("cleaned_at") or run.get("status") == "cancelled":
+            continue  # Integrated and removed by clean, or dropped by a person; history stays in stats.
         try:
             result.append(row_for(repo, run))
         except CAUGHT as exc:
@@ -452,7 +452,8 @@ def report(repo, hours=24):
     since = time.time() - hours * 3600
     runs = {run["id"]: run for run in core.list_runs(repo)
             if (run.get("status") == "corrupt" or float(run.get("created_at") or 0) >= since)
-            and not run.get("superseded_by") and not run.get("cleaned_at")}  # Replaced by a retry, or integrated and cleaned.
+            and not run.get("superseded_by") and not run.get("cleaned_at")
+            and run.get("status") != "cancelled"}  # Replaced by a retry, integrated and cleaned, or cancelled.
     rows = {run_id: row_for(repo, run) for run_id, run in runs.items()}
     items = []
     for run_id, run in runs.items():
@@ -495,7 +496,7 @@ def report(repo, hours=24):
 STATUS_ZH = {"needs_human": "卡住", "corrupt": "狀態損壞", "awaiting_approval": "等你核准", "waiting_quota": "等額度",
              "creating": "建立中", "running": "執行中", "queued": "排隊中", "waiting_dependency": "等上游",
              "tested": "測試通過", "verified": "測試與審查通過", "publishing": "發布中", "pr": "PR 已建立",
-             "merging": "合併中", "merged": "已合併"}
+             "merging": "合併中", "merged": "已合併", "cancelled": "已取消"}
 
 
 def status_zh(status):
