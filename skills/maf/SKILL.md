@@ -186,6 +186,8 @@ how flows or models compare over time, run `stats` (default 30 days) and quote i
 When review is off, report `tested` and do not claim independent review. When
 enabled and approved on the same SHA, report `verified`. Publish/auto-merge
 requires enabled independent review.
+After integrating and pushing, run `clean --apply` once to remove the worktrees and branches of runs that
+are now in the base branch; it keeps anything unfinished, unintegrated or dirty.
 If current HEAD has moved since submission, the evidence is for the earlier
 SHA; submit a new verify run. Never auto-publish or merge a delegated run.
 

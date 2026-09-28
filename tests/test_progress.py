@@ -43,7 +43,7 @@ class ProgressTests(unittest.TestCase):
         usage = progress.total_usage([{"runtime": "pi", "duration_seconds": 60, "usage": pi},
                                       {"runtime": "claude", "duration_seconds": 35, "usage": {**claude, "output_tokens": 50, "total_cost_usd": 0.5}}])
         self.assertEqual((usage["seconds"], usage["rate"], usage["cache_hit"], usage["estimated"]), (95, 9.0, 0.836, True))
-        self.assertEqual(progress.usage_cells(usage), ["1m35s", "入 104k / 出 0.9k", "9 tok/s", "快取 84%", "-"])
+        self.assertEqual(progress.usage_cells(usage), ["1m35s", "入 104k / 出 851", "9 tok/s", "快取 84%", "-"])
         self.assertEqual(progress.usage_cells({"seconds": 12.4, "input_tokens": 0, "output_tokens": 2_500_000, "rate": None,
                                                "cache_hit": None, "cost_usd": 1.234, "estimated": True}),
                          ["12s", "入 0 / 出 2.5M", "-", "快取 -", "$1.23*"])
@@ -52,6 +52,22 @@ class ProgressTests(unittest.TestCase):
         row = {"agents": [{"role": "coder", "runtime": "pi", "cache_hit": 0.945}, {"role": "reviewer", "runtime": "codex", "cache_hit": None}],
                "status": "tested", "next": "", "attention": False, "log": ""}
         self.assertEqual(progress.detail_lines(row), ["  cache hit: coder pi 94.5%"])
+
+    def test_usage_text_adds_total_only_for_several_agents(self):
+        pi = {"input": 1000, "output": 100, "cacheRead": 3000, "cacheWrite": 0, "cost": {"total": 0.01}}
+        claude = {"input_tokens": 10, "output_tokens": 20, "cache_read_input_tokens": 90, "total_cost_usd": 0.5}
+        coder = {"role": "coder", "runtime": "claude", "model": "opus", "duration_seconds": 10, "usage": claude}
+        reviewer = {"role": "reviewer", "runtime": "pi", "model": "flash", "duration_seconds": 50, "usage": pi}
+        one = progress.usage_text({"id": "r", "status": "verified", "agents": [reviewer]}, "abcdef123")
+        self.assertEqual(one.splitlines(), ["MAF 用量 · r · verified abcdef1",
+                                            "  reviewer  pi/flash  50s  入 4.0k / 出 100  2 tok/s  快取 75%  $0.010"])
+        two = progress.usage_text({"id": "r", "status": "verified", "agents": [coder, reviewer]}, "abcdef123").splitlines()
+        self.assertEqual(two[1:], ["  coder     claude/opus  10s    入 100 / 出 20    2 tok/s  快取 90%  $0.500*",
+                                   "  reviewer  pi/flash     50s    入 4.0k / 出 100  2 tok/s  快取 75%  $0.010",
+                                   "  合計                   1m00s  入 4.1k / 出 120  2 tok/s  快取 75%  $0.510*",
+                                   "  " + progress.ESTIMATE_NOTE])
+        self.assertEqual(progress.usage_text({"id": "r", "status": "tested", "agents": []}, None).splitlines()[1],
+                         "  沒有 agent 呼叫（只跑測試）")
 
     def test_stats_groups_by_flow_and_model_without_counting_missing_as_zero(self):
         now = time.time()
@@ -77,7 +93,7 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(model["cost_usd"], {"mean": 0.01, "reported": 2, "of": 3})
         text = progress.render_stats(data)
         self.assertIn("3 件任務、3 次 agent 呼叫", text)
-        self.assertIn("45s（2/3）  入 4.0k（2/3） / 出 0.1k（2/3）  2 tok/s（1/3）", text)
+        self.assertIn("45s（2/3）  入 4.0k（2/3） / 出 100（2/3）  2 tok/s（1/3）", text)
         self.assertIn("卡住 1", text)
 
     def setUp(self):

@@ -61,6 +61,33 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(run["status"], "verified")
         return run
 
+    def test_clean_removes_only_integrated_clean_runs_and_keeps_history(self):
+        run = self.complete()
+        self.assertEqual(core.clean(self.repo)["kept"], [{"run": run["id"], "reason": "還沒整合進 main"}])
+        core.git(Path(run["worktree"]), "checkout", "-q", "--detach")
+        core.git(self.repo, "branch", "-D", run["branch"])  # A branch deleted by hand is no proof of integration.
+        self.assertEqual(core.clean(self.repo)["kept"], [{"run": run["id"], "reason": "還沒整合進 main"}])
+        core.git(self.repo, "cherry-pick", run["tested_sha"])  # Integrated with a new SHA, same content.
+        (Path(run["worktree"]) / "stray.txt").write_text("x")
+        self.assertEqual(core.clean(self.repo)["kept"][0]["reason"], "worktree 有未提交的改動")
+        (Path(run["worktree"]) / "stray.txt").unlink()
+        self.assertEqual(core.clean(self.repo), {"applied": False, "removed": [{"run": run["id"], "reason": "已在 main"}], "kept": []})
+        self.assertTrue(Path(run["worktree"]).exists())
+        stale = [{**r, "updated_at": r["updated_at"] - 1} for r in core.list_runs(self.repo)]
+        with patch.object(core, "list_runs", return_value=stale):  # Another command saved it after clean read it.
+            self.assertEqual(core.clean(self.repo, apply=True)["kept"], [{"run": run["id"], "reason": "狀態剛變動，下次再判斷"}])
+        self.assertTrue(Path(run["worktree"]).exists())
+        core.clean(self.repo, apply=True)
+        self.assertFalse(Path(run["worktree"]).exists())
+        self.assertEqual(core.git(self.repo, "branch", "--list", run["branch"]), "")
+        saved = core.load(self.repo, run["id"])
+        self.assertTrue(saved["cleaned_at"])
+        with self.assertRaisesRegex(core.FlowError, "cleaned"):
+            core.handoff(self.repo, saved)
+        self.assertEqual([row["run"] for row in progress.rows(self.repo)], [])
+        self.assertEqual(progress.stats(self.repo)["runs"], 1)
+        self.assertEqual(core.clean(self.repo, apply=True), {"applied": True, "removed": [], "kept": []})
+
     def test_offline_full_workflow(self):
         run = self.complete()
         self.assertEqual(core.verified(self.repo, run), run["tested_sha"])
