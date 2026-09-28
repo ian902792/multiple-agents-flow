@@ -88,6 +88,20 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(progress.stats(self.repo)["runs"], 1)
         self.assertEqual(core.clean(self.repo, apply=True), {"applied": True, "removed": [], "kept": []})
 
+    def test_clean_removes_stuck_runs_only_when_their_committed_work_is_in_base(self):
+        run = self.complete()
+        run.update(status="needs_human", feedback="reviewer asked a question")
+        core.save(self.repo, run)
+        self.assertEqual(core.clean(self.repo)["kept"][0]["reason"], "還沒整合進 main")
+        source = run["source_sha"]
+        run["source_sha"] = run["tested_sha"]  # As if the coder committed nothing: it may hold a question.
+        core.save(self.repo, run)
+        self.assertEqual(core.clean(self.repo)["kept"][0]["reason"], "狀態 needs_human")
+        run["source_sha"] = source
+        core.save(self.repo, run)
+        core.git(self.repo, "cherry-pick", run["tested_sha"])
+        self.assertEqual(core.clean(self.repo, apply=True)["removed"], [{"run": run["id"], "reason": "卡住，但內容已在 main"}])
+
     def test_offline_full_workflow(self):
         run = self.complete()
         self.assertEqual(core.verified(self.repo, run), run["tested_sha"])

@@ -2,6 +2,12 @@
 
 版本號採用 [語意化版本](https://semver.org/lang/zh-TW/)：`主版號.次版號.修訂號`。1.0 以前，次版號代表新功能或行為改變，修訂號代表修正。每次發布的最新版本寫在最上面，且必須和 `maf/__init__.py` 的 `__version__` 相同。
 
+## [0.11.1] - 2026-09-28
+
+### 行為改變
+
+- `clean` 也會清卡住（`needs_human`）但內容已在 base branch 的 run：驗證 run 驗的 commit 已經進 main，或 delegate 的 coder 有 commit 而且都已整合。coder 沒有 commit 就卡住的 run 一律保留，因為它可能是在問你問題，要留在 `report` 裡。
+
 ## [0.11.0] - 2026-09-28
 
 ### 新功能
