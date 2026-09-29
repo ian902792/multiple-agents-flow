@@ -163,6 +163,12 @@ class ProgressTests(unittest.TestCase):
             cli.main(["--repo", str(self.repo), *argv])
         return out.getvalue()
 
+    def test_origin_from_launcher_env_shows_in_progress(self):
+        with patch.dict(os.environ, {"MAF_ORIGIN": "runcard:42"}):
+            core.submit(self.repo, self.task)
+        row = progress.rows(self.repo)[0]
+        self.assertEqual((row["origin"], row["superseded"]), ("runcard:42", False))
+
     def test_end_to_end_marks_root_checklist_only(self):
         run = core.submit(self.repo, self.task)
         self.assertEqual(run["checklist"], {"path": "todo.md", "line": "- [ ] Improve docs <!-- maf:improve-docs -->"})

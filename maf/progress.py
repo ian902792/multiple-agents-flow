@@ -289,6 +289,7 @@ def row_for(repo, run):
             "complete": "yes" if valid else "no",
             "merged": "yes" if run.get("status") == "merged" else "no", "checklist": checklist,
             "created": float(run.get("created_at") or 0), "note": note,
+            "origin": clean(run.get("origin", ""), 200), "superseded": bool(run.get("superseded_by")),
             "agents": [{**{k: attempt.get(k) for k in ("role", "runtime", "provider", "model", "status", "duration_seconds", "usage_scope", "usage")},
                         "cache_hit": cache_hit(attempt.get("usage"))}
                        for attempt in run.get("agents", [])], **diagnostics(run)}
