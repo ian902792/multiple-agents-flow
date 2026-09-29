@@ -3,4 +3,4 @@ interface:
   short_description: "Ask a different, stronger agent for a read-only plan"
   default_prompt: "Use $maf-plan to plan this large task before implementation."
 policy:
-  allow_implicit_invocation: false
+  allow_implicit_invocation: true

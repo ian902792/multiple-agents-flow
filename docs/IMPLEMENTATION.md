@@ -5,7 +5,7 @@ Herdr is opt-in and runs a persistent ordinary supervisor command in an explicit
 Native agent CLIs run as bounded subprocesses, with structured output captured to private logs.
 Independent Pi, Antigravity or Codex delegates can occupy up to three execution lanes; planner/coder/reviewer are independently configured roles.
 The economy preset uses Astra for optional planning and Pi/DeepSeek for coding, with one repair. The opus-sol preset uses Claude Opus 5.5 coding and a configured Codex Sol reviewer. Independent review is disabled until explicitly enabled in the selected flow.
-The main chat is the developer. Only the manually invoked `/maf-plan` (Claude) or `$maf-plan` (Codex) skill calls the read-only planner, and `plan` refuses a planner whose runtime equals `--main` (Claude main: Codex planner; `codex-pi`: Claude Opus 5.5 planner).
+The main chat is the developer. Only the `/maf-plan` (Claude) or `$maf-plan` (Codex) skill calls the read-only planner, and only after the human invokes it or agrees when the main chat asks, and `plan` refuses a planner whose runtime equals `--main` (Claude main: Codex planner; `codex-pi`: Claude Opus 5.5 planner).
 
 ## Retry
 
@@ -35,7 +35,7 @@ tests and creates the GitHub release from that CHANGELOG section (`scripts/chang
 - `maf/ui.py` and `maf/static/index.html`: loopback-only flow, default and integration settings editor; `maf/static/guide.html` separately explains setup, commands and design. No project mode switching or run control.
 - `maf/skills.py`: one-time user-wide Claude/Codex discovery links; refuses conflicting skills and redirected parents.
 - `skills/maf/SKILL.md`: shared main-chat workflow, referenced by both hosts using relative symlinks.
-- `skills/maf-plan/SKILL.md`: manual-only planner entrypoint for both hosts; `agents/openai.yaml` disables implicit Codex invocation.
+- `skills/maf-plan/SKILL.md`: consent-gated planner entrypoint for both hosts; the model may invoke it only after asking the human.
 - `tests/`: stdlib unittest, fake subprocesses and temporary Git repositories, no model charges.
 - `README.md`: human-oriented Traditional Chinese overview and quickstart.
 - `docs/CLI.md`: direct commands, task format, approval and recovery reference.
@@ -124,7 +124,7 @@ fully completed delegate chains.
 with `--approve`, then `run_until_settled` repeats a one-at-a-time `work --once` over those IDs until none is
 queued or running and no confirmed quota reset is pending, and prints the report. Report text is Chinese.
 `install-skills` registers one shared skill in the user's `~/.agents/skills/maf` and `~/.claude/skills/maf`,
-plus manual-only `maf-plan` in both `~/.agents/skills` and `~/.claude/skills`. Global commands, including default-flow billing confirmation, work outside a Git repository; `mode` remains per repository.
+plus consent-gated `maf-plan` in both `~/.agents/skills` and `~/.claude/skills`. Global commands, including default-flow billing confirmation, work outside a Git repository; `mode` remains per repository.
 Execution: awaiting_approval (when required) -> queued -> coding -> testing -> `tested` when review is off, or reviewing -> `verified` when review is on. Publishing requires the latter.
 The frozen task/config/mode/kind/source SHA/publication flags are hashed at submit. Sensitive/broad edit
 paths, shell tests and manual-risk batch runs wait for `approve RUN_ID`; callers can explicitly request the

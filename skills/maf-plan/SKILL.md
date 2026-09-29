@@ -1,14 +1,14 @@
 ---
 name: maf-plan
-description: Manually ask a strong planner from a different agent (Codex for a Claude main chat, Claude Opus 5.5 or Fable 5.1 for a Codex main chat) for a read-only plan of a large task in a MAF-enabled repository.
-disable-model-invocation: true
+description: With the human's consent, ask a strong planner from a different agent (Codex for a Claude main chat, Claude Opus 5.5 or Fable 5.1 for a Codex main chat) for a read-only plan of a large task in a MAF-enabled repository.
 ---
 
-# Manual MAF plan
+# MAF plan
 
-Run only when the human explicitly invokes `/maf-plan` (Claude) or `$maf-plan`
-(Codex). Never invoke this skill from task size, uncertainty, or an automatic
-workflow decision. The current main chat remains the implementer after planning.
+Run when the human invokes `/maf-plan` (Claude) or `$maf-plan` (Codex), or after
+you asked "要用 maf-plan 規畫嗎？" for this task and they agreed. Never start it from
+task size, uncertainty, or an automatic workflow decision without that consent;
+consent covers only the task it was given for. The current main chat remains the implementer after planning.
 
 The planner is the selected flow's `planner` role and must be a different agent
 from the current main chat: a Claude chat uses the flow's Codex planner and a Codex
