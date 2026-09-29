@@ -1255,6 +1255,8 @@ class FlowTests(unittest.TestCase):
         self.assertFalse(core.matches("src/README.md", ["README.md"]))
         self.assertTrue(core.matches("docs/deep/a.md", ["docs/**/*.md"]))
         self.assertTrue(core.matches("docs/a.md", ["docs/**/*.md"]))
+        self.assertTrue(core.matches("scripts/fixtures/herdr/README.md", ["scripts/fixtures/herdr/"]))
+        self.assertFalse(core.matches("scripts/other.md", ["scripts/fixtures/"]))
         for name in ("secrets", "payments", "orders", "deployments", "policies"):
             self.assertIsNotNone(core.SENSITIVE_WORDS.search(f"docs/usage/{name}.md"))
 

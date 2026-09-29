@@ -529,7 +529,8 @@ def matches(path, patterns):
         if pattern[0] == "**":
             return match(parts, pattern[1:]) or bool(parts) and match(parts[1:], pattern)
         return bool(parts) and fnmatch.fnmatchcase(parts[0], pattern[0]) and match(parts[1:], pattern[1:])
-    return any(match(path.split("/"), pattern.split("/")) for pattern in patterns)
+    # "dir/" means everything under dir, as planners write directories
+    return any(match(path.split("/"), (pattern + "**" if pattern.endswith("/") else pattern).split("/")) for pattern in patterns)
 
 
 def check_scope(run):
