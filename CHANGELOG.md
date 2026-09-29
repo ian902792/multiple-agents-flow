@@ -2,6 +2,12 @@
 
 版本號採用 [語意化版本](https://semver.org/lang/zh-TW/)：`主版號.次版號.修訂號`。1.0 以前，次版號代表新功能或行為改變，修訂號代表修正。每次發布的最新版本寫在最上面，且必須和 `maf/__init__.py` 的 `__version__` 相同。
 
+## [0.14.0] - 2026-09-29
+
+### 行為改變
+
+- 主對話現在可以自己開 `maf-plan`，但一定要先問「要用 maf-plan 規畫嗎？」，你同意才啟動；同意只對那一件任務有效。你自己輸入 `/maf-plan`（Codex `$maf-plan`）照舊。Claude skill 拿掉 `disable-model-invocation`，Codex 允許隱式呼叫；flow 的 `manual_plan` 欄位名稱不變，意思改為「大型任務先問我」。
+
 ## [0.13.1] - 2026-09-29
 
 ### 行為改變

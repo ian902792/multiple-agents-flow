@@ -37,7 +37,7 @@ python3 flow.py --main codex confirm-billing --no-overage   # Codex 主對話（
 | 任務 | 主 Agent 怎麼做 |
 | --- | --- |
 | 碰到認證、金流、資料、權限、部署 | 先問你，自己做並開審查 |
-| 需求模糊、要做好幾個決定、跨模組或超過約 5 個檔案 | 建議你先跑 `/maf-plan` |
+| 需求模糊、要做好幾個決定、跨模組或超過約 5 個檔案 | 先問你要不要用 maf-plan，你同意才跑 |
 | 一次短回合做得完，或得先探索才知道改哪裡 | 自己改 |
 | 路徑明確、有測試能驗收 | 交給小任務 Agent，多件一起送出 |
 
@@ -60,7 +60,7 @@ python3 flow.py --main codex confirm-billing --no-overage   # Codex 主對話（
 
 ## 選 flow
 
-| Flow | 主對話 | 小任務交給 | 規畫（手動 maf-plan） |
+| Flow | 主對話 | 小任務交給 | 規畫（maf-plan，需你同意） |
 | --- | --- | --- | --- |
 | `quick`（Claude 預設） | Claude Opus 5.5 | Pi · DeepSeek V4.1 Flash | Codex GPT-6 Astra |
 | `quick-flash` | Claude Opus 5.5 | Pi · DeepSeek V4.1 Flash，審查也交 Pi（預設開啟） | Codex GPT-6 Astra |

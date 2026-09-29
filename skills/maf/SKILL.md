@@ -7,10 +7,10 @@ description: Operate multiple-agents-flow (MAF) from the main coding chat. Use w
 
 Stay in the current conversation. Its agent is the main developer for ordinary
 tasks. Select a flow whose `main.runtime` matches that agent; do not silently
-switch the human to another chat. Never call the planner automatically:
-only the human's explicit `/maf-plan` (Claude) or `$maf-plan` (Codex) invocation may
-do that. The planner is always a different agent from the main chat. For a large or
-unclear task, suggest the human run it once; do not run it yourself. Follow the user's language.
+switch the human to another chat. Never call the planner without the human's
+consent: either they invoke `/maf-plan` (Claude) or `$maf-plan` (Codex), or you ask
+"要用 maf-plan 規畫嗎？" and they say yes for this task. Consent covers only that task.
+The planner is always a different agent from the main chat. Follow the user's language.
 
 `maf` is the anchor word. "maf 改用 quick", "maf 狀態" or "maf 同時處理…" address
 MAF. Without it, generic words such as flow, mode, quick, planned or default are NOT
@@ -104,7 +104,7 @@ the first matching row:
 | Signal | Route |
 | --- | --- |
 | Touches auth, money, data, permissions or deployment | Implement yourself; `verify` with review enabled; ask the user first |
-| Ambiguous, several decisions, cross-module or more than ~5 files | Suggest `maf-plan` to the user; do not start it yourself |
+| Ambiguous, several decisions, cross-module or more than ~5 files | Ask the user whether to run `maf-plan`; run it only after they agree |
 | Done in one short pass (a few lines, 1–2 files), or you must explore to know what to change | Do it yourself |
 | Exact paths, approved test argv, about a module with its tests | Delegate; batch several such tasks into one `night` run |
 
@@ -210,7 +210,7 @@ run always notifies you; only the Herdr supervisor uses `work --daemon`.
 ## Overnight chains
 
 When the user wants a batch to run unattended (for example overnight), prefer the planned path:
-suggest `/maf-plan` (Codex `$maf-plan`), which stores a structured plan; answer its decisions with
+ask to run `maf-plan` (or the user invokes `/maf-plan`, Codex `$maf-plan`), which stores a structured plan; answer its decisions with
 `decide`, build its `main_agent` items yourself, then `night --plan PLAN_ID`. Without a plan: small
 tasks, correct acceptance tests, decisions made now. Write the task files, show the user the scopes, then
 run one command: `night A.json B.json C.json + D.json` (each file builds on the previous one's

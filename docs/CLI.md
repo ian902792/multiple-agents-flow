@@ -70,7 +70,7 @@ python3 "$FLOW" --repo "$TARGET" doctor
 
 Flow Studio 用 `python3 "$FLOW" ui` 開啟，僅監聽 `127.0.0.1`。設定頁儲存全域 flow、Claude／Codex 各自的預設 flow、獨立審查開關與 Herdr 開關；安裝、指令及設計理念在獨立的 `/guide` 頁。專案覆寫仍在 terminal 使用 `mode NAME` 切換，並依 `--main` 分開保存。小任務與審查 Agent 可在畫面切換工具；新模型 ID 可直接輸入，建議清單不等於模型可用性檢查。主對話模型是偏好記錄，目前 session 仍須在 Claude 或 Codex 自身切換。
 
-大型需求若要先規畫，由你明確執行 `/maf-plan 需求`（Codex 為 `$maf-plan 需求`），或直接呼叫 CLI。規畫者是所選 flow 的 `planner` 角色，必須與 `--main` 不同：Claude 主對話預設用 Codex GPT-6 Astra，`codex-pi` 預設用 Claude Opus 5.5，可在 Flow Studio 改成 Claude Fable 5.1 等模型。
+大型需求若要先規畫，由你執行 `/maf-plan 需求`（Codex 為 `$maf-plan 需求`），或由主對話先問你、你同意後啟動，也可直接呼叫 CLI。規畫者是所選 flow 的 `planner` 角色，必須與 `--main` 不同：Claude 主對話預設用 Codex GPT-6 Astra，`codex-pi` 預設用 Claude Opus 5.5，可在 Flow Studio 改成 Claude Fable 5.1 等模型。
 
 ```sh
 python3 "$FLOW" --repo "$TARGET" plan --mode planned --goal-file /private/path/goal.md
@@ -178,7 +178,7 @@ python3 "$FLOW" settings herdr on
 python3 "$FLOW" --repo "$TARGET" herdr
 ```
 
-`herdr` 建立不搶焦點的 supervisor workspace，更新呼叫端 pane 標題；每個執行中的 Coder／Reviewer 都有自己的暫時觀察 pane，完成後關閉。Planner 仍需你手動使用 `/maf-plan`。沒有常駐 supervisor 時，在 Herdr 內可用 `work --once --run-id RUN_ID --agent-panes`；多個任務就重複 `--run-id`。這些 pane 顯示進度，不是驗證證據。
+`herdr` 建立不搶焦點的 supervisor workspace，更新呼叫端 pane 標題；每個執行中的 Coder／Reviewer 都有自己的暫時觀察 pane，完成後關閉。Planner 只在你輸入 `/maf-plan` 或同意主對話的提議後啟動。沒有常駐 supervisor 時，在 Herdr 內可用 `work --once --run-id RUN_ID --agent-panes`；多個任務就重複 `--run-id`。這些 pane 顯示進度，不是驗證證據。
 在 supervisor pane 按 Ctrl-C 會停止接新任務，並等待正在執行的 delegate 到達安全完成點後退出；狀態和工作樹保留。再次啟動前先用 `status` 檢查中斷的 run，不要假設正在執行的 agent 已正常完成。
 
 若專案根目錄有已追蹤的 `todo.md`，可把任務 ID 接到唯一一行：
