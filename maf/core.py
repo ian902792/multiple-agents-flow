@@ -491,7 +491,9 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch",
            "kind": kind, "config": config, "config_hash": config_hash, "mode": mode, "task": task,
            "status": "creating", "stage": "testing" if kind == "verify" else "coding", "repairs": 0, "created_at": time.time(),
            "publish": bool(publish), "auto_merge": bool(auto_merge), "feedback": "", "agents": [],
-           "maf_version": __version__}
+           "maf_version": __version__,
+           # Who started this run, e.g. "runcard:<task id>" set by the launcher; display only
+           "origin": os.environ.get("MAF_ORIGIN", "")[:200]}
     if depends_on is not None:
         run["depends_on"] = depends_on
     reasons = approval_reasons(task, config, kind, require_approval)
