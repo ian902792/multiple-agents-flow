@@ -103,7 +103,7 @@ def parser():
     p = commands.add_parser("retry", help="Queue a stopped delegate again with its failure reason; dependents follow")
     p.add_argument("run_id")
     p.add_argument("--note", default="", help="What to change this time, added to the task instructions")
-    p = commands.add_parser("cancel", help="Drop one stopped run at a person's request; clean --apply then removes it")
+    p = commands.add_parser("cancel", help="Drop one queued or stopped run at a person's request; clean --apply then removes it")
     p.add_argument("run_id")
     p.add_argument("--note", default="", help="Why it is dropped")
     p = commands.add_parser("report", help="Summarize recent runs for unattended batches: what needs you, chains, what to integrate")

@@ -110,18 +110,23 @@ class FlowTests(unittest.TestCase):
         with self.assertRaisesRegex(core.FlowError, "later-0000000001"):
             core.cancel(self.repo, run["id"])
         core.cancel(self.repo, dependent["id"], "not needed")
-        with core.worker_exclusive(self.repo), self.assertRaisesRegex(core.FlowError, "worker"):
+        with core.run_exclusive(self.repo, run["id"]), self.assertRaisesRegex(core.FlowError, "active"):
             core.cancel(self.repo, run["id"])
+        queued = {**run, "id": "queued-0000000001", "branch": "maf/queued-0000000001", "depends_on": None,
+                  "worktree": str(core.worktrees_for(self.repo) / "queued-0000000001"), "status": "queued"}
+        core.save(self.repo, queued)
+        with core.worker_exclusive(self.repo):  # A running supervisor does not block it.
+            self.assertEqual(core.cancel(self.repo, queued["id"])["status"], "cancelled")
         result = core.cancel(self.repo, run["id"], "superseded")
         self.assertEqual((result["status"], len(result["unintegrated"])), ("cancelled", 1))
-        with self.assertRaisesRegex(core.FlowError, "stopped run"):
+        with self.assertRaisesRegex(core.FlowError, "queued or stopped run"):
             core.cancel(self.repo, run["id"])
         with self.assertRaises(core.FlowError):
             core.resume(self.repo, run["id"], acknowledge=True)
         saved = core.load(self.repo, run["id"])
         self.assertEqual((saved["cancelled"]["note"], saved["cancelled"]["from_status"]), ("superseded", "verified"))
         self.assertEqual(progress.rows(self.repo), [])
-        self.assertEqual(progress.stats(self.repo)["stopped"], {"cancelled": 2})
+        self.assertEqual(progress.stats(self.repo)["stopped"], {"cancelled": 3})
         self.assertTrue(Path(run["worktree"]).exists())  # cancel itself deletes nothing.
         reason = core.clean(self.repo, apply=True)["removed"][0]["reason"]
         self.assertTrue(reason.startswith("已取消，會捨棄 1 個未整合 commit："), reason)
