@@ -1191,6 +1191,87 @@ class FlowTests(unittest.TestCase):
             core.execute(self.repo, run)
         self.assertEqual((run["status"], run["reviewed_sha"]), ("verified", run["tested_sha"]))
 
+    def test_review_format_repair_preserves_original_without_retesting(self):
+        run = core.submit(self.repo, self.task)
+        original = {}
+        def agent(role, prompt, cwd, log, timeout):
+            result = self.fake_agent(role, prompt, cwd, log, timeout)
+            if role["access"] == "read":
+                if prompt.startswith("FORMAT REPAIR ONLY"):
+                    self.assertIn(original["raw"], prompt)
+                    result["text"] = original["json"]
+                else:
+                    original["json"] = result["text"]
+                    original["raw"] = "Here is the review.\n```json\n" + result["text"] + "\n```"
+                    result["text"] = original["raw"]
+            return result
+        with patch.object(core.agents, "run_agent", side_effect=agent) as calls, \
+                patch.object(core, "run_tests", wraps=core.run_tests) as tests:
+            core.process(self.repo, run)
+        self.assertEqual((run["status"], calls.call_count, tests.call_count), ("verified", 3, 1))
+        self.assertEqual(core.saved_review(self.repo, run), original["raw"])
+        self.assertEqual(run["review"], core.review_result(original["json"], run["tested_sha"]))
+        self.assertEqual(run["agents"][-1]["purpose"], "format_repair")
+        self.assertEqual([f["kind"] for f in run["failures"]], ["review_format"])
+        core.handoff(self.repo, run)
+
+    def test_format_repair_quota_resumes_only_conversion_and_rejects_changed_fields(self):
+        run = core.submit(self.repo, self.task)
+        def agent(role, prompt, cwd, log, timeout):
+            if prompt.startswith("FORMAT REPAIR ONLY"):
+                return {"status": "quota", "text": "", "usage": None, "detail": "limit"}
+            result = self.fake_agent(role, prompt, cwd, log, timeout)
+            if role["access"] == "read":
+                result["text"] = "Review:\n```json\n" + result["text"] + "\n```"
+            return result
+        with patch.object(core.agents, "run_agent", side_effect=agent):
+            core.process(self.repo, run)
+        self.assertEqual((run["status"], run["stage"]), ("waiting_quota", "review_format"))
+        run = core.resume(self.repo, run["id"], True)
+        with patch.object(core.agents, "run_agent", side_effect=self.fake_agent) as calls, \
+                patch.object(core, "run_tests", side_effect=AssertionError("tests rerun")):
+            core.process(self.repo, run)
+        self.assertEqual(run["status"], "verified")
+        self.assertTrue(calls.call_args.args[1].startswith("FORMAT REPAIR ONLY"))
+        # A conversion that edits even a nonblocking note is no longer the original review.
+        run.update(status="queued", stage="review_format", format_repaired=False)
+        def changed(*args):
+            result = self.fake_agent(*args)
+            value = json.loads(result["text"])
+            value["notes"] = ["new claim"]
+            result["text"] = json.dumps(value)
+            return result
+        with patch.object(core.agents, "run_agent", side_effect=changed):
+            core.process(self.repo, run)
+        self.assertEqual(run["status"], "needs_human")
+        self.assertIn("changed the original", run["feedback"])
+
+    def test_ambiguous_and_contradictory_review_recovery_stays_blocked(self):
+        base = {"decision": "approve", "head_sha": "a", "risk": "low", "summary": "ok", "findings": []}
+        fenced = "```json\n" + json.dumps(base) + "\n```"
+        for text in (fenced + "\n" + fenced, "{}\n" + fenced, fenced.replace('"a"', '"stale"'),
+                     fenced.replace('"decision": "approve"', '"decision": "changes_requested", "decision": "approve"')):
+            with self.subTest(text=text), self.assertRaises(core.FlowError):
+                core.wrapped_review(text, "a")
+        run = self.complete()
+        core.apply_review(self.repo, run, "Reject: unresolved issue.\n" +
+                          fenced.replace('"a"', json.dumps(run["tested_sha"])))
+        def refuses(*args):
+            return {"status": "ok", "text": "MAF_NEEDS_HUMAN: wrapper contradicts approve", "usage": None}
+        with patch.object(core.agents, "run_agent", side_effect=refuses), \
+                patch.object(core, "run_tests", side_effect=AssertionError("tests rerun")):
+            core.process(self.repo, run)
+        self.assertEqual(run["status"], "needs_human")
+        with self.assertRaises(core.FlowError):
+            core.handoff(self.repo, run)
+        # Mutating the saved original is caught before sending it to a model.
+        path = core.run_path(self.repo, run["id"]).parent / "review-response.json"
+        record = core.read_json(path)
+        record["text"] += "changed"
+        core.atomic(path, record)
+        with self.assertRaisesRegex(core.FlowError, "Saved review changed"):
+            core.saved_review(self.repo, run)
+
     def test_failed_external_verify_never_starts_a_coder(self):
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")

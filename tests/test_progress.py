@@ -98,7 +98,7 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(night["per_completed"]["input_tokens"], 12000)  # 3 calls' 4k over 1 completed run
         self.assertEqual(night["per_completed"]["output_tokens"], 300)
         model = data["models"][0]
-        self.assertEqual((model["role"], model["model"], model["calls"], model["ok_rate"]), ("coder", "pi/m", 6, 0.833))
+        self.assertEqual((model["role"], model["model"], model["calls"], model["native_ok_rate"]), ("coder", "pi/m", 6, 0.833))
         self.assertEqual(model["cost_usd"], {"mean": 0.01, "reported": 5, "of": 6})
         text = progress.render_stats(data)
         self.assertIn("5 件任務、6 次 agent 呼叫", text)

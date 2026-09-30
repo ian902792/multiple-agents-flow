@@ -187,6 +187,7 @@ own usage in the same code block from one run of
 (its cost is an API-price estimate, not a subscription charge). If the variable is unset or the command prints nothing
 (it fails silently), write `主對話用量：無法取得` and move on; never retry it or read transcripts instead. When the user asks
 how flows or models compare over time, run `stats` (default 30 days) and quote its table.
+Its native_ok_rate means native CLI completion, never review accuracy or approval.
 When review is off, report `tested` and do not claim independent review. When
 enabled and approved on the same SHA, report `verified`. Publish/auto-merge
 requires enabled independent review.
@@ -267,6 +268,18 @@ new chain from there.
 
 ## Status and recovery
 
+When asked to analyze history or improve recurring efficiency, run `analyze --days 30` first.
+It reads only private run state, ranks observed causes with case IDs, separates work kinds, and
+combines only explicitly linked retries. Run `stats` for model-call usage. Do not read transcripts
+for broad analysis or infer accuracy from approvals. Inspect a particular run/log only for a
+specific cause. Follow docs/IMPROVEMENT.md: save `analyze --json` under private Git state as a
+baseline, turn a confirmed cause into an anonymized regression plus a passing control, fix its
+shared root cause, then verify the final SHA once. Later `analyze --baseline FILE` considers only
+new runs; cross-period retries do not represent full lifecycle cost. Missing/unknown evidence
+stays unknown. Never auto-tune routing, billing, global settings or production code from statistics.
+The saved review's format repair is bounded and preserves every candidate field; failed or
+ambiguous conversions stay blocked. Resume that same run rather than redoing a full review.
+
 For status use `progress --json` without starting workers or reading transcripts.
 Show stage, elapsed/limit, and `attention`/`next`. Read `status RUN_ID` and the
 relevant log tail only to diagnose a blocker.
@@ -278,6 +291,8 @@ not evidence that a process stopped. Confirm the supervisor/owned process group
 ended, or obtain the user's explicit stopped confirmation before `resume RUN_ID
 --acknowledge-stopped`. `--after` requires a provider-confirmed reset time with
 timezone. Then execute only `work --once --run-id RUN_ID`, preserving saved roles.
+Before reusing tests, confirm the installed dependencies and external test environment have
+not changed. If that cannot be established, submit a new verify run instead of claiming reuse.
 
 Unknown quota, exhausted repairs, corrupt state, and policy changes stay blocked
 until resolved. Publication/merge uncertainty uses explicit `publish`/`merge`

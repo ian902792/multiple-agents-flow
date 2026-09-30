@@ -574,6 +574,10 @@ def unchanged(repo, run):
 
 def tested(repo, run):
     unchanged(repo, run)
+    results = run.get("tests") or []
+    if (not results or [item.get("argv") for item in results] != run["task"]["tests"]
+            or any(type(item.get("exit_code")) is not int or item["exit_code"] != 0 for item in results)):
+        raise FlowError("No complete passing evidence for the approved test commands.")
     head = git(run["worktree"], "rev-parse", "HEAD")
     if not run.get("tested_sha") or head != run.get("tested_sha"):
         raise FlowError("Test SHA does not match current HEAD.")
@@ -841,7 +845,14 @@ def run_tests(run, directory, reap=True):
 def review_result(text, head):
     fenced = re.fullmatch(r"\s*```(?:json)?\s*\n(.*?)\n?```\s*", text, re.S)  # models often fence JSON anyway
     try:
-        value = json.loads(fenced.group(1) if fenced else text)
+        def unique(pairs):
+            value = {}
+            for key, item in pairs:
+                if key in value:
+                    raise ValueError("Duplicate review key")
+                value[key] = item
+            return value
+        value = json.loads(fenced.group(1) if fenced else text, object_pairs_hook=unique)
     except ValueError as exc:
         raise FlowError("Reviewer must return valid JSON.") from exc
     keys = {"decision", "head_sha", "risk", "summary", "findings"}
@@ -874,7 +885,14 @@ def needs_repair(repo, run, feedback):
     save(repo, run)
 
 
-def invoke(repo, run, role_name, prompt, agent_panes=False, reap=True):
+def failure(run, kind):
+    """Keep causes after recovery; native status alone is not a verified outcome."""
+    run.setdefault("failures", []).append({"kind": kind, "stage": run["stage"], "at": time.time(),
+                                           "head_sha": run.get("tested_sha") or run.get("head_sha"),
+                                           "agent_index": len(run["agents"]) - 1})
+
+
+def invoke(repo, run, role_name, prompt, agent_panes=False, reap=True, purpose="task"):
     role = run["config"]["roles"][role_name]
     log = run_path(repo, run["id"]).parent / f"{role_name}-{len(run['agents'])}.jsonl"
     run["status"] = "running"
@@ -892,8 +910,10 @@ def invoke(repo, run, role_name, prompt, agent_panes=False, reap=True):
                           "usage_scope": "model_calls" if role["runtime"] == "pi" else "provider",
                           "duration_seconds": round(time.time() - run["activity"]["started_at"], 2),
                           "session_id": result.get("session_id"), "usage": result.get("usage"),
-                          "status": result["status"], "log": str(log)})
+                          "status": result["status"], "purpose": purpose, "log": str(log)})
     if result["status"] != "ok":
+        failure(run, "quota" if result["status"] == "quota" else
+                "authentication" if result["status"] == "blocked" else "agent_error")
         run["status"] = "waiting_quota" if result["status"] == "quota" else "needs_human"
         run["feedback"] = result.get("detail", "Agent did not finish.")
         run["not_before"] = None
@@ -1005,10 +1025,56 @@ def review_prompt(run, head, tests):
               "No introduction, text outside JSON, or Markdown fences. Put every explanation in summary/findings/notes.")
 
 
+def wrapped_review(text, head):
+    """One fenced candidate only. A reviewer must confirm wrappers add no conflicting judgment."""
+    if len(text) > 100_000:
+        raise FlowError("Review response too large for a bounded format repair.")
+    blocks = list(re.finditer(r"```(?:json)?\s*\n(.*?)\n?```", text, re.S))
+    if len(blocks) != 1:
+        raise FlowError("Format recovery requires exactly one fenced JSON review.")
+    block = blocks[0]
+    outside = text[:block.start()] + text[block.end():]
+    if any(char in outside for char in "{}[]`"):
+        raise FlowError("Ambiguous review wrapper; submit a new review.")
+    return review_result(block.group(1), head)
+
+
+def saved_review(repo, run):
+    record = read_json(run_path(repo, run["id"]).parent / "review-response.json")
+    if (not isinstance(record, dict) or set(record) != {"text", "head_sha", "scope_hash", "run"}
+            or record["run"] != run["id"] or digest(record) != run.get("review_response_hash")
+            or record["head_sha"] != run["tested_sha"]
+            or record["scope_hash"] != approval_scope(run)):
+        raise FlowError("Saved review changed or no longer matches this run's SHA/scope.")
+    return record["text"]
+
+
 def apply_review(repo, run, text):
-    review = review_result(text, run["tested_sha"])
+    run.pop("reviewed_sha", None)
+    run.pop("review", None)
+    run.pop("format_repaired", None)
+    record = {"text": text, "head_sha": run["tested_sha"], "scope_hash": approval_scope(run), "run": run["id"]}
+    atomic(run_path(repo, run["id"]).parent / "review-response.json", record)
+    run["review_response_hash"] = digest(record)
+    try:
+        review = review_result(text, run["tested_sha"])
+    except FlowError as exc:
+        failure(run, "review_format" if str(exc) == "Reviewer must return valid JSON." else "review_invalid")
+        run["agents"][-1]["outcome"] = "invalid_review"
+        run.update(stage="review_format", status="needs_human", feedback=str(exc))
+        save(repo, run)
+        wrapped_review(text, run["tested_sha"])  # Invalid schema, stale SHA and multiple candidates stay blocked.
+        run["status"] = "queued"
+        save(repo, run)
+        return
+    finish_review(repo, run, review)
+
+
+def finish_review(repo, run, review):
     run["review"] = review
+    run["agents"][-1]["outcome"] = review["decision"]
     if review["decision"] == "changes_requested":
+        failure(run, "review_rejected")
         if review["risk"] == "manual":
             run.update(status="needs_human", stage="replan", feedback=json.dumps(review, ensure_ascii=False)[:10000])
             save(repo, run)
@@ -1035,7 +1101,7 @@ def execute(repo, run, agent_panes=False):
     share_dependencies(repo, run)
     directory = run_path(repo, run["id"]).parent
     while run["status"] == "queued":
-        if run["stage"] not in ("coding", "testing", "reviewing"):
+        if run["stage"] not in ("coding", "testing", "reviewing", "review_format"):
             raise FlowError("Unknown/non-agent stage. Use publish or merge for network reconciliation.")
         if run["stage"] == "coding":
             prompt = ("Implement this approved task. Read repository instructions and only relevant files. "
@@ -1091,9 +1157,11 @@ def execute(repo, run, agent_panes=False):
                 text = early.result() if early else None
             if early:
                 run["agents"].append({**shadow["agents"][-1], "reaped_orphans": len(reap_orphans(run["worktree"]))})
+                run["failures"] = shadow.get("failures", run.get("failures", []))
             if head != git(run["worktree"], "rev-parse", "HEAD") or git(run["worktree"], "status", "--porcelain"):
                 raise FlowError("Verification changed tracked files/HEAD or left untracked files; inspect manually.")
             if any(result["exit_code"] for result in run["tests"]):
+                failure(run, "tests_failed")
                 needs_repair(repo, run, json.dumps([result for result in run["tests"] if result["exit_code"]], ensure_ascii=False))
                 continue
             run["tested_sha"] = head
@@ -1113,12 +1181,43 @@ def execute(repo, run, agent_panes=False):
                 return
             apply_review(repo, run, text)
         if run["stage"] == "reviewing":
-            if git(run["worktree"], "rev-parse", "HEAD") != run["tested_sha"] or git(run["worktree"], "status", "--porcelain"):
-                raise FlowError("Worktree changed after tests.")
+            tested(repo, run)
             text = invoke(repo, run, "reviewer", review_prompt(run, run["tested_sha"], run["tests"]), agent_panes)
             if text is None:
                 return
             apply_review(repo, run, text)
+        if run["stage"] == "review_format" and run["status"] == "queued":
+            tested(repo, run)
+            if run.get("format_repaired"):
+                raise FlowError("The single format repair failed; submit a new review.")
+            original = saved_review(repo, run)
+            expected = wrapped_review(original, run["tested_sha"])
+            prompt = ("FORMAT REPAIR ONLY. Do not use tools, read files, run tests or review the code again. "
+                      "The saved independent review below contains exactly one JSON candidate. "
+                      "Check that the surrounding prose adds no contradictory decision, risk or unresolved finding. "
+                      "If it conflicts, or you are unsure, return MAF_NEEDS_HUMAN: with the reason. "
+                      "Otherwise return ONLY that JSON object. Preserve all fields and values exactly; "
+                      "do not add, remove, reinterpret or improve the review.\nSAVED RESPONSE:\n" + original)
+            text = invoke(repo, run, "reviewer", prompt, agent_panes, purpose="format_repair")
+            if text is None:
+                return
+            run["format_repaired"] = True
+            save(repo, run)  # A malformed repair cannot silently launch another conversion.
+            if text.lstrip().startswith("MAF_NEEDS_HUMAN:"):
+                failure(run, "review_invalid")
+                run["agents"][-1]["outcome"] = "invalid_review"
+                raise FlowError("Format recovery needs human judgment: " + text.strip()[:2000])
+            try:
+                repaired = review_result(text, run["tested_sha"])
+            except FlowError:
+                failure(run, "review_invalid")
+                run["agents"][-1]["outcome"] = "invalid_review"
+                raise
+            if repaired != expected:
+                failure(run, "review_invalid")
+                run["agents"][-1]["outcome"] = "invalid_review"
+                raise FlowError("Format repair changed the original review; approval remains blocked.")
+            finish_review(repo, run, expected)
 
 
 def process(repo, run, agent_panes=False):
@@ -1153,6 +1252,8 @@ def process(repo, run, agent_panes=False):
 
 def resume(repo, run_id, acknowledge=False, after=None):
     run = load(repo, run_id)
+    if run.get("stage") == "review_format" and run.get("format_repaired"):
+        raise FlowError("The single format repair failed; submit a new review after inspecting the response.")
     if run.get("stage") == "replan":
         raise FlowError("Requirements or security risk need a new approved task; do not replay this run.")
     if run.get("stage") == "external_fix":

@@ -711,7 +711,7 @@ def stats(repo, days=30):
     for (role, model), items in sorted(models.items()):
         uses = [agent_usage(a) for a in items]
         model_rows.append({"role": role, "model": model, "calls": len(items),
-                           "ok_rate": round(sum(a.get("status") == "ok" for a in items) / len(items), 3),
+                           "native_ok_rate": round(sum(a.get("status") == "ok" for a in items) / len(items), 3),
                            **{k: _mean([u[k] for u in uses]) for k in USAGE_KEYS + ("rate", "cache_hit")},
                            "estimated": any(u["estimated"] for u in uses)})
     return {"days": days, "runs": len(runs), "calls": sum(len(v) for v in models.values()),
@@ -728,7 +728,7 @@ def render_stats(data):
                          + " / 出 " + _cell(row["per_completed"]["output_tokens"], fmt_tokens)] for row in data["flows"]])
     if data["models"]:
         lines.append("\n按角色與模型（每次呼叫平均）")
-        lines += table([[row["role"], row["model"], f"{row['calls']} 次", f"成功 {row['ok_rate']:.0%}", *usage_cells(row)]
+        lines += table([[row["role"], row["model"], f"{row['calls']} 次", f"正常結束 {row['native_ok_rate']:.0%}", *usage_cells(row)]
                         for row in data["models"]])
     if data["stopped"]:
         lines.append("\n停下的原因：" + " · ".join(f"{status_zh(k)} {n}" for k, n in sorted(data["stopped"].items())))

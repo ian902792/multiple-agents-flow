@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 
-from . import __version__, agents, core, flows, github, plans, progress, skills
+from . import __version__, agents, core, flows, github, history, plans, progress, skills
 
 
 def version_text():
@@ -114,6 +114,10 @@ def parser():
     p.add_argument("--json", action="store_true")
     p = commands.add_parser("stats", help="Spend and outcome totals by flow and by role/model, for tuning")
     p.add_argument("--days", type=float, default=30, help="Include runs created in the last N days (default 30)")
+    p.add_argument("--json", action="store_true")
+    p = commands.add_parser("analyze", help="Analyze local history and rank evidenced improvements; no model calls")
+    p.add_argument("--days", type=float, default=30)
+    p.add_argument("--baseline", type=Path, help="Exclude runs in an earlier analyze JSON snapshot from this repository")
     p.add_argument("--json", action="store_true")
     p = commands.add_parser("resume", help="Resume only after inspecting an interrupted/quota-blocked run")
     p.add_argument("run_id")
@@ -325,6 +329,10 @@ def main(argv=None):
         elif args.action == "stats":
             data = progress.stats(repo, args.days)
             print(json.dumps(data, ensure_ascii=False, indent=2) if args.json else progress.render_stats(data))
+            return
+        elif args.action == "analyze":
+            data = history.analyze(repo, args.days, args.baseline)
+            print(json.dumps(data, ensure_ascii=False, indent=2) if args.json else history.render(data))
             return
         elif args.action == "live-view":
             progress.follow_live(repo, args.file, args.worktree)
