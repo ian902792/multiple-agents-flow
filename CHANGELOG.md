@@ -2,6 +2,12 @@
 
 版本號採用 [語意化版本](https://semver.org/lang/zh-TW/)：`主版號.次版號.修訂號`。1.0 以前，次版號代表新功能或行為改變，修訂號代表修正。每次發布的最新版本寫在最上面，且必須和 `maf/__init__.py` 的 `__version__` 相同。
 
+## [0.18.2] - 2026-10-01
+
+### 修正
+
+- `clean` 會接手「送出它的 worktree 已不存在」的 run。以前從卡片 worktree 送出的 run，只有在該 worktree 裡才認得；卡片 worktree 先被刪掉後，`maf/*` 分支就永遠留著，從主 checkout 跑 `clean` 也列為 0。現在從主 checkout 或同 repo 其他 worktree 執行就會照原規則判斷並刪掉這些分支；還在的 worktree 的 run 仍由它自己清。
+
 ## [0.18.1] - 2026-09-30
 
 ### 調整
