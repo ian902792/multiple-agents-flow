@@ -92,7 +92,7 @@ def parser():
     p.add_argument("plan_id")
     p.add_argument("number", type=int)
     p.add_argument("answer")
-    p = commands.add_parser("night", help="Queue task chains and work through them one at a time, then print the report")
+    p = commands.add_parser("night", help="Queue task chains, parallelize eligible independent delegates, then print the report")
     p.add_argument("tasks", nargs="*", help="Task files in order; each file depends on the previous one. Use + to start a new chain.")
     p.add_argument("--plan", metavar="PLAN_ID", help="Run a saved plan's chains once every decision is answered")
     p.add_argument("--approve", action="store_true", help="You have read these task files: approve every scope that needs approval")

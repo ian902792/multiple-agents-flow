@@ -121,8 +121,8 @@ rejects. Queued, running, quota-waiting or resumable dependencies keep it waitin
 is a read-only summary grouped by attention, with dependency chains and `source..tested` integration ranges for
 fully completed delegate chains.
 `night FILE … [+ FILE …] [--approve]` queues each list as a chain (`queue_chains`), approving frozen scopes only
-with `--approve`, then `run_until_settled` repeats a one-at-a-time `work --once` over those IDs until none is
-queued or running and no confirmed quota reset is pending, and prints the report. Report text is Chinese.
+with `--approve`, then `run_until_settled` drains those IDs through `work` using its existing independence gates
+and up to three execution lanes until nothing can progress without a person, and prints the Chinese report.
 `install-skills` registers one shared skill in the user's `~/.agents/skills/maf` and `~/.claude/skills/maf`,
 plus consent-gated `maf-plan` in both `~/.agents/skills` and `~/.claude/skills`. Global commands, including default-flow billing confirmation, work outside a Git repository; `mode` remains per repository.
 Before its first agent or test, `execute` copies the main checkout's installed `node_modules`, `.venv` or `venv` into the worktree (`share_dependencies`) when the folder is ignored by Git in both checkouts, is absent from the worktree, and every manifest/lockfile that decides its contents is identical in both; the copy is copy-on-write (`cp -c` on macOS, `--reflink=auto` elsewhere, plain `cp -R` fallback), so writes never reach the main checkout, and a venv's absolute paths to the main checkout (bin scripts, `*.pth`, `__editable__*` finders, `direct_url.json`, `pyvenv.cfg`) are rewritten to the worktree so tests import the worktree's code. Only top-level folders are shared. `shared_dependencies` records what was copied.
@@ -158,10 +158,13 @@ that can itself progress); `night` relies on the same rule. A caller running it 
 always notified instead of waiting on an idle loop. Only `work --daemon`, used by the Herdr supervisor, keeps
 polling for new submissions.
 `night` computes `approval_reasons` for every task before queueing and, without `--approve`, refuses with the whole
-list. Preflight treats a command argument that is missing at HEAD but inside the chain's editable paths so far as an
-expected failure. `night --integrate` then calls `integrate`: with a clean tree, it cherry-picks each fully tested
+list. Preflight defers a command argument that is missing at HEAD but inside the chain's editable paths so far,
+without claiming it executed. `night --integrate` then calls `integrate`: with a clean tree, it rechecks every run
+through the exact-SHA evidence gate before cherry-picking each fully tested
 chain's `base..tested` range onto the current branch (a conflicting chain is aborted and reset to the commit before
-it), submits one verify run over the union of paths and tests with base = the pre-integration HEAD, approves it only
+it), submits one verify run retaining every original requirement and acceptance purpose over the union of paths
+and deduplicated tests with base = the pre-integration HEAD (oversized combined requirements are rejected before
+that chain is picked), approves it only
 under `--approve`, and runs it to completion.
 Every agent stage records a running checkpoint BEFORE invocation, with an activity label,
 start time, timeout (including up to 60 seconds for auth), and diagnostic log path.
@@ -175,7 +178,10 @@ Planner outputs a plan for human inspection; its output cannot silently authoriz
 schema, rejects duplicate ids and unknown decision blocks, and stores `plans/<plan-id>/plan.json` plus a Chinese
 `plan.md` in private state. An invalid reply stores nothing runnable. `decide` records answers; `night --plan` refuses
 while any answer is null, then preflights each distinct acceptance argv once at HEAD in a throwaway detached worktree
-(clean env, test timeout, no model): a pass is a warning, a command that cannot start or times out stops the plan.
+(clean env, test timeout, no model): a pass is a warning; only a terminal AssertionError or unittest failures-only
+summary counts as an expected failure. Startup/load errors, zero-test unittest suites, unrecognized failures and
+timeouts stop the plan with bounded diagnostics. Missing command arguments the plan will create are deferred,
+not reported as executed failures.
 Settled decisions are appended to the instructions of the tasks they block before `queue_chains`.
 
 ## Progress and checklist

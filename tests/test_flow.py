@@ -692,7 +692,7 @@ class FlowTests(unittest.TestCase):
 
     def night_task(self, name, needs=()):
         files = [f"docs/{item}.md" for item in (*needs, name)]
-        check = "; ".join(f"assert Path('{path}').read_text() == 'After\\n'" for path in files)
+        check = "; ".join(f"assert Path('{path}').is_file(); assert Path('{path}').read_text() == 'After\\n'" for path in files)
         return {"id": f"night-{name}", "title": f"Write {name}", "instructions": f"Create docs/{name}.md.",
                 "paths": [f"docs/{name}.md"], "tests": [[sys.executable, "-c", "from pathlib import Path; " + check]],
                 "risk": "docs"}
@@ -801,6 +801,27 @@ class FlowTests(unittest.TestCase):
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(errors):
             cli.main(["--repo", str(self.repo), "night", "+", str(files["d"])])
         self.assertIn("at least one task", errors.getvalue())
+
+    def test_night_independent_chains_overlap_but_dependencies_wait(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        chains = [[dict(self.night_task("a"), independent=True), self.night_task("b", ["a"])],
+                  [dict(self.night_task("d"), independent=True)]]
+        runs = core.queue_chains(self.repo, chains)
+        barrier = threading.Barrier(2, timeout=5)
+        original = self.night_agent()
+
+        def agent(role, prompt, cwd, log, timeout):
+            if role["access"] == "edit" and cwd.name.startswith(("night-a-", "night-d-")):
+                barrier.wait()  # Fails if night still forces one execution lane.
+            if role["access"] == "edit" and cwd.name.startswith("night-b-"):
+                self.assertEqual(core.load(self.repo, runs[0]["id"])["status"], "verified")
+            return original(role, prompt, cwd, log, timeout)
+
+        with patch.object(core.agents, "run_agent", side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
+            settled = core.run_until_settled(self.repo, [r["id"] for r in runs], poll=0.01)
+        self.assertEqual([r["status"] for r in settled], ["verified"] * 3)
+        self.assertEqual(settled[1]["source_sha"], settled[0]["tested_sha"])
 
     def sample_plan(self):
         return {"version": 1, "goal": "訂單功能", "interfaces": [{"name": "Order", "spec": "id:int"}],
@@ -921,6 +942,35 @@ class FlowTests(unittest.TestCase):
         self.assertIn("無法執行", errors.getvalue())
         self.assertEqual(core.list_runs(self.repo), [])
 
+    def test_preflight_blocks_load_errors_empty_suites_and_unknown_failures(self):
+        commands = {
+            "import": [sys.executable, "-c", "import definitely_missing_maf_module"],
+            "syntax": [sys.executable, "-c", "if"],
+            "empty": [sys.executable, "-m", "unittest", "discover", "-s", "."],
+            "unknown": [sys.executable, "-c", "raise SystemExit(1)"],
+            "assert": [sys.executable, "-c", "assert False, 'acceptance failed'"],
+            "suite": [sys.executable, "-c", "import unittest\nclass T(unittest.TestCase):\n"
+                      " def test_acceptance(self): self.assertTrue(False)\nunittest.main()"],
+            "error": [sys.executable, "-c", "import unittest\nclass T(unittest.TestCase):\n"
+                      " def test_acceptance(self): import definitely_missing_maf_module\nunittest.main()"],
+        }
+        plan = dict(self.sample_plan(), chains=[{"name": "驗收", "tasks": [
+            dict(self.night_task(name), tests=[argv]) for name, argv in commands.items()]}], decisions=[])
+        results = plans.preflight(self.repo, plan, 10)
+        outcomes = {r["task"]: r["outcome"] for r in results}
+        self.assertEqual(outcomes, {f"night-{name}": "fails" if name in ("assert", "suite") else "cannot_run"
+                                    for name in commands})
+        self.assertIn("ModuleNotFoundError", plans.render_preflight(results))
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        plan_id = plans.new_id()
+        plans.save(self.repo, plan_id, plan)
+        with patch.object(core.agents, "run_agent") as agent, contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            cli.main(["--repo", str(self.repo), "night", "--plan", plan_id])
+        agent.assert_not_called()
+        self.assertEqual(core.list_runs(self.repo), [])
+
     def test_night_asks_every_approval_up_front_and_integrates_passing_chains(self):
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")
@@ -929,8 +979,9 @@ class FlowTests(unittest.TestCase):
         files = {}
         for name, needs in (("a", []), ("b", ["a"]), ("d", [])):
             files[name] = folder / f"{name}.json"
-            files[name].write_text(json.dumps(self.night_task(name, needs)))
-        files["d"].write_text(json.dumps(dict(self.night_task("d"), paths=["docs/d.md", ".env.example"])))
+            files[name].write_text(json.dumps(dict(self.night_task(name, needs), acceptance_why=f"{name} 存在")))
+        files["d"].write_text(json.dumps(dict(self.night_task("d"), paths=["docs/d.md", ".env.example"],
+                                             acceptance_why="d 存在")))
         argv = ["--repo", str(self.repo), "night", str(files["a"]), str(files["b"]), "+", str(files["d"]),
                 "--integrate", "--poll", "1"]
         errors = io.StringIO()
@@ -945,6 +996,9 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(core.git(self.repo, "status", "--porcelain"), "")
         verify = next(run for run in core.list_runs(self.repo) if run["kind"] == "verify")
         self.assertEqual((verify["status"], verify["tested_sha"]), ("verified", core.git(self.repo, "rev-parse", "HEAD")))
+        for name in ("a", "b", "d"):
+            self.assertIn(f"Create docs/{name}.md.", verify["task"]["instructions"])
+            self.assertIn(f"night-{name}: {name} 存在", verify["task"]["acceptance_why"])
         text = output.getvalue()
         self.assertEqual(text.count("✓ 已套用"), 2)
         self.assertIn(f"整合後驗證 {verify['id']}", text)
@@ -955,9 +1009,55 @@ class FlowTests(unittest.TestCase):
             dict(self.night_task("a"), paths=["tools/check.py"], tests=[[sys.executable, "tools/check.py"]]),
             dict(self.night_task("b"), tests=[[sys.executable, "tools/other.py"]])]}]
         results = {r["task"]: (r["outcome"], r["detail"]) for r in plans.preflight(self.repo, plan, 30)}
-        self.assertEqual(results["night-a"], ("fails", "created by the plan: tools/check.py"))
-        self.assertEqual(results["night-b"][0], "fails")
+        self.assertEqual(results["night-a"], ("deferred", "created by the plan: tools/check.py"))
+        self.assertEqual(results["night-b"][0], "cannot_run")
         self.assertNotIn("created", results["night-b"][1])
+
+    def test_integrate_rechecks_every_runs_evidence_before_cherry_pick(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        original = self.complete(kind="delegate")
+        head = core.git(self.repo, "rev-parse", "HEAD")
+        for defect in ("test_exit", "test_argv", "tested_sha", "reviewed_sha", "dirty"):
+            with self.subTest(defect=defect):
+                run = copy.deepcopy(original)
+                if defect == "test_exit":
+                    run["tests"][0]["exit_code"] = 1
+                elif defect == "test_argv":
+                    run["tests"][0]["argv"] = [sys.executable, "-c", "pass"]
+                elif defect in ("tested_sha", "reviewed_sha"):
+                    run[defect] = run["base_sha"]
+                else:
+                    (Path(run["worktree"]) / "README.md").write_text("Dirty\n")
+                core.save(self.repo, run)
+                with patch.object(core, "run_until_settled") as work:
+                    picked, skipped, verify = core.integrate(self.repo, [[run["id"]]])
+                self.assertEqual(picked, [])
+                self.assertEqual(len(skipped), 1)
+                self.assertIsNone(verify)
+                work.assert_not_called()
+                self.assertEqual(core.git(self.repo, "rev-parse", "HEAD"), head)
+                self.assertEqual((self.repo / "README.md").read_text(), "Before\n")
+                (Path(run["worktree"]) / "README.md").write_text("After\n")
+        core.save(self.repo, original)
+        unrelated = self.complete(kind="delegate")
+        picked, skipped, verify = core.integrate(self.repo, [[original["id"], unrelated["id"]]])
+        self.assertEqual(picked, [])
+        self.assertIn("dependency commits", skipped[0][1])
+        self.assertIsNone(verify)
+        self.assertEqual(core.git(self.repo, "rev-parse", "HEAD"), head)
+
+    def test_integrate_rejects_oversized_requirements_before_cherry_pick(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        self.task["instructions"] = "x" * 30000
+        run = self.complete(kind="delegate")
+        head = core.git(self.repo, "rev-parse", "HEAD")
+        picked, skipped, verify = core.integrate(self.repo, [[run["id"]]])
+        self.assertEqual(picked, [])
+        self.assertIn("Invalid task instructions", skipped[0][1])
+        self.assertIsNone(verify)
+        self.assertEqual(core.git(self.repo, "rev-parse", "HEAD"), head)
 
     def test_retry_carries_the_failure_and_moves_dependents(self):
         core.git(self.repo, "add", ".maf.json")

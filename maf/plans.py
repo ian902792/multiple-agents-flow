@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 import time
 import uuid
 
@@ -28,7 +29,10 @@ SCHEMA = (
     "over one task per function: every task costs the main chat a review and an integration. If the main chat can "
     "finish the whole goal in one short pass, say so in risks and keep chains minimal. decisions are open questions only a person can settle; list them instead of "
     "guessing. Task ids: lowercase letters, digits and hyphens, unique. tests: nonempty argv arrays that fail before "
-    "the task and pass after it. risk: manual, docs, style or tests (default manual). Write text in the user's language."
+    "the task and pass after it. Use an explicit assertion for missing expected output files, rather than a load error. "
+    "Optionally mark independent:true only for tasks with independent requirements, disjoint literal edit paths "
+    "and no shared test resources; only eligible delegates from different chains overlap. "
+    "risk: manual, docs, style or tests (default manual). Write text in the user's language."
 )
 
 
@@ -169,11 +173,24 @@ def chains_for(plan):
     return chains
 
 
+def preflight_outcome(code, output):
+    """Only recognizable assertion failures prove a test reached its checks; unknown failures block."""
+    # ponytail: only AssertionError/unittest failure summaries; add a runner's evidence format when needed.
+    if code < 0 or code in (126, 127) or re.search(r"^Ran 0 tests? in ", output, re.M):
+        return "cannot_run"
+    if code == 0:
+        return "passes"
+    if (re.search(r"^FAILED \(failures=[1-9]\d*\)\s*\Z", output, re.M)
+            or re.search(r"(?:^|\n)AssertionError(?::[^\n]*)?\s*$", output)):
+        return "fails"
+    return "cannot_run"
+
+
 def preflight(repo, plan, timeout):
     """Run each distinct acceptance command once at HEAD, in a throwaway worktree, with no model involved.
 
-    Before any task runs its tests should fail: passing means the test may not check the task; failing to start
-    means the command is broken. Neither needs model tokens.
+    Passing is only a warning. Assertion failures are expected; startup/load errors and unknown failures block.
+    Files the plan will create are deferred, never claimed as executed tests. No model tokens are needed.
     """
     folder = core.worktrees_for(repo) / f"preflight-{uuid.uuid4().hex[:8]}"
     folder.parent.mkdir(exist_ok=True, mode=0o700)
@@ -192,25 +209,32 @@ def preflight(repo, plan, timeout):
                     missing = [a for a in argv if not a.startswith("-") and core.matches(a, planned)
                                and not (folder / a).exists()]
                     if missing:  # A test that runs a file the plan itself creates cannot run yet; that is expected.
-                        results.append({"task": task["id"], "argv": argv, "outcome": "fails",
+                        results.append({"task": task["id"], "argv": argv, "outcome": "deferred",
                                         "detail": "created by the plan: " + ", ".join(missing)})
                         continue
-                    try:
-                        proc = subprocess.Popen(argv, cwd=folder, env=agents.clean_env(), stdin=subprocess.DEVNULL,
-                                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                                start_new_session=True)
-                    except OSError as exc:
-                        results.append({"task": task["id"], "argv": argv, "outcome": "cannot_run", "detail": str(exc)})
-                        continue
-                    try:
-                        code = proc.wait(timeout=timeout)
-                    except subprocess.TimeoutExpired:
-                        core.terminate(proc)
-                        results.append({"task": task["id"], "argv": argv, "outcome": "timeout", "detail": f"{timeout}s"})
-                        continue
-                    core.reap_group(proc)
-                    outcome = "passes" if code == 0 else "cannot_run" if code in (126, 127) else "fails"
-                    results.append({"task": task["id"], "argv": argv, "outcome": outcome, "detail": f"exit {code}"})
+                    with tempfile.TemporaryFile() as output:
+                        try:
+                            proc = subprocess.Popen(argv, cwd=folder, env=agents.clean_env(), stdin=subprocess.DEVNULL,
+                                                    stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+                        except OSError as exc:
+                            results.append({"task": task["id"], "argv": argv, "outcome": "cannot_run", "detail": str(exc)})
+                            continue
+                        try:
+                            code = proc.wait(timeout=timeout)
+                        except subprocess.TimeoutExpired:
+                            core.terminate(proc)
+                            results.append({"task": task["id"], "argv": argv, "outcome": "timeout", "detail": f"{timeout}s"})
+                            continue
+                        except BaseException:
+                            core.terminate(proc)
+                            raise
+                        finally:
+                            core.reap_group(proc)
+                        output.seek(max(0, output.seek(0, 2) - 6000))
+                        tail = output.read().decode(errors="replace").strip()
+                    outcome = preflight_outcome(code, tail)
+                    results.append({"task": task["id"], "argv": argv, "outcome": outcome,
+                                    "detail": f"exit {code}" + (f"\n{tail}" if tail else "")})
     finally:
         core.reap_orphans(folder)
         core.git(repo, "worktree", "remove", "--force", str(folder))
@@ -218,8 +242,9 @@ def preflight(repo, plan, timeout):
 
 
 def render_preflight(results):
-    marks = {"fails": "✓ 尚未通過（正常）", "passes": "⚠ 已經通過：測試可能沒在檢查這件任務",
-             "cannot_run": "✗ 無法執行：指令或檔案不存在", "timeout": "✗ 逾時"}
+    marks = {"fails": "✓ 尚未通過（正常）", "passes": "⚠ 已經通過：請確認驗收目的",
+             "deferred": "待建立：尚未試跑", "cannot_run": "✗ 無法執行或確認驗收失敗原因", "timeout": "✗ 逾時"}
     lines = [f"試跑 {len(results)} 個驗收指令（本機執行，不呼叫模型）"]
     lines += [f"  {marks[r['outcome']]}  {r['task']}: {' '.join(r['argv'])}" for r in results]
+    lines += [f"  {r['task']} 診斷：\n{r['detail']}" for r in results if r["outcome"] == "cannot_run"]
     return "\n".join(lines)

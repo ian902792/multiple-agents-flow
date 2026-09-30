@@ -1232,12 +1232,27 @@ def queue_chains(repo, chains, mode=None, main_runtime="claude", approve_all=Fal
     return runs
 
 
+def integration_task(tasks):
+    """Keep every requirement and acceptance purpose inside the frozen verification task."""
+    task = {"id": "integrate-" + uuid.uuid4().hex[:8], "title": "Verify the integrated chains",
+            "instructions": "Verify every original task:\n" + "\n\n".join(
+                f"{t['id']}: {t['title']}\n{t['instructions']}" for t in tasks),
+            "paths": list(dict.fromkeys(p for t in tasks for p in t["paths"])),
+            "tests": [json.loads(k) for k in dict.fromkeys(json.dumps(a) for t in tasks for a in t["tests"])],
+            "risk": "manual" if any(t["risk"] == "manual" for t in tasks) else "tests"}
+    purposes = [f"{t['id']}: {t['acceptance_why']}" for t in tasks if "acceptance_why" in t]
+    if purposes:
+        task["acceptance_why"] = "\n".join(purposes)
+    return validate_task(task)
+
+
 def integrate(repo, chains, mode=None, main_runtime="claude", approve_all=False, poll=30):
     """Cherry-pick each fully tested chain onto the current branch, then verify the result as one exact commit.
 
     chains are lists of run ids in order. A chain that did not fully pass, or conflicts, is left out and the branch
     is reset to where it was before that chain. Returns (picked, skipped, verify run or None).
     """
+    from .progress import CAUGHT, eligible
     repo = Path(repo).resolve()
     if git(repo, "status", "--porcelain"):
         raise FlowError("The workspace changed while the chains ran; not integrating.")
@@ -1247,6 +1262,17 @@ def integrate(repo, chains, mode=None, main_runtime="claude", approve_all=False,
         runs = [load(repo, run_id) for run_id in chain]
         if any(run.get("status") not in ("tested", "verified") for run in runs):
             skipped.append((chain, "not every task passed"))
+            continue
+        try:
+            for index, run in enumerate(runs):
+                eligible(repo, run)
+                if index and (run.get("depends_on") != runs[index - 1]["id"]
+                              or run["base_sha"] != runs[index - 1]["tested_sha"]):
+                    raise FlowError("Chain does not follow its verified dependency commits.")
+            # Refuse oversized requirements before changing the source branch; never truncate acceptance criteria.
+            integration_task([r["task"] for group in [*picked, runs] for r in group])
+        except CAUGHT as exc:
+            skipped.append((chain, f"integration evidence or requirements invalid: {exc}"))
             continue
         before = git(repo, "rev-parse", "HEAD")
         try:
@@ -1260,11 +1286,7 @@ def integrate(repo, chains, mode=None, main_runtime="claude", approve_all=False,
     if not picked:
         return picked, skipped, None
     tasks = [run["task"] for runs in picked for run in runs]
-    task = {"id": "integrate-" + uuid.uuid4().hex[:8], "title": "Verify the integrated chains",
-            "instructions": "Verify the integrated result of: " + ", ".join(t["title"] for t in tasks),
-            "paths": list(dict.fromkeys(p for t in tasks for p in t["paths"])),
-            "tests": [json.loads(k) for k in dict.fromkeys(json.dumps(a) for t in tasks for a in t["tests"])],
-            "risk": "manual" if any(t["risk"] == "manual" for t in tasks) else "tests"}
+    task = integration_task(tasks)
     run = submit(repo, task, mode=mode, kind="verify", base_ref=start, main_runtime=main_runtime)
     if approve_all and run["status"] == "awaiting_approval":
         approve(repo, run["id"])
@@ -1326,8 +1348,8 @@ def can_progress(repo, run, seen=()):
 
 
 def run_until_settled(repo, run_ids, poll=30):
-    """Work through these runs one at a time until none can make progress without a person."""
-    work(repo, poll=poll, run_id=list(run_ids), delegate_concurrency=1)
+    """Drain these runs using the existing independence gates until none can progress without a person."""
+    work(repo, poll=poll, run_id=list(run_ids))
     return [load(repo, run_id) for run_id in run_ids]
 
 

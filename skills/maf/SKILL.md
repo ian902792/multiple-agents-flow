@@ -215,7 +215,8 @@ ask to run `maf-plan` (or the user invokes `/maf-plan`, Codex `$maf-plan`), whic
 tasks, correct acceptance tests, decisions made now. Write the task files, show the user the scopes, then
 run one command: `night A.json B.json C.json + D.json` (each file builds on the previous one's
 tested commit; `+` starts another chain). Add `--approve` only when the user confirmed those scopes.
-It works one task at a time until all finish or stop, then prints the Chinese report; `--integrate`
+Each chain stays ordered; explicitly independent delegates from different chains can run in up to three lanes
+when the existing source-SHA, path, risk and approval gates allow it. It runs until all finish or stop, then prints the Chinese report; `--integrate`
 also cherry-picks each passing chain onto the current branch and verifies the result. Without
 `--approve`, it refuses to start when any task needs approval and lists them all at once. When the user
 asks for the morning report, run `report`: handle 需要你處理 first, then integrate each 可以整合
