@@ -112,7 +112,7 @@ class FlowTests(unittest.TestCase):
         core.cancel(self.repo, dependent["id"], "not needed")
         with core.run_exclusive(self.repo, run["id"]), self.assertRaisesRegex(core.FlowError, "active"):
             core.cancel(self.repo, run["id"])
-        queued = {**dependent, "id": "queued-0000000001", "branch": "maf/queued-0000000001", "depends_on": None,
+        queued = {**run, "id": "queued-0000000001", "branch": "maf/queued-0000000001", "depends_on": None,
                   "worktree": str(core.worktrees_for(self.repo) / "queued-0000000001"), "status": "queued"}
         core.save(self.repo, queued)
         with core.worker_exclusive(self.repo):  # A running supervisor does not block it.

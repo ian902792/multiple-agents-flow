@@ -6,7 +6,7 @@
 
 ### 修正
 
-- `cancel` 可以取消排隊中的 run；Herdr supervisor 或 `work` 在跑時也能取消其他 run。worker 已經開始處理的 run 仍會拒絕。
+- `cancel` 可以取消排隊中的 run；Herdr supervisor 或 `work` 在等待或並行處理小任務時，也能取消其他 run。worker 已經開始處理的 run 仍會拒絕；worker 正在依序處理某個 run 時，要等它處理完。
 
 ## [0.15.0] - 2026-09-29
 
