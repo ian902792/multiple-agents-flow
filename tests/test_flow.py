@@ -88,6 +88,17 @@ class FlowTests(unittest.TestCase):
         (worktree / "package-lock.json").write_text('{"changed": true}\n')  # main installed for another lockfile
         core.share_dependencies(self.repo, run)
         self.assertFalse((worktree / "node_modules").exists())
+        (worktree / "package-lock.json").write_text("{}\n")
+        (worktree / "node_modules").mkdir()  # Already there (a resume): left alone
+        (self.repo / "venv").mkdir()  # Not ignored by Git: never copied, it would dirty the worktree
+        (self.repo / "venv" / "pyvenv.cfg").write_text("home = /usr/bin\n")
+        core.share_dependencies(self.repo, run)
+        self.assertEqual(list((worktree / "node_modules").iterdir()), [])
+        self.assertFalse((worktree / "venv").exists())
+        (self.repo / ".gitignore").write_text("__pycache__/\nnode_modules/\n.venv/\nvenv/\n")
+        shutil.copy(self.repo / ".gitignore", worktree / ".gitignore")
+        core.share_dependencies(self.repo, run)  # Ignored in both checkouts: the plain venv name is shared too
+        self.assertEqual(run["shared_dependencies"], [".venv", "node_modules", "venv"])
 
     def test_clean_removes_only_integrated_clean_runs_and_keeps_history(self):
         run = self.complete()
@@ -1012,6 +1023,35 @@ class FlowTests(unittest.TestCase):
         reap.assert_called_once()  # Only after both finished, so neither kills the other's helpers mid-run.
         self.assertEqual((run["status"], run["reviewed_sha"]), ("verified", run["tested_sha"]))
         self.assertEqual([a["role"] for a in run["agents"]], ["reviewer"])
+
+    @unittest.skipUnless(sys.platform == "darwin", "libproc is macOS only")
+    def test_libproc_falls_back_to_lsof_when_it_misreads_our_own_cwd(self):
+        core.macos_libproc.cache_clear()
+        self.addCleanup(core.macos_libproc.cache_clear)
+        self.assertIsNotNone(core.macos_libproc())
+        core.macos_libproc.cache_clear()
+        with patch.object(core, "libproc_cwd", return_value="/wrong"):
+            self.assertIsNone(core.macos_libproc())  # Changed struct layout: distrust it.
+            cwd = core.process_cwds([os.getpid()])[os.getpid()]  # lsof still answers
+        self.assertEqual(os.path.realpath(cwd), os.path.realpath(os.getcwd()))
+
+    def test_verify_review_stopped_by_quota_resumes_without_rerunning_tests(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        core.git(self.repo, "switch", "-c", "feature")
+        (self.repo / "README.md").write_text("After\n")
+        core.git(self.repo, "commit", "-qam", "Claude implementation")
+        run = core.submit(self.repo, self.task, kind="verify")
+        quota = {"status": "quota", "text": "", "session_id": None, "usage": None, "detail": "usage limit"}
+        with patch.object(core.agents, "run_agent", return_value=quota):
+            core.execute(self.repo, run)
+        self.assertEqual((run["status"], run["stage"], run["tested_sha"]), ("waiting_quota", "reviewing", run["source_sha"]))
+        self.assertEqual(run["tests"][0]["exit_code"], 0)
+        run["status"] = "queued"  # What a confirmed quota reset does
+        with patch.object(core.agents, "run_agent", side_effect=self.fake_agent), \
+                patch.object(core, "run_tests", side_effect=AssertionError("tests rerun")):
+            core.execute(self.repo, run)
+        self.assertEqual((run["status"], run["reviewed_sha"]), ("verified", run["tested_sha"]))
 
     def test_failed_external_verify_never_starts_a_coder(self):
         core.git(self.repo, "add", ".maf.json")

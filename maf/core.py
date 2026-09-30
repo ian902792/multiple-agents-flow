@@ -719,7 +719,20 @@ def reap_group(proc):
 def macos_libproc():
     """macOS libproc answers in microseconds what lsof takes ~0.1 s to scan; None elsewhere."""
     name = ctypes.util.find_library("proc") if sys.platform == "darwin" else None
-    return ctypes.CDLL(name) if name else None
+    if not name:
+        return None
+    libproc = ctypes.CDLL(name)
+    # The struct offsets below are fixed; if a macOS release changes them, reading our own cwd shows it: use lsof.
+    own = libproc_cwd(libproc, os.getpid())
+    return libproc if own and os.path.realpath(own) == os.path.realpath(os.getcwd()) else None
+
+
+def libproc_cwd(libproc, pid):
+    # proc_vnodepathinfo: the cwd's vnode_info (152 bytes), its path (MAXPATHLEN), then the root dir's.
+    buffer = ctypes.create_string_buffer(2352)
+    if libproc.proc_pidinfo(pid, 9, ctypes.c_uint64(0), buffer, 2352) != 2352:  # PROC_PIDVNODEPATHINFO
+        return None
+    return buffer.raw[152:1176].split(b"\0", 1)[0].decode(errors="surrogateescape")
 
 
 def process_cwds(pids):
@@ -736,12 +749,7 @@ def process_cwds(pids):
         return found
     libproc = macos_libproc()
     if libproc:
-        # proc_vnodepathinfo: the cwd's vnode_info (152 bytes), its path (MAXPATHLEN), then the root dir's.
-        found, buffer = {}, ctypes.create_string_buffer(2352)
-        for pid in pids:
-            if libproc.proc_pidinfo(pid, 9, ctypes.c_uint64(0), buffer, 2352) == 2352:  # PROC_PIDVNODEPATHINFO
-                found[pid] = buffer.raw[152:1176].split(b"\0", 1)[0].decode(errors="surrogateescape")
-        return found
+        return {pid: cwd for pid in pids if (cwd := libproc_cwd(libproc, pid)) is not None}
     try:
         text = subprocess.run(["lsof", "-a", "-d", "cwd", "-Fpn", "-p", ",".join(map(str, pids))],
                               capture_output=True, text=True, timeout=20).stdout
