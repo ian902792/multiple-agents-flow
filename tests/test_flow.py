@@ -1023,10 +1023,11 @@ class FlowTests(unittest.TestCase):
                 patch.object(core, "reap_orphans", return_value=[]) as reap:
             core.execute(self.repo, run)
         reap.assert_called_once()  # Only after both finished, so neither kills the other's helpers mid-run.
-        with patch.object(core, "REVIEW_FILES_BUDGET", 3):
+        with patch.object(core, "REVIEW_FILES_BUDGET", 3), patch.object(core, "command", wraps=core.command) as command:
             prompt = core.review_prompt(run, run["tested_sha"], run["tests"])
         self.assertTrue(prompt.endswith("read them yourself: README.md"), prompt[-200:])
         self.assertNotIn("--- README.md ---", prompt)
+        self.assertFalse([c for c in command.call_args_list if "show" in c.args[0]])  # Over budget: never loaded
         self.assertEqual((run["status"], run["reviewed_sha"]), ("verified", run["tested_sha"]))
         self.assertEqual([a["role"] for a in run["agents"]], ["reviewer"])
 

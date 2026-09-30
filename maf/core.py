@@ -935,7 +935,7 @@ def share_dependencies(repo, run):
         save(repo, run)
 
 
-REVIEW_FILES_BUDGET = 60_000  # characters of changed-file text handed to the reviewer
+REVIEW_FILES_BUDGET = 60_000  # bytes of changed files handed to the reviewer whole
 
 
 def review_prompt(run, head, tests):
@@ -947,11 +947,16 @@ def review_prompt(run, head, tests):
     texts = [record.split("\t", 2)[2] for record in git(run["worktree"], "diff", "--numstat", "-z", "--diff-filter=d",
                                                        "--no-renames", run["base_sha"], head, "--").split("\0")
              if record.count("\t") >= 2 and not record.startswith("-\t-\t")]  # -\t- marks a binary file
+    sizes = {}  # Sized before reading, so a huge changed file is named instead of loaded (or tripping the output cap).
+    for record in (git(run["worktree"], "ls-tree", "-l", "-z", head, "--", *texts) if texts else "").split("\0"):
+        meta, _, path = record.partition("\t")
+        if meta.split()[1:2] == ["blob"]:  # A submodule's gitlink has no content here.
+            sizes[path] = int(meta.split()[3])
     files, omitted, budget = [], [], REVIEW_FILES_BUDGET
-    for path, text in sorted(((p, git(run["worktree"], "show", f"{head}:{p}")) for p in texts), key=lambda item: len(item[1])):
-        if len(text) <= budget:
-            files.append(f"--- {path} ---\n{text}")
-            budget -= len(text)
+    for path in sorted(sizes, key=sizes.get):
+        if sizes[path] <= budget:
+            files.append(f"--- {path} ---\n" + git(run["worktree"], "show", f"{head}:{path}"))
+            budget -= sizes[path]
         else:
             omitted.append(path)
     return ("Independent read-only review. The changed files' full contents at HEAD follow the diff; do not reread "
