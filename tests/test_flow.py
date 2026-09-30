@@ -1142,6 +1142,8 @@ class FlowTests(unittest.TestCase):
             self.assertIn("\nCHANGED FILES AT HEAD:\n--- README.md ---\nAfter", prompt)  # Whole, so no rereads
             self.assertIn("Only read files inside this worktree", prompt)
             self.assertIn("--- notes[1].md ---\nglob-like name", prompt)
+            self.assertTrue(prompt.endswith("No introduction, text outside JSON, or Markdown fences. "
+                                            "Put every explanation in summary/findings/notes."))
             return self.fake_agent(role, prompt, cwd, log, timeout)
         with patch.object(core.agents, "run_agent", side_effect=agent), \
                 patch.object(core, "reap_orphans", return_value=[]) as reap:
@@ -1149,7 +1151,7 @@ class FlowTests(unittest.TestCase):
         reap.assert_called_once()  # Only after both finished, so neither kills the other's helpers mid-run.
         with patch.object(core, "REVIEW_FILES_BUDGET", 3), patch.object(core, "command", wraps=core.command) as command:
             prompt = core.review_prompt(run, run["tested_sha"], run["tests"])
-        self.assertTrue(prompt.endswith("read them yourself: README.md, notes[1].md"), prompt[-200:])
+        self.assertIn("read them yourself: README.md, notes[1].md", prompt)
         self.assertNotIn("--- README.md ---", prompt)
         self.assertFalse([c for c in command.call_args_list if "show" in c.args[0]])  # Over budget: never loaded
         self.assertEqual((run["status"], run["reviewed_sha"]), ("verified", run["tested_sha"]))

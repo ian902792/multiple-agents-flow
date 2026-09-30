@@ -1000,7 +1000,9 @@ def review_prompt(run, head, tests):
               if tests is not None else "the supervisor runs them beside this review; it counts only if they all pass")
             + "\nDIFF:\n" + diff
             + "\nCHANGED FILES AT HEAD:\n" + "\n".join(files)
-            + ("\nNot included (over the size budget), read them yourself: " + ", ".join(omitted) if omitted else ""))
+            + ("\nNot included (over the size budget), read them yourself: " + ", ".join(omitted) if omitted else "")
+            + "\nOUTPUT CONTRACT: Return only one JSON object, starting with { and ending with }. "
+              "No introduction, text outside JSON, or Markdown fences. Put every explanation in summary/findings/notes.")
 
 
 def apply_review(repo, run, text):
