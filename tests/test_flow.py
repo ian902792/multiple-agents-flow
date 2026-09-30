@@ -127,6 +127,26 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(progress.stats(self.repo)["runs"], 1)
         self.assertEqual(core.clean(self.repo, apply=True), {"applied": True, "removed": [], "kept": []})
 
+    def test_clean_adopts_runs_whose_submitting_worktree_is_gone(self):
+        card = Path(self.temp.name + "-card")
+        self.addCleanup(shutil.rmtree, card, ignore_errors=True)
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        core.git(self.repo, "worktree", "add", "-q", "-b", "card", str(card))
+        (card / "README.md").write_text("After\n")
+        core.git(card, "commit", "-qam", "Card work")
+        run = core.submit(card, self.task, kind="verify", base_ref="HEAD^")  # As the card's main chat does.
+        with patch.object(core.agents, "doctor_role", return_value=[]), patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
+            core.execute(card, run)
+        self.assertEqual(run["status"], "verified")
+        core.git(self.repo, "merge", "-q", "card")
+        self.assertEqual(core.clean(self.repo)["removed"], [])  # Its worktree still exists: the card cleans it.
+        shutil.rmtree(card)  # The card worktree was removed before its own clean.
+        self.assertEqual(core.clean(self.repo, apply=True)["removed"], [{"run": run["id"], "reason": "已在 main"}])
+        self.assertEqual(core.git(self.repo, "branch", "--list", run["branch"]), "")
+        self.assertTrue(core.read_json(core.run_path(self.repo, run["id"]))["cleaned_at"])
+        self.assertEqual(core.clean(self.repo)["removed"], [])
+
     def test_clean_removes_stuck_runs_only_when_their_committed_work_is_in_base(self):
         run = self.complete()
         run.update(status="needs_human", feedback="reviewer asked a question")

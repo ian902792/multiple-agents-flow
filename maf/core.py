@@ -638,10 +638,28 @@ def cancel(repo, run_id, note=""):
             "next": "clean --apply removes its worktree and branch" + (", discarding the commits above." if unintegrated else ".")}
 
 
+def orphan_runs(repo):
+    """Runs submitted from another worktree of this repository that no longer exists, e.g. a card worktree removed
+    before its own clean. Git state is shared, so their branches are left behind unless some other checkout adopts
+    them; runs of a worktree that still exists stay that worktree's to clean."""
+    runs = []
+    for path in sorted((root_for(repo) / "runs").glob("*/state.json")):
+        try:
+            run = read_json(path)
+            owner = Path(run["repo"])
+            if (run["id"] == path.parent.name and not owner.exists()
+                    and Path(run["worktree"]) == worktrees_for(owner) / run["id"]):
+                runs.append(run)
+        except (FlowError, KeyError, TypeError):
+            continue
+    return runs
+
+
 def clean(repo, apply=False):
     """Remove worktrees and maf/* branches of finished runs already in the base branch, or replaced by a retry.
     Run state is kept for report/stats history. Dry run unless apply; never forces a dirty worktree."""
-    runs = [run for run in list_runs(repo) if run.get("status") != "corrupt" and not run.get("cleaned_at")]
+    runs = [run for run in list_runs(repo) + orphan_runs(repo)
+            if run.get("status") != "corrupt" and not run.get("cleaned_at")]
     needed = {run.get("depends_on") for run in runs if run.get("depends_on") and run.get("status") != "cancelled"}
     removable, kept = [], []
     for run in runs:
@@ -672,10 +690,12 @@ def clean(repo, apply=False):
     if apply and removable:
         # Hold every lock a run-state writer uses, and skip any run that changed since it was judged.
         with exclusive(repo), worker_exclusive(repo):
+            git(repo, "worktree", "prune")  # An orphan's worktree vanished with its owner; unregister it first.
             judged, removable = removable, []
             for run, why in judged:
                 with run_exclusive(repo, run["id"]):
-                    fresh = load(repo, run["id"])
+                    own = run["repo"] == str(Path(repo).resolve())
+                    fresh = load(repo, run["id"]) if own else read_json(run_path(repo, run["id"]))
                     if fresh.get("updated_at") != run.get("updated_at"):
                         kept.append((fresh, "狀態剛變動，下次再判斷"))
                         continue
@@ -686,7 +706,6 @@ def clean(repo, apply=False):
                     fresh["cleaned_at"] = time.time()
                     save(repo, fresh)
                     removable.append((fresh, why))
-            git(repo, "worktree", "prune")
     return {"applied": apply, "removed": [{"run": run["id"], "reason": why} for run, why in removable],
             "kept": [{"run": run["id"], "reason": why} for run, why in kept]}
 
