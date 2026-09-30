@@ -1005,19 +1005,23 @@ class FlowTests(unittest.TestCase):
         core.git(self.repo, "commit", "-qm", "Configure MAF")
         core.git(self.repo, "switch", "-c", "feature")
         (self.repo / "README.md").write_text("After\n")
-        core.git(self.repo, "commit", "-qam", "Claude implementation")
+        (self.repo / "notes[1].md").write_text("glob-like name\n")  # Must match literally, not as a pattern
+        core.git(self.repo, "add", ".")
+        core.git(self.repo, "commit", "-qm", "Claude implementation")
         marker = Path(self.temp.name + "-review-started")
         self.addCleanup(marker.unlink, missing_ok=True)
         # The test only passes if the reviewer has started while it is still running.
         self.task["tests"] = [[sys.executable, "-c", "import pathlib, time\nfor _ in range(200):\n"
                                f"    if pathlib.Path({str(marker)!r}).exists(): raise SystemExit(0)\n"
                                "    time.sleep(0.05)\nraise SystemExit(1)"]]
-        run = core.submit(self.repo, self.task, kind="verify")
+        self.task["paths"] = ["README.md", "notes[[]1].md"]  # Task paths are fnmatch patterns
+        run = core.approve(self.repo, core.submit(self.repo, self.task, kind="verify")["id"])  # Wildcards need approval
         def agent(role, prompt, cwd, log, timeout):
             marker.touch()
             self.assertIn("counts only if they all pass", prompt)
             self.assertIn("\nCHANGED FILES AT HEAD:\n--- README.md ---\nAfter", prompt)  # Whole, so no rereads
             self.assertIn("Only read files inside this worktree", prompt)
+            self.assertIn("--- notes[1].md ---\nglob-like name", prompt)
             return self.fake_agent(role, prompt, cwd, log, timeout)
         with patch.object(core.agents, "run_agent", side_effect=agent), \
                 patch.object(core, "reap_orphans", return_value=[]) as reap:
@@ -1025,7 +1029,7 @@ class FlowTests(unittest.TestCase):
         reap.assert_called_once()  # Only after both finished, so neither kills the other's helpers mid-run.
         with patch.object(core, "REVIEW_FILES_BUDGET", 3), patch.object(core, "command", wraps=core.command) as command:
             prompt = core.review_prompt(run, run["tested_sha"], run["tests"])
-        self.assertTrue(prompt.endswith("read them yourself: README.md"), prompt[-200:])
+        self.assertTrue(prompt.endswith("read them yourself: README.md, notes[1].md"), prompt[-200:])
         self.assertNotIn("--- README.md ---", prompt)
         self.assertFalse([c for c in command.call_args_list if "show" in c.args[0]])  # Over budget: never loaded
         self.assertEqual((run["status"], run["reviewed_sha"]), ("verified", run["tested_sha"]))
