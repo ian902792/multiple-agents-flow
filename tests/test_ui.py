@@ -35,6 +35,8 @@ class LocalUITests(unittest.TestCase):
                         guide = response.read().decode()
                     self.assertIn("設計理念", guide)
                     self.assertIn("awaiting_approval", guide)
+                    for page in (html, guide):  # The CSP allows only the nonce stylesheet; style="" is silently dropped.
+                        self.assertNotIn(' style="', page)
                     token = re.search(r'const token="([0-9a-f]+)"', html).group(1)
                     with self.assertRaises(HTTPError) as denied:
                         urlopen(url + "/api/state")

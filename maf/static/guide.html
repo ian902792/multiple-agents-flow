@@ -14,6 +14,7 @@ section{margin-top:46px}.grid{display:grid;grid-template-columns:repeat(2,minmax
 pre{background:#17243b;color:#edf4ff;border-radius:8px;padding:15px 17px;overflow-x:auto;font-size:13px;line-height:1.6;margin:12px 0 0}code{font-size:.92em}
 .table-wrap{overflow-x:auto;background:#fff;border:1px solid #dce4f0;border-radius:9px}table{border-collapse:collapse;width:100%;min-width:620px;font-size:14px}th,td{text-align:left;vertical-align:top;padding:13px 15px;border-bottom:1px solid #e7ecf3;line-height:1.5}tr:last-child td{border:0}th{background:#f1f5fb;color:#445771}td code{white-space:nowrap}
 details{background:#fff;border:1px solid #dce4f0;border-radius:9px;padding:17px 20px;margin-top:12px}summary{cursor:pointer;font-weight:700;color:#233c66}details .table-wrap{margin-top:16px}details p{margin-top:12px}
+.table-wrap+p{margin-top:12px}.grid+p{margin-top:16px}
 .callout{border-left:3px solid #2457c5;background:#eef4ff;padding:16px 20px;border-radius:0 8px 8px 0}
 @media(max-width:700px){.top{padding:12px 18px}main{padding:32px 16px 56px}h1{font-size:30px}.grid{grid-template-columns:1fr}.step{padding:16px}}
 </style>
@@ -45,7 +46,7 @@ python3 flow.py --repo /path/to/project --main codex doctor</pre><p><code>doctor
     <tr><td><code>planned</code></td><td>較大任務；主對話會先問你要不要請 Codex 規畫。</td><td>「maf 改用 planned。」需要 Codex 規畫時輸入 <code>/maf-plan 需求</code>，或答應主對話的提議。</td></tr>
     <tr><td><code>codex-pi</code></td><td>Codex 主導，Pi 執行明確小任務；Claude Opus 5.5 審查可選、預設關閉。</td><td>在 Codex 對話說「maf 改用 codex-pi，請完成這項修改。」</td></tr>
     <tr><td>自訂名稱</td><td>把常用的角色／模型組合儲存於設定頁。</td><td>「maf 改用我的 flow。」或「maf 改回全域預設。」</td></tr>
-  </tbody></table></div><p style="margin-top:12px">Claude 與 Codex 各自沿用其全域預設，之後不用逐案選 mode。同一專案的兩個主對話也分開記錄 mode；切換只影響該 Agent 的新任務，已開始的任務保留原模型。審查核取方塊是每個 flow 各自的設定。</p></section>
+  </tbody></table></div><p>Claude 與 Codex 各自沿用其全域預設，之後不用逐案選 mode。同一專案的兩個主對話也分開記錄 mode；切換只影響該 Agent 的新任務，已開始的任務保留原模型。審查核取方塊是每個 flow 各自的設定。</p></section>
   <section aria-labelledby="daily"><h2 id="daily">一個日常例子</h2><p>在 Codex 專案對話中直接說：</p><pre>這個專案用 codex-pi。請補上 docs/install.md 的安裝範例，
 只修改該檔；完成後執行適合的測試、整合變更並回報結果。</pre><p>Codex 會依 flow 準備任務範圍、測試與必要的委派。你會收到結果狀態、測試、commit SHA 和需要你處理的阻塞。未勾選獨立審查時結果是 <code>tested</code>；勾選且通過審查才是 <code>verified</code>。兩者都不表示已 push 或合併。</p><p class="callout">三件互不依賴的小事，可在同一則需求中列出各自的檔案與驗收方式。MAF 最多同時執行三件；主 Agent 負責整合，並檢查整合後的新 commit。</p></section>
   <section aria-labelledby="commands"><h2 id="commands">指令與輸出：誰需要用？</h2><p>平常直接描述需求即可。Claude 用 <code>/maf</code>，Codex 用 <code>$maf</code> skill；下面是你可能主動使用的少數指令，Agent 的工作指令與 Python CLI 放在進階區。</p>
@@ -87,6 +88,6 @@ python3 flow.py --repo /path/to/project --main codex doctor</pre><p><code>doctor
     <div class="card"><h3>遇到風險</h3><p>一般任務持續執行；敏感範圍、權限、安全或需求衝突會停在 <code>awaiting_approval</code> 或 <code>needs_human</code>。已核准的範圍內測試與修復不逐步打擾你。</p></div>
     <div class="card"><h3>Antigravity</h3><p>選用 Gemini 前先以 <code>agy models</code> 檢查模型清單，再核對訂閱。MAF 使用已登入帳號、CLI sandbox 與受限權限；測試由 MAF supervisor 執行。</p></div>
     <div class="card"><h3>Herdr</h3><p>設定頁可啟用觀察 pane。接著在 Herdr pane 執行 <code>python3 flow.py --repo /path/to/project herdr</code>；Agent 工作時開 pane，完成後關閉。關閉整合時 MAF 仍能正常運作。</p></div>
-  </div><p style="margin-top:16px">進階任務 JSON、測試指令格式與恢復方式見專案的 <code>docs/CLI.md</code>。請只在可信任的 repository 執行已核准的測試命令。</p></section>
+  </div><p>進階任務 JSON、測試指令格式與恢復方式見專案的 <code>docs/CLI.md</code>。請只在可信任的 repository 執行已核准的測試命令。</p></section>
 </main>
 </html>
