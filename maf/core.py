@@ -595,16 +595,18 @@ def handoff(repo, run):
             "usage_text": usage_text(run, head)}
 
 
-CANCELLABLE = ("awaiting_approval", "needs_human", "waiting_quota", "waiting_dependency", "tested", "verified")
+CANCELLABLE = ("queued", "awaiting_approval", "needs_human", "waiting_quota", "waiting_dependency", "tested", "verified")
 
 
 def cancel(repo, run_id, note=""):
-    """A person's explicit decision to drop one stopped run. Refuses while a worker runs or an unfinished run
+    """A person's explicit decision to drop one queued or stopped run. The caller holds the repository lock, which a
+    worker holds while it picks runs and runs one serially; the run lock covers parallel work. So a run a worker has
+    started is refused, and a running supervisor does not block cancelling the rest. Refuses while an unfinished run
     depends on it; lists commits clean would then discard. Nothing is deleted here."""
-    with worker_exclusive(repo), run_exclusive(repo, run_id):
+    with run_exclusive(repo, run_id):
         run = load(repo, run_id)
         if run.get("status") not in CANCELLABLE:
-            raise FlowError(f"Only a stopped run can be cancelled; this one is {run.get('status')}.")
+            raise FlowError(f"Only a queued or stopped run can be cancelled; this one is {run.get('status')}.")
         dependents = [r["id"] for r in list_runs(repo) if r.get("depends_on") == run_id
                       and r.get("status") not in ("tested", "verified", "merged", "cancelled")]
         if dependents:
