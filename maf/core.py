@@ -935,7 +935,7 @@ def share_dependencies(repo, run):
         save(repo, run)
 
 
-REVIEW_FILES_BUDGET = 60_000  # bytes of changed files handed to the reviewer whole
+REVIEW_FILES_BUDGET = 200_000  # bytes of changed files handed to the reviewer whole
 
 
 def review_prompt(run, head, tests):
