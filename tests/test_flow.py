@@ -2,6 +2,7 @@ import copy
 import contextlib
 import io
 import json
+import shutil
 import os
 import re
 from pathlib import Path
@@ -60,6 +61,33 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(agent.call_count, 2)
         self.assertEqual(run["status"], "verified")
         return run
+
+    def test_worktree_gets_installed_dependencies_unless_lockfiles_differ(self):
+        (self.repo / ".gitignore").write_text("__pycache__/\nnode_modules/\n.venv/\n")
+        (self.repo / "package-lock.json").write_text("{}\n")
+        core.git(self.repo, "add", ".")
+        core.git(self.repo, "commit", "-qm", "Dependencies")
+        (self.repo / "node_modules" / "left-pad").mkdir(parents=True)
+        (self.repo / "node_modules" / "left-pad" / "index.js").write_text("main\n")
+        site = self.repo / ".venv" / "lib" / "python3.12" / "site-packages"
+        site.mkdir(parents=True)
+        (self.repo / ".venv" / "bin").mkdir()
+        (self.repo / ".venv" / "bin" / "pytest").write_text(f"#!{self.repo.resolve()}/.venv/bin/python\n")
+        (site / "_project.pth").write_text(f"{self.repo.resolve()}/src\n")  # An editable install of the project
+        run = self.complete()
+        worktree = Path(run["worktree"])
+        self.assertEqual(run["shared_dependencies"], [".venv", "node_modules"])
+        self.assertEqual((worktree / "node_modules" / "left-pad" / "index.js").read_text(), "main\n")
+        (worktree / "node_modules" / "left-pad" / "index.js").write_text("changed in worktree\n")
+        self.assertEqual((self.repo / "node_modules" / "left-pad" / "index.js").read_text(), "main\n")  # A copy
+        pth = (worktree / ".venv" / "lib" / "python3.12" / "site-packages" / "_project.pth").read_text()
+        self.assertEqual(pth, f"{worktree.resolve()}/src\n")  # Tests import the worktree's code, not main's.
+        self.assertIn(str(worktree.resolve()), (worktree / ".venv" / "bin" / "pytest").read_text())
+        self.assertEqual((site / "_project.pth").read_text(), f"{self.repo.resolve()}/src\n")
+        shutil.rmtree(worktree / "node_modules")
+        (worktree / "package-lock.json").write_text('{"changed": true}\n')  # main installed for another lockfile
+        core.share_dependencies(self.repo, run)
+        self.assertFalse((worktree / "node_modules").exists())
 
     def test_clean_removes_only_integrated_clean_runs_and_keeps_history(self):
         run = self.complete()

@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -874,6 +875,58 @@ def invoke(repo, run, role_name, prompt, agent_panes=False, reap=True):
     return result["text"]
 
 
+# Installed dependency folders a fresh worktree lacks, and the files whose change makes an install stale.
+DEPENDENCY_DIRS = {
+    "node_modules": ("package.json", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml",
+                     "bun.lock", "bun.lockb"),
+    ".venv": ("pyproject.toml", "uv.lock", "poetry.lock", "Pipfile.lock", "requirements.txt"),
+    "venv": ("pyproject.toml", "uv.lock", "poetry.lock", "Pipfile.lock", "requirements.txt"),
+}
+
+
+def clone_tree(source, target):
+    """Copy-on-write copy (APFS clonefile, Linux reflink): seconds and no extra space, never shared writes."""
+    flags = ["-c", "-R"] if sys.platform == "darwin" else ["-R", "--reflink=auto"]
+    for argv in (["cp", *flags, str(source), str(target)], ["cp", "-R", str(source), str(target)]):
+        shutil.rmtree(target, ignore_errors=True)
+        if subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, timeout=600).returncode == 0:
+            return
+    raise FlowError(f"Could not copy {source.name} into the worktree.")
+
+
+def repoint_venv(venv, old, new):
+    """A venv records absolute paths: console-script shebangs, and editable installs (uv sync's default) whose .pth or
+    finder point at the checkout. Left alone, tests in the worktree would import the main checkout's code."""
+    old, new = old.encode(), new.encode()
+    files = [p for p in (venv / "bin").glob("*") if p.is_file() and not p.is_symlink()]
+    for site in venv.glob("lib/python*/site-packages"):
+        files += [*site.glob("*.pth"), *site.glob("__editable__*.py"), *site.glob("*.dist-info/direct_url.json")]
+    for path in files + [venv / "pyvenv.cfg"]:
+        if path.is_file() and path.stat().st_size < 1_000_000 and old in (data := path.read_bytes()):
+            path.write_bytes(data.replace(old, new))  # Copy-on-write: only rewritten files take new space.
+
+
+def share_dependencies(repo, run):
+    """Give the worktree the main checkout's installed dependencies, unless its manifests or lockfiles differ."""
+    repo, worktree, shared = Path(repo).resolve(), Path(run["worktree"]), []
+    for name, manifests in DEPENDENCY_DIRS.items():
+        source, target = repo / name, worktree / name
+        if (target.exists() or target.is_symlink() or not source.is_dir() or source.is_symlink()
+                or any(subprocess.run(["git", "check-ignore", "-q", name + "/"], cwd=where, capture_output=True).returncode
+                       for where in (repo, worktree))):  # Must stay out of Git's view in both checkouts.
+            continue
+        if any((repo / f).read_bytes() != (worktree / f).read_bytes() if (repo / f).exists() and (worktree / f).exists()
+               else (repo / f).exists() != (worktree / f).exists() for f in manifests):
+            continue  # Installed for other manifests: testing against them would prove the wrong thing.
+        clone_tree(source, target)
+        if name != "node_modules":
+            repoint_venv(target, str(repo), str(worktree.resolve()))
+        shared.append(name)
+    if shared:
+        run["shared_dependencies"] = sorted(set(run.get("shared_dependencies", [])) | set(shared))
+        save(repo, run)
+
+
 def review_prompt(run, head, tests):
     diff = git(run["worktree"], "diff", "--no-ext-diff", "--no-textconv", run["base_sha"], head, "--")
     if len(diff) > 120000:
@@ -924,6 +977,7 @@ def execute(repo, run, agent_panes=False):
     unchanged(repo, run)
     if not run["agents"] and not run.get("tests") and git(run["worktree"], "status", "--porcelain"):
         raise FlowError("Worktree changed before execution; inspect and submit a new run.")
+    share_dependencies(repo, run)
     directory = run_path(repo, run["id"]).parent
     while run["status"] == "queued":
         if run["stage"] not in ("coding", "testing", "reviewing"):

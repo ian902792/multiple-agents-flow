@@ -2,6 +2,12 @@
 
 版本號採用 [語意化版本](https://semver.org/lang/zh-TW/)：`主版號.次版號.修訂號`。1.0 以前，次版號代表新功能或行為改變，修訂號代表修正。每次發布的最新版本寫在最上面，且必須和 `maf/__init__.py` 的 `__version__` 相同。
 
+## [0.17.0] - 2026-09-30
+
+### 新功能
+
+- 新的 worktree 會自動帶上主目錄已經裝好的 `node_modules`、`.venv` 或 `venv`，不用每次重新安裝。用寫入時複製（macOS APFS clonefile、Linux reflink），36,000 個檔案約 5 秒，worktree 裡的寫入不會影響主目錄。只有資料夾在主目錄和 worktree 都被 `.gitignore` 忽略、而且兩邊的 manifest 與 lockfile 相同時才複製。`.venv` 裡指向主目錄的絕對路徑（console script 的 shebang、`uv sync` 預設的 editable install）會改指到 worktree，所以測試 import 的是 worktree 的程式碼。run 會記下 `shared_dependencies`。
+
 ## [0.16.0] - 2026-09-30
 
 ### 行為改變
