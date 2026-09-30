@@ -943,8 +943,12 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(core.list_runs(self.repo), [])
 
     def test_preflight_blocks_load_errors_empty_suites_and_unknown_failures(self):
+        (self.repo / "startup_probe.py").write_text("assert False, 'module cannot load'\n")
+        core.git(self.repo, "add", "startup_probe.py")
+        core.git(self.repo, "commit", "-qm", "Add failing import probe")
         commands = {
             "import": [sys.executable, "-c", "import definitely_missing_maf_module"],
+            "import-assert": [sys.executable, "-c", "import startup_probe"],
             "syntax": [sys.executable, "-c", "if"],
             "empty": [sys.executable, "-m", "unittest", "discover", "-s", "."],
             "unknown": [sys.executable, "-c", "raise SystemExit(1)"],
@@ -1058,6 +1062,7 @@ class FlowTests(unittest.TestCase):
         self.assertIn("Invalid task instructions", skipped[0][1])
         self.assertIsNone(verify)
         self.assertEqual(core.git(self.repo, "rev-parse", "HEAD"), head)
+        self.assertEqual(core.integration_task([dict(self.task, instructions="short")] * 2)["tests"], self.task["tests"])
 
     def test_retry_carries_the_failure_and_moves_dependents(self):
         core.git(self.repo, "add", ".maf.json")

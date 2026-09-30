@@ -180,8 +180,9 @@ def preflight_outcome(code, output):
         return "cannot_run"
     if code == 0:
         return "passes"
+    module_frames = re.findall(r"^  File .+, line \d+, in <module>$", output, re.M)
     if (re.search(r"^FAILED \(failures=[1-9]\d*\)\s*\Z", output, re.M)
-            or re.search(r"(?:^|\n)AssertionError(?::[^\n]*)?\s*$", output)):
+            or len(module_frames) == 1 and re.search(r"(?:^|\n)AssertionError(?::[^\n]*)?\s*$", output)):
         return "fails"
     return "cannot_run"
 

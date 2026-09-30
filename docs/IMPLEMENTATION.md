@@ -179,7 +179,8 @@ schema, rejects duplicate ids and unknown decision blocks, and stores `plans/<pl
 `plan.md` in private state. An invalid reply stores nothing runnable. `decide` records answers; `night --plan` refuses
 while any answer is null, then preflights each distinct acceptance argv once at HEAD in a throwaway detached worktree
 (clean env, test timeout, no model): a pass is a warning; only a terminal AssertionError or unittest failures-only
-summary counts as an expected failure. Startup/load errors, zero-test unittest suites, unrecognized failures and
+summary counts as an expected failure; an AssertionError with nested module-loading frames is a load error.
+Startup/load errors, zero-test unittest suites, unrecognized failures and
 timeouts stop the plan with bounded diagnostics. Missing command arguments the plan will create are deferred,
 not reported as executed failures.
 Settled decisions are appended to the instructions of the tasks they block before `queue_chains`.
