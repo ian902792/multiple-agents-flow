@@ -935,11 +935,35 @@ def share_dependencies(repo, run):
         save(repo, run)
 
 
+REVIEW_FILES_BUDGET = 60_000  # bytes of changed files handed to the reviewer whole
+
+
 def review_prompt(run, head, tests):
     diff = git(run["worktree"], "diff", "--no-ext-diff", "--no-textconv", run["base_sha"], head, "--")
     if len(diff) > 120000:
         raise FlowError("Diff too large for a bounded review; split the task.")
-    return ("Independent read-only review. Inspect relevant files and callers as needed. "
+    # Reviewers read in ~70-line slices and reread files, and every turn resends the whole context; handing over the
+    # changed files whole cuts most of those turns. Deleted and binary files are left out.
+    texts = [record.split("\t", 2)[2] for record in git(run["worktree"], "diff", "--numstat", "-z", "--diff-filter=d",
+                                                       "--no-renames", run["base_sha"], head, "--").split("\0")
+             if record.count("\t") >= 2 and not record.startswith("-\t-\t")]  # -\t- marks a binary file
+    sizes = {}  # Sized before reading, so a huge changed file is named instead of loaded (or tripping the output cap).
+    # Names are data, never patterns; say so rather than rely on how one git version's ls-tree matches paths.
+    for record in (git(run["worktree"], "--literal-pathspecs", "ls-tree", "-l", "-z", head, "--", *texts)
+                   if texts else "").split("\0"):
+        meta, _, path = record.partition("\t")
+        if meta.split()[1:2] == ["blob"]:  # A submodule's gitlink has no content here.
+            sizes[path] = int(meta.split()[3])
+    files, omitted, budget = [], [], REVIEW_FILES_BUDGET
+    for path in sorted(sizes, key=sizes.get):
+        if sizes[path] <= budget:
+            files.append(f"--- {path} ---\n" + git(run["worktree"], "show", f"{head}:{path}"))
+            budget -= sizes[path]
+        else:
+            omitted.append(path)
+    return ("Independent read-only review. The changed files' full contents at HEAD follow the diff; do not reread "
+            "them. Read any other file you need whole and once, not in slices. Only read files inside this worktree "
+            "and the test logs named below; never home directories, transcripts or tool installations. "
             "Do not edit, run project code, or trust the implementer's claims. "
             "Find correctness/security/regression issues; assess whether this is genuinely low risk. "
             "Check the tests actually assert the task's purpose (acceptance_why when present), not merely pass. "
@@ -955,7 +979,9 @@ def review_prompt(run, head, tests):
             + "\nTEST EVIDENCE: " + (json.dumps(
               [{k: result[k] for k in ("argv", "exit_code", "log")} for result in tests], ensure_ascii=False)
               if tests is not None else "the supervisor runs them beside this review; it counts only if they all pass")
-            + "\nDIFF:\n" + diff)
+            + "\nDIFF:\n" + diff
+            + "\nCHANGED FILES AT HEAD:\n" + "\n".join(files)
+            + ("\nNot included (over the size budget), read them yourself: " + ", ".join(omitted) if omitted else ""))
 
 
 def apply_review(repo, run, text):
