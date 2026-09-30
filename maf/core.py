@@ -948,7 +948,9 @@ def review_prompt(run, head, tests):
                                                        "--no-renames", run["base_sha"], head, "--").split("\0")
              if record.count("\t") >= 2 and not record.startswith("-\t-\t")]  # -\t- marks a binary file
     sizes = {}  # Sized before reading, so a huge changed file is named instead of loaded (or tripping the output cap).
-    for record in (git(run["worktree"], "ls-tree", "-l", "-z", head, "--", *texts) if texts else "").split("\0"):
+    # Names are data, never patterns; say so rather than rely on how one git version's ls-tree matches paths.
+    for record in (git(run["worktree"], "--literal-pathspecs", "ls-tree", "-l", "-z", head, "--", *texts)
+                   if texts else "").split("\0"):
         meta, _, path = record.partition("\t")
         if meta.split()[1:2] == ["blob"]:  # A submodule's gitlink has no content here.
             sizes[path] = int(meta.split()[3])
