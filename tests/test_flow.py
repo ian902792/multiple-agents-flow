@@ -961,6 +961,30 @@ class FlowTests(unittest.TestCase):
         with self.assertRaises(core.FlowError):
             core.submit(self.repo, self.night_task("z"), kind="delegate", depends_on="night-missing-0123456789")
 
+    def test_verify_reviews_beside_its_tests(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        core.git(self.repo, "switch", "-c", "feature")
+        (self.repo / "README.md").write_text("After\n")
+        core.git(self.repo, "commit", "-qam", "Claude implementation")
+        marker = Path(self.temp.name + "-review-started")
+        self.addCleanup(marker.unlink, missing_ok=True)
+        # The test only passes if the reviewer has started while it is still running.
+        self.task["tests"] = [[sys.executable, "-c", "import pathlib, time\nfor _ in range(200):\n"
+                               f"    if pathlib.Path({str(marker)!r}).exists(): raise SystemExit(0)\n"
+                               "    time.sleep(0.05)\nraise SystemExit(1)"]]
+        run = core.submit(self.repo, self.task, kind="verify")
+        def agent(role, prompt, cwd, log, timeout):
+            marker.touch()
+            self.assertIn("counts only if they all pass", prompt)
+            return self.fake_agent(role, prompt, cwd, log, timeout)
+        with patch.object(core.agents, "run_agent", side_effect=agent), \
+                patch.object(core, "reap_orphans", return_value=[]) as reap:
+            core.execute(self.repo, run)
+        reap.assert_called_once()  # Only after both finished, so neither kills the other's helpers mid-run.
+        self.assertEqual((run["status"], run["reviewed_sha"]), ("verified", run["tested_sha"]))
+        self.assertEqual([a["role"] for a in run["agents"]], ["reviewer"])
+
     def test_failed_external_verify_never_starts_a_coder(self):
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")
@@ -969,9 +993,10 @@ class FlowTests(unittest.TestCase):
         core.git(self.repo, "add", "README.md")
         core.git(self.repo, "commit", "-qm", "Claude implementation")
         run = core.submit(self.repo, self.task, kind="verify")
-        with patch.object(core.agents, "run_agent") as agent:
+        with patch.object(core.agents, "run_agent", side_effect=self.fake_agent) as agent:
             core.execute(self.repo, run)
-        agent.assert_not_called()
+        self.assertEqual([c.args[0]["access"] for c in agent.call_args_list], ["read"])  # Only the parallel reviewer.
+        self.assertNotIn("review", run)  # Its answer is discarded when the tests fail.
         self.assertEqual(run["status"], "needs_human")
         self.assertEqual(run["stage"], "external_fix")
         with self.assertRaisesRegex(core.FlowError, "new verify"):

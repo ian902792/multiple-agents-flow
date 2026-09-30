@@ -1,6 +1,6 @@
 # multiple-agents-flow
 
-- Python 3.11+ standard library only. Run `python3 -m unittest discover -s tests -v`.
+- Python 3.11+ standard library only. Run `python3 tests/parallel.py` (same suite across processes; `python3 -m unittest discover -s tests -v` runs it serially).
 - Keep adapters, deterministic orchestration, and GitHub policy separate.
 - Existing subscription allowances only. Never add API billing fallback or bypass flags.
 - Agent claims are not verification. Tests and independent review must bind to exact Git commits.

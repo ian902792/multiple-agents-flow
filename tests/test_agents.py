@@ -292,9 +292,9 @@ class Parsers(unittest.TestCase):
 
 
 class RunAgent(unittest.TestCase):
-    def run_with(self, role, run, auth=None):
+    def run_with(self, role, run, auth=None, log=None):
         fake = FakeExec(AUTH_OK[role["runtime"]] if auth is None else auth, run)
-        log = Path(tempfile.mkdtemp()) / "runs" / "a.log"
+        log = log or Path(tempfile.mkdtemp()) / "runs" / "a.log"
         with mock.patch.object(agents, "_exec", fake), mock.patch.object(agents.shutil, "which", return_value="/x"):
             return agents.run_agent(role, "do it", Path("/tmp"), log, 30), fake, log
 
@@ -312,9 +312,9 @@ class RunAgent(unittest.TestCase):
         self.assertEqual(oct(log.stat().st_mode & 0o777), "0o600")
 
     def test_checkpoint_survives_interrupt_without_prompt(self):
+        log = Path(tempfile.mkdtemp()) / "runs" / "a.log"
         with self.assertRaises(KeyboardInterrupt):
-            self.run_with(CODEX, KeyboardInterrupt())
-        log = max(Path(tempfile.gettempdir()).glob("*/runs/a.log"), key=lambda p: p.stat().st_mtime)
+            self.run_with(CODEX, KeyboardInterrupt(), log=log)
         body = log.read_text()
         self.assertIn('"argv": ["codex", "exec"', body)
         self.assertIn("pid=4242", body)
