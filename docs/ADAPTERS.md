@@ -61,4 +61,4 @@ MAF 沒有外掛機制，這是刻意的：每種 agent 都用一組經過審核
 - **`Parsers`**：用 `jl(...)` 把**真實 CLI 錄下的事件**組成樣本，至少涵蓋成功、額度用完、未登入、回合未完成、沒有結果事件。樣本要刪掉 session 以外的個人資訊與任何憑證。
 - **`RunAgent`**：用 `FakeExec` 確認登入失敗會在推論前擋下。
 
-執行 `python3 -m unittest discover -s tests -v` 全部通過再送 PR。
+執行 `python3 tests/parallel.py` 全部通過再送 PR。

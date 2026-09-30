@@ -93,4 +93,4 @@ Opus 額度少、Pi 額度多就選 `quick-flash`，理由見[誰實作、誰審
 
 只在你信任的 repository 使用：工作樹不是安全沙箱，測試會執行你核准的命令。
 
-MIT 授權。開發者測試：`python3 -m unittest discover -s tests -v`。
+MIT 授權。開發者測試：`python3 tests/parallel.py`（多程序並行，約 15 秒；`python3 -m unittest discover -s tests -v` 是依序跑的版本）。

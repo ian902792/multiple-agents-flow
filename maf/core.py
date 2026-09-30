@@ -4,9 +4,12 @@ from __future__ import annotations
 import contextlib
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import copy
+import ctypes
+import ctypes.util
 import datetime as dt
 import fcntl
 import fnmatch
+import functools
 import hashlib
 import json
 import os
@@ -14,6 +17,7 @@ from pathlib import Path, PurePosixPath
 import re
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -76,15 +80,25 @@ def atomic(path, data):
             os.unlink(temp)
 
 
-def root_for(repo):
-    repo = Path(repo).resolve()
+@functools.lru_cache(maxsize=64)
+def git_state_dir(repo):
+    """<git common dir>/maf of a repository root. Where a repository keeps its Git data does not change while a
+    process runs, and every state read, write and lock needs it, so ask Git once per repository."""
     top = Path(git(repo, "rev-parse", "--show-toplevel")).resolve()
     if repo != top:
         raise FlowError("Use the repository root, not a subdirectory.")
-    common = Path(git(repo, "rev-parse", "--git-common-dir"))
-    root = (repo / common / "maf").resolve()
+    return (repo / git(repo, "rev-parse", "--git-common-dir") / "maf").resolve()
+
+
+def root_for(repo):
+    root = git_state_dir(Path(repo).resolve())
     root.mkdir(exist_ok=True, mode=0o700)
     return root
+
+
+@functools.lru_cache(maxsize=64)
+def check_branch_name(repo, name):
+    git(repo, "check-ref-format", "--branch", name)  # Same repository and name, same answer: check once.
 
 
 def worktrees_for(repo):
@@ -214,7 +228,7 @@ def validate_config(repo, config):
         raise FlowError("Timeouts must be positive; at most five repair rounds.")
     if not isinstance(config["base_branch"], str) or config["base_branch"].startswith("-"):
         raise FlowError("Invalid base branch.")
-    git(repo, "check-ref-format", "--branch", config["base_branch"])
+    check_branch_name(str(repo), config["base_branch"])
     if not isinstance(config["auto_paths"], dict) or set(config["auto_paths"]) != {"docs", "style", "tests"}:
         raise FlowError("Invalid auto_paths categories.")
     for patterns in [config["protected_paths"], *config["auto_paths"].values()]:
@@ -700,6 +714,13 @@ def reap_group(proc):
         pass
 
 
+@functools.cache
+def macos_libproc():
+    """macOS libproc answers in microseconds what lsof takes ~0.1 s to scan; None elsewhere."""
+    name = ctypes.util.find_library("proc") if sys.platform == "darwin" else None
+    return ctypes.CDLL(name) if name else None
+
+
 def process_cwds(pids):
     """Working directory of each readable pid: /proc on Linux, lsof elsewhere (macOS)."""
     if not pids:
@@ -711,6 +732,14 @@ def process_cwds(pids):
                 found[pid] = os.readlink(f"/proc/{pid}/cwd")
             except OSError:
                 pass
+        return found
+    libproc = macos_libproc()
+    if libproc:
+        # proc_vnodepathinfo: the cwd's vnode_info (152 bytes), its path (MAXPATHLEN), then the root dir's.
+        found, buffer = {}, ctypes.create_string_buffer(2352)
+        for pid in pids:
+            if libproc.proc_pidinfo(pid, 9, ctypes.c_uint64(0), buffer, 2352) == 2352:  # PROC_PIDVNODEPATHINFO
+                found[pid] = buffer.raw[152:1176].split(b"\0", 1)[0].decode(errors="surrogateescape")
         return found
     try:
         text = subprocess.run(["lsof", "-a", "-d", "cwd", "-Fpn", "-p", ",".join(map(str, pids))],
@@ -844,6 +873,46 @@ def invoke(repo, run, role_name, prompt, agent_panes=False):
     return result["text"]
 
 
+def review_prompt(run, head, tests):
+    diff = git(run["worktree"], "diff", "--no-ext-diff", "--no-textconv", run["base_sha"], head, "--")
+    if len(diff) > 120000:
+        raise FlowError("Diff too large for a bounded review; split the task.")
+    return ("Independent read-only review. Inspect relevant files and callers as needed. "
+            "Do not edit, run project code, or trust the implementer's claims. "
+            "Find correctness/security/regression issues; assess whether this is genuinely low risk. "
+            "Check the tests actually assert the task's purpose (acceptance_why when present), not merely pass. "
+            "Write each finding as path:line | problem | code evidence | fix; no style nits or padding. "
+            "findings are blocking only: a correctness/security/regression bug you can show in the code. "
+            "Put doubts, suggestions and anything you cannot prove in notes; notes never block. "
+            "Return ONLY JSON with keys decision (approve|changes_requested), head_sha, "
+            "risk (low|manual), summary (string), findings (array of actionable strings), "
+            "notes (array of strings). "
+            "An approve decision requires empty findings. Use changes_requested + manual risk for "
+            "security, permissions or requirements needing human judgment; ordinary fixable bugs use low risk.\n"
+            + "HEAD: " + head + "\nTASK: " + json.dumps(run["task"], ensure_ascii=False)
+            + "\nTEST EVIDENCE: " + (json.dumps(
+              [{k: result[k] for k in ("argv", "exit_code", "log")} for result in tests], ensure_ascii=False)
+              if tests is not None else "the supervisor runs them beside this review; it counts only if they all pass")
+            + "\nDIFF:\n" + diff)
+
+
+def apply_review(repo, run, text):
+    review = review_result(text, run["tested_sha"])
+    run["review"] = review
+    if review["decision"] == "changes_requested":
+        if review["risk"] == "manual":
+            run.update(status="needs_human", stage="replan", feedback=json.dumps(review, ensure_ascii=False)[:10000])
+            save(repo, run)
+        else:
+            needs_repair(repo, run, json.dumps(review, ensure_ascii=False))
+        return
+    run["reviewed_sha"] = run["tested_sha"]
+    verified(repo, run)
+    run["status"] = "verified"
+    run["stage"] = "verified"
+    save(repo, run)
+
+
 def execute(repo, run, agent_panes=False):
     """One task, at most max_repairs additional passes. No unbounded model loop."""
     if (not isinstance(run.get("mode"), str)
@@ -900,59 +969,45 @@ def execute(repo, run, agent_panes=False):
             run["status"] = "running"
             save(repo, run)
             head = git(run["worktree"], "rev-parse", "HEAD")
-            run["tests"] = run_tests(run, directory)
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                # A verify's review is read-only and its tests rarely fail (the main agent ran them), so the review
+                # runs beside them on a copy of the run and counts only if they all pass on this HEAD. A delegate's
+                # tests fail often and each repair would waste a review, so it still reviews after passing tests.
+                shadow = copy.deepcopy(run)
+                early = (pool.submit(invoke, repo, shadow, "reviewer", review_prompt(run, head, None), agent_panes)
+                         if review_enabled(run["config"]) and run.get("kind") == "verify" else None)
+                run["tests"] = run_tests(run, directory)
+                text = early.result() if early else None
+            if early:
+                run["agents"].append(shadow["agents"][-1])
             if head != git(run["worktree"], "rev-parse", "HEAD") or git(run["worktree"], "status", "--porcelain"):
                 raise FlowError("Verification changed tracked files/HEAD or left untracked files; inspect manually.")
             if any(result["exit_code"] for result in run["tests"]):
                 needs_repair(repo, run, json.dumps([result for result in run["tests"] if result["exit_code"]], ensure_ascii=False))
                 continue
             run["tested_sha"] = head
-            if review_enabled(run["config"]):
-                run["stage"] = "reviewing"
-                run["status"] = "queued"
-            else:
-                tested(repo, run)
-                run["stage"] = run["status"] = "tested"
-            save(repo, run)
+            if not early:
+                if review_enabled(run["config"]):
+                    run["stage"] = "reviewing"
+                    run["status"] = "queued"
+                else:
+                    tested(repo, run)
+                    run["stage"] = run["status"] = "tested"
+                save(repo, run)
+                continue
+            run["stage"] = "reviewing"
+            if text is None:  # Quota or a stopped reviewer: resume reviews again without rerunning the tests.
+                run.update({key: shadow[key] for key in ("status", "feedback", "not_before")})
+                save(repo, run)
+                return
+            apply_review(repo, run, text)
         if run["stage"] == "reviewing":
             if git(run["worktree"], "rev-parse", "HEAD") != run["tested_sha"] or git(run["worktree"], "status", "--porcelain"):
                 raise FlowError("Worktree changed after tests.")
-            diff = git(run["worktree"], "diff", "--no-ext-diff", "--no-textconv", run["base_sha"], run["tested_sha"], "--")
-            if len(diff) > 120000:
-                raise FlowError("Diff too large for a bounded review; split the task.")
-            prompt = ("Independent read-only review. Inspect relevant files and callers as needed. "
-                      "Do not edit, run project code, or trust the implementer's claims. "
-                      "Find correctness/security/regression issues; assess whether this is genuinely low risk. "
-                      "Check the tests actually assert the task's purpose (acceptance_why when present), not merely pass. "
-                      "Write each finding as path:line | problem | code evidence | fix; no style nits or padding. "
-                      "findings are blocking only: a correctness/security/regression bug you can show in the code. "
-                      "Put doubts, suggestions and anything you cannot prove in notes; notes never block. "
-                      "Return ONLY JSON with keys decision (approve|changes_requested), head_sha, "
-                      "risk (low|manual), summary (string), findings (array of actionable strings), "
-                      "notes (array of strings). "
-                      "An approve decision requires empty findings. Use changes_requested + manual risk for "
-                      "security, permissions or requirements needing human judgment; ordinary fixable bugs use low risk.\n"
-                      + "HEAD: " + run["tested_sha"] + "\nTASK: " + json.dumps(run["task"], ensure_ascii=False)
-                      + "\nTEST EVIDENCE: " + json.dumps(
-                          [{k: result[k] for k in ("argv", "exit_code", "log")} for result in run["tests"]], ensure_ascii=False)
-                      + "\nDIFF:\n" + diff)
-            text = invoke(repo, run, "reviewer", prompt, agent_panes)
+            text = invoke(repo, run, "reviewer", review_prompt(run, run["tested_sha"], run["tests"]), agent_panes)
             if text is None:
                 return
-            review = review_result(text, run["tested_sha"])
-            run["review"] = review
-            if review["decision"] == "changes_requested":
-                if review["risk"] == "manual":
-                    run.update(status="needs_human", stage="replan", feedback=json.dumps(review, ensure_ascii=False)[:10000])
-                    save(repo, run)
-                    return
-                needs_repair(repo, run, json.dumps(review, ensure_ascii=False))
-                continue
-            run["reviewed_sha"] = run["tested_sha"]
-            verified(repo, run)
-            run["status"] = "verified"
-            run["stage"] = "verified"
-            save(repo, run)
+            apply_review(repo, run, text)
 
 
 def process(repo, run, agent_panes=False):
