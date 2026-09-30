@@ -779,7 +779,7 @@ def reap_orphans(folder):
     return killed
 
 
-def run_tests(run, directory):
+def run_tests(run, directory, reap=True):
     results = []
     for index, argv in enumerate(run["task"]["tests"]):
         path = directory / f"test-{run['repairs']}-{index}.log"
@@ -805,7 +805,8 @@ def run_tests(run, directory):
                         "duration_seconds": round(time.time() - run["activity"]["started_at"], 2)})
         if code:
             break
-    reap_orphans(run["worktree"])
+    if reap:
+        reap_orphans(run["worktree"])
     return results
 
 
@@ -845,7 +846,7 @@ def needs_repair(repo, run, feedback):
     save(repo, run)
 
 
-def invoke(repo, run, role_name, prompt, agent_panes=False):
+def invoke(repo, run, role_name, prompt, agent_panes=False, reap=True):
     role = run["config"]["roles"][role_name]
     log = run_path(repo, run["id"]).parent / f"{role_name}-{len(run['agents'])}.jsonl"
     run["status"] = "running"
@@ -857,7 +858,7 @@ def invoke(repo, run, role_name, prompt, agent_panes=False):
     with agent_pane(repo, f"MAF {role_name} {run['id']}", Path(run["worktree"]), live_log, agent_panes) as pane:
         result = agents.run_agent(role, prompt, Path(run["worktree"]), log, run["config"]["agent_timeout"],
                                   **({"live_log": live_log} if pane else {}))
-    reaped = reap_orphans(run["worktree"])
+    reaped = reap_orphans(run["worktree"]) if reap else []
     run["agents"].append({"reaped_orphans": len(reaped),"role": role_name, "runtime": role["runtime"], "model": role["model"],
                           "provider": role["provider"],
                           "usage_scope": "model_calls" if role["runtime"] == "pi" else "provider",
@@ -974,12 +975,13 @@ def execute(repo, run, agent_panes=False):
                 # runs beside them on a copy of the run and counts only if they all pass on this HEAD. A delegate's
                 # tests fail often and each repair would waste a review, so it still reviews after passing tests.
                 shadow = copy.deepcopy(run)
-                early = (pool.submit(invoke, repo, shadow, "reviewer", review_prompt(run, head, None), agent_panes)
+                # Neither side sweeps orphans while the other still runs: that could kill a test's detached helper.
+                early = (pool.submit(invoke, repo, shadow, "reviewer", review_prompt(run, head, None), agent_panes, False)
                          if review_enabled(run["config"]) and run.get("kind") == "verify" else None)
-                run["tests"] = run_tests(run, directory)
+                run["tests"] = run_tests(run, directory, reap=not early)
                 text = early.result() if early else None
             if early:
-                run["agents"].append(shadow["agents"][-1])
+                run["agents"].append({**shadow["agents"][-1], "reaped_orphans": len(reap_orphans(run["worktree"]))})
             if head != git(run["worktree"], "rev-parse", "HEAD") or git(run["worktree"], "status", "--porcelain"):
                 raise FlowError("Verification changed tracked files/HEAD or left untracked files; inspect manually.")
             if any(result["exit_code"] for result in run["tests"]):
