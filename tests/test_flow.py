@@ -1016,11 +1016,17 @@ class FlowTests(unittest.TestCase):
         def agent(role, prompt, cwd, log, timeout):
             marker.touch()
             self.assertIn("counts only if they all pass", prompt)
+            self.assertIn("\nCHANGED FILES AT HEAD:\n--- README.md ---\nAfter", prompt)  # Whole, so no rereads
+            self.assertIn("Only read files inside this worktree", prompt)
             return self.fake_agent(role, prompt, cwd, log, timeout)
         with patch.object(core.agents, "run_agent", side_effect=agent), \
                 patch.object(core, "reap_orphans", return_value=[]) as reap:
             core.execute(self.repo, run)
         reap.assert_called_once()  # Only after both finished, so neither kills the other's helpers mid-run.
+        with patch.object(core, "REVIEW_FILES_BUDGET", 3):
+            prompt = core.review_prompt(run, run["tested_sha"], run["tests"])
+        self.assertTrue(prompt.endswith("read them yourself: README.md"), prompt[-200:])
+        self.assertNotIn("--- README.md ---", prompt)
         self.assertEqual((run["status"], run["reviewed_sha"]), ("verified", run["tested_sha"]))
         self.assertEqual([a["role"] for a in run["agents"]], ["reviewer"])
 

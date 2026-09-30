@@ -935,11 +935,28 @@ def share_dependencies(repo, run):
         save(repo, run)
 
 
+REVIEW_FILES_BUDGET = 60_000  # characters of changed-file text handed to the reviewer
+
+
 def review_prompt(run, head, tests):
     diff = git(run["worktree"], "diff", "--no-ext-diff", "--no-textconv", run["base_sha"], head, "--")
     if len(diff) > 120000:
         raise FlowError("Diff too large for a bounded review; split the task.")
-    return ("Independent read-only review. Inspect relevant files and callers as needed. "
+    # Reviewers read in ~70-line slices and reread files, and every turn resends the whole context; handing over the
+    # changed files whole cuts most of those turns. Deleted and binary files are left out.
+    texts = [record.split("\t", 2)[2] for record in git(run["worktree"], "diff", "--numstat", "-z", "--diff-filter=d",
+                                                       "--no-renames", run["base_sha"], head, "--").split("\0")
+             if record.count("\t") >= 2 and not record.startswith("-\t-\t")]  # -\t- marks a binary file
+    files, omitted, budget = [], [], REVIEW_FILES_BUDGET
+    for path, text in sorted(((p, git(run["worktree"], "show", f"{head}:{p}")) for p in texts), key=lambda item: len(item[1])):
+        if len(text) <= budget:
+            files.append(f"--- {path} ---\n{text}")
+            budget -= len(text)
+        else:
+            omitted.append(path)
+    return ("Independent read-only review. The changed files' full contents at HEAD follow the diff; do not reread "
+            "them. Read any other file you need whole and once, not in slices. Only read files inside this worktree "
+            "and the test logs named below; never home directories, transcripts or tool installations. "
             "Do not edit, run project code, or trust the implementer's claims. "
             "Find correctness/security/regression issues; assess whether this is genuinely low risk. "
             "Check the tests actually assert the task's purpose (acceptance_why when present), not merely pass. "
@@ -955,7 +972,9 @@ def review_prompt(run, head, tests):
             + "\nTEST EVIDENCE: " + (json.dumps(
               [{k: result[k] for k in ("argv", "exit_code", "log")} for result in tests], ensure_ascii=False)
               if tests is not None else "the supervisor runs them beside this review; it counts only if they all pass")
-            + "\nDIFF:\n" + diff)
+            + "\nDIFF:\n" + diff
+            + "\nCHANGED FILES AT HEAD:\n" + "\n".join(files)
+            + ("\nNot included (over the size budget), read them yourself: " + ", ".join(omitted) if omitted else ""))
 
 
 def apply_review(repo, run, text):
