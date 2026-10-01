@@ -266,6 +266,18 @@ new chain from there.
    worker exit code zero alone is not success. Skip child transcripts unless
    needed for a specific failure.
 
+## Experience memory
+
+Target repositories may keep `AGENT_LEARNINGS.md` (format and lifecycle: the tool's
+`docs/LEARNINGS.md`; read it before writing an entry). Before writing a task, `rg` that file
+for the task's modules and concepts and paste only matching `candidate`/`validated` entries
+into `instructions`; never the whole file. After integrating, read `learning_candidates` from
+`handoff` and your own surprises, then take exactly one action: NO_ACTION, CREATE (search
+first; no duplicates), UPDATE (occurrences, last verified, evidence), PROPOSE_PROMOTION or
+RETIRE. Most tasks are NO_ACTION. Promotion into `AGENTS.md` always asks the human first and is
+its own commit; never write global rules. Create or commit the file only in the user's own
+repositories; elsewhere, suggest the entry in chat. Never put learning files in a delegate's `paths`.
+
 ## Status and recovery
 
 When asked to analyze history or improve recurring efficiency, run `analyze --days 30` first.
