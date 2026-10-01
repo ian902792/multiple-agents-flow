@@ -277,7 +277,8 @@ baseline, turn a confirmed cause into an anonymized regression plus a passing co
 shared root cause, then verify the final SHA once. Later `analyze --baseline FILE` considers only
 new runs; cross-period retries do not represent full lifecycle cost. Missing/unknown evidence
 stays unknown. Never auto-tune routing, billing, global settings or production code from statistics.
-The saved review's format repair is bounded and preserves every candidate field; failed or
+The saved review's format repair disables all native tools (Pi/Claude only; unsupported runtimes
+stay blocked), is bounded and preserves every candidate field; failed or
 ambiguous conversions stay blocked. Resume that same run rather than redoing a full review.
 
 For status use `progress --json` without starting workers or reading transcripts.

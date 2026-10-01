@@ -45,7 +45,7 @@ class FlowTests(unittest.TestCase):
                      "paths": ["README.md"], "tests": [[sys.executable, "-c", "from pathlib import Path; assert 'After' in Path('README.md').read_text()"]],
                      "risk": "docs"}
 
-    def fake_agent(self, role, prompt, cwd, log, timeout):
+    def fake_agent(self, role, prompt, cwd, log, timeout, **kwargs):
         if role["access"] == "edit":
             (cwd / "README.md").write_text("After\n")
             text = "Done"
@@ -1194,10 +1194,11 @@ class FlowTests(unittest.TestCase):
     def test_review_format_repair_preserves_original_without_retesting(self):
         run = core.submit(self.repo, self.task)
         original = {}
-        def agent(role, prompt, cwd, log, timeout):
+        def agent(role, prompt, cwd, log, timeout, **kwargs):
             result = self.fake_agent(role, prompt, cwd, log, timeout)
             if role["access"] == "read":
                 if prompt.startswith("FORMAT REPAIR ONLY"):
+                    self.assertTrue(kwargs.get("format_only"))
                     self.assertIn(original["raw"], prompt)
                     result["text"] = original["json"]
                 else:
@@ -1218,7 +1219,7 @@ class FlowTests(unittest.TestCase):
 
     def test_format_repair_quota_resumes_only_conversion_and_rejects_changed_fields(self):
         run = core.submit(self.repo, self.task)
-        def agent(role, prompt, cwd, log, timeout):
+        def agent(role, prompt, cwd, log, timeout, **kwargs):
             if prompt.startswith("FORMAT REPAIR ONLY"):
                 return {"status": "quota", "text": "", "usage": None, "detail": "limit"}
             result = self.fake_agent(role, prompt, cwd, log, timeout)
@@ -1236,7 +1237,7 @@ class FlowTests(unittest.TestCase):
         self.assertTrue(calls.call_args.args[1].startswith("FORMAT REPAIR ONLY"))
         # A conversion that edits even a nonblocking note is no longer the original review.
         run.update(status="queued", stage="review_format", format_repaired=False)
-        def changed(*args):
+        def changed(*args, **kwargs):
             result = self.fake_agent(*args)
             value = json.loads(result["text"])
             value["notes"] = ["new claim"]
@@ -1258,7 +1259,7 @@ class FlowTests(unittest.TestCase):
         run = self.complete()
         core.apply_review(self.repo, run, "Reject: unresolved issue.\n" +
                           fenced.replace('"a"', json.dumps(run["tested_sha"])))
-        def refuses(*args):
+        def refuses(*args, **kwargs):
             return {"status": "ok", "text": "MAF_NEEDS_HUMAN: wrapper contradicts approve", "usage": None}
         with patch.object(core.agents, "run_agent", side_effect=refuses), \
                 patch.object(core, "run_tests", side_effect=AssertionError("tests rerun")):

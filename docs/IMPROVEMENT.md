@@ -34,7 +34,7 @@ python3 flow.py stats --days 30
 
 原始審查回覆另存於 run 的私有 `review-response.json`，以雜湊、run ID、task/config scope 與 tested SHA 綁定。嚴格 parser 保持不變：只有一個完整、符合 schema 且 SHA 正確的 fenced JSON 候選才進入格式修復。多個候選、外部結構、重複欄位、過大回覆、失效 SHA 與矛盾 approve/findings 都阻擋。
 
-同一個已選定的 reviewer 只接收保存的回覆，確認前後文字沒有相反決定或未解 finding，然後原樣輸出 JSON；不重新讀程式或執行測試。修復後全部欄位值必須等於原候選，且每份回覆最多一次完成的轉換。拒絕、改值或再次輸出錯誤都不會成為通過；quota/服務中斷則可在確認前一程序停止、額度已重置後恢復同一 run 的轉換階段。
+同一個已選定的 reviewer 只接收保存的回覆，確認前後文字沒有相反決定或未解 finding，然後原樣輸出 JSON；不重新讀程式或執行測試。Pi 使用 `--no-tools`，Claude 使用空的 `--tools` 並關閉 MCP；只有這兩個已確認原生停用工具能力的 runtime 能做轉換，其餘保持阻擋，需提交新審查。模型、帳號與推理強度沿用原 reviewer。修復後全部欄位值必須等於原候選，且每份回覆最多一次完成的轉換。拒絕、改值或再次輸出錯誤都不會成為通過；quota/服務中斷則可在確認前一程序停止、額度已重置後恢復同一 run 的轉換階段。
 
 恢復 reviewing/review_format 前仍檢查完整測試命令、通過結果、目前 SHA、工作樹、approval 與 config；不重跑已通過的測試。操作人仍須確認測試的外部服務與安裝環境沒有改變；無法確認就提交新 verify run，不能把乾淨 Git 工作樹當成環境未變的證明。第一版不做跨 run／跨 SHA 快取。
 

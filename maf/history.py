@@ -26,6 +26,10 @@ def proof(run):
 
 
 def causes(run):
+    fields = [run.get(key) or [] for key in ("failures", "tests", "agents")]
+    if (any(not isinstance(items, list) or any(not isinstance(item, dict) for item in items) for items in fields)
+            or not isinstance(run.get("review") or {}, dict)):
+        return [("unknown", "unknown")]
     recorded = [f["kind"] for f in run.get("failures", []) if isinstance(f, dict) and isinstance(f.get("kind"), str)]
     if recorded:
         return [(kind, "recorded") for kind in recorded]
@@ -86,13 +90,15 @@ def analyze(repo, days=30, baseline=None):
     cases, problems, groups = [], {}, {}
     for run in runs:
         good = proof(run)
-        agents = [a for a in run.get("agents") or [] if isinstance(a, dict)]
-        usage = progress.total_usage(agents) if agents else dict.fromkeys(progress.USAGE_KEYS, 0)
+        raw_agents = run.get("agents")
+        known_agents = isinstance(raw_agents, list) and all(isinstance(a, dict) for a in raw_agents)
+        agents = raw_agents if known_agents else []
+        usage = progress.total_usage(agents) if agents else dict.fromkeys(progress.USAGE_KEYS, 0 if known_agents else None)
         case = {"run": progress.clean(run["id"], 80), "work": work_id(run),
                 "kind": run.get("kind", "unknown"), "flow": progress.clean(run.get("mode", "unknown"), 40),
                 "status": run.get("status"), "stage": run.get("stage"), "historical_proof": good,
-                "head_sha": run.get("tested_sha"), "calls": len(agents),
-                "native_ok": sum(a.get("status") == "ok" for a in agents),
+                "head_sha": run.get("tested_sha"), "calls": len(agents) if known_agents else None,
+                "native_ok": sum(a.get("status") == "ok" for a in agents) if known_agents else None,
                 "format_repairs": sum(a.get("purpose") == "format_repair" for a in agents),
                 "causes": [{"kind": k, "source": s} for k, s in causes(run)],
                 **{k: usage[k] for k in progress.USAGE_KEYS}}
@@ -121,6 +127,7 @@ def analyze(repo, days=30, baseline=None):
             "excluded_baseline_runs": len(prior), "runs": len(cases), "groups": summaries,
             "recommendations": recommendations, "cases": cases,
             "limits": ["歷史證據不等於目前可整合；目前 SHA 仍須通過 handoff。",
+                       "無法讀取的 corrupt run 沒有可靠日期，會列入分析並將用量保留為未知。",
                        "沒有已標註的真實缺陷與乾淨對照案例，不能估算審查誤報率或漏報率。",
                        "baseline 排除已看過的 run；重試的部分花費可能在上一期，不能視為完整生命週期成本。"]}
 

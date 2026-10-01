@@ -84,6 +84,23 @@ class Environment(unittest.TestCase):
 
 
 class ArgvSafety(unittest.TestCase):
+    def test_format_conversion_disables_tools_and_refuses_unsupported_routes(self):
+        for role in (PI, dict(CLAUDE, access="read")):
+            fake = FakeExec(AUTH_OK[role["runtime"]])
+            with tempfile.TemporaryDirectory() as tmp, mock.patch.object(agents, "_exec", fake), \
+                    mock.patch.object(agents.shutil, "which", return_value="/x"):
+                agents.run_agent(role, "format only", Path(tmp), Path(tmp) / "log", 90, format_only=True)
+            argv = fake.calls[-1]["argv"]
+            if role["runtime"] == "pi":
+                self.assertIn("--no-tools", argv)
+                self.assertNotIn("--tools", argv)
+            else:
+                self.assertEqual(argv[argv.index("--tools") + 1], "")
+            self.assertFalse(FORBIDDEN & set(argv))
+        for role in (CODEX, HERMES, ANTIGRAVITY, dict(PI, access="edit")):
+            with self.assertRaises(ValueError):
+                agents._argv(role, 90, format_only=True)
+
     def check(self, role, prompt="rm -rf / && echo $(secret)"):
         fake = FakeExec(AUTH_OK[role["runtime"]])
         with mock.patch.object(agents, "_exec", fake), mock.patch.object(agents.shutil, "which", return_value="/x"):

@@ -87,15 +87,18 @@ def _hermes_prefix(role):
     return ["hermes"] + (["-p", role["profile"]] if role.get("profile") else [])
 
 
-def _argv(role: dict, timeout: int) -> list[str]:
+def _argv(role: dict, timeout: int, format_only=False) -> list[str]:
     rt, edit, model = role["runtime"], role["access"] == "edit", role["model"]
+    if format_only and (edit or rt not in ("pi", "claude")):
+        # ponytail: only CLIs with a confirmed no-tools mode; other runtimes need a new review.
+        raise ValueError("Format repair requires a Pi or Claude read-only reviewer with all tools disabled.")
     effort = role.get("effort", "medium")
     if rt == "codex":
         return ["codex", "exec", "--json", "--ignore-user-config", "--ignore-rules",
                 "-s", "workspace-write" if edit else "read-only", "-m", model,
                 "-c", 'model_reasoning_effort="' + effort + '"', "-"]
     if rt == "claude":
-        tools = "Read,Glob,Grep" + (",Edit,Write" if edit else "")
+        tools = "" if format_only else "Read,Glob,Grep" + (",Edit,Write" if edit else "")
         return ["claude", "-p", "--output-format", "stream-json", "--verbose", "--model", model, "--effort", effort,
                 "--restricted", "--safe-mode",
                 "--tools", tools, "--allowedTools", tools, "--permission-mode", "acceptEdits",
@@ -103,7 +106,8 @@ def _argv(role: dict, timeout: int) -> list[str]:
     if rt == "pi":
         tools = "read,grep,find,ls" + (",edit,write" if edit else "")
         return ["pi", "--print", "--mode", "json", "--provider", "opencode-go", "--model", model,
-                "--thinking", effort, "--tools", tools, "--no-extensions", "--no-skills", "--no-prompt-templates",
+                "--thinking", effort, *(["--no-tools"] if format_only else ["--tools", tools]),
+                "--no-extensions", "--no-skills", "--no-prompt-templates",
                 "--no-context-files", "--no-approve", "--offline"]
     if rt == "antigravity":
         return ["agy", "--input-format", "stream-json", "--output-format", "stream-json",
@@ -410,14 +414,15 @@ def _append_log(log: Path, text: str):
         f.write(text)
 
 
-def run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int, *, live_log: Path | None = None) -> dict:
+def run_agent(role: dict, prompt: str, cwd: Path, log: Path, timeout: int, *, live_log: Path | None = None,
+              format_only=False) -> dict:
     """Run one fresh agent session. Prompt goes over stdin; argv is fixed per role."""
     validate_role(role)
     problems = _auth_problems(role)
     if problems:
         _append_log(log, "== blocked before inference ==\n" + "; ".join(problems) + "\n")
         return _result("blocked", detail="; ".join(problems))
-    argv = _argv(role, timeout)
+    argv = _argv(role, timeout, format_only=format_only)
     input_data = (json.dumps({"event": "user", "message": {"content": prompt}}) + "\n"
                   if role["runtime"] == "antigravity" else prompt)
     # Live checkpoint before invocation: argv + pid only (prompt goes over stdin, never logged here).

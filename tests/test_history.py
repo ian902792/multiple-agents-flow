@@ -1,15 +1,28 @@
 import copy
+import contextlib
+import io
 import json
 from pathlib import Path
 import tempfile
+import subprocess
 import time
 import unittest
 from unittest.mock import patch
 
-from maf import core, history
+from maf import cli, core, history
 
 
 class HistoryTests(unittest.TestCase):
+    def test_cli_on_empty_repository_is_read_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp).resolve()
+            subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                cli.main(["--repo", str(repo), "analyze", "--json"])
+            self.assertEqual(json.loads(output.getvalue())["runs"], 0)
+            self.assertFalse((repo / ".git" / "maf").exists())
+
     def run_case(self, run_id, **extra):
         return {"id": run_id, "kind": "verify", "mode": "quick", "created_at": time.time(),
                 "stage": "verified", "status": "verified", "tested_sha": "a", "reviewed_sha": "a",
@@ -70,6 +83,20 @@ class HistoryTests(unittest.TestCase):
         self.assertIsNone(group["per_completed"]["seconds"])
         self.assertEqual(group["seconds"]["reported"], 2)
         self.assertEqual(group["historical_completed"], 2)
+
+    def test_corrupt_or_malformed_history_stays_unknown_without_aborting(self):
+        runs = [{"id": "corrupt", "status": "corrupt"}, self.run_case("broken", tests=[None]),
+                self.run_case("missing-agents", agents=None)]
+        with patch.object(core, "list_runs", return_value=runs):
+            data = history.analyze(Path.cwd())
+        corrupt = next(c for c in data["cases"] if c["run"] == "corrupt")
+        self.assertIsNone(corrupt["seconds"])
+        self.assertIsNone(corrupt["calls"])
+        self.assertFalse(corrupt["historical_proof"])
+        self.assertEqual(corrupt["causes"], [{"kind": "unknown", "source": "unknown"}])
+        self.assertEqual(next(c for c in data["cases"] if c["run"] == "broken")["causes"],
+                         [{"kind": "unknown", "source": "unknown"}])
+        self.assertIsNone(next(c for c in data["cases"] if c["run"] == "missing-agents")["seconds"])
 
 
 if __name__ == "__main__":

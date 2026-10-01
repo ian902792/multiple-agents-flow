@@ -420,7 +420,7 @@ def load(repo, run_id):
 
 def list_runs(repo):
     runs = []
-    for path in sorted((root_for(repo) / "runs").glob("*/state.json")):
+    for path in sorted((git_state_dir(Path(repo).resolve()) / "runs").glob("*/state.json")):
         try:
             runs.append(load(repo, path.parent.name))
         except (FlowError, KeyError, TypeError) as exc:
@@ -903,7 +903,8 @@ def invoke(repo, run, role_name, prompt, agent_panes=False, reap=True, purpose="
     live_log = log.with_suffix(".live")
     with agent_pane(repo, f"MAF {role_name} {run['id']}", Path(run["worktree"]), live_log, agent_panes) as pane:
         result = agents.run_agent(role, prompt, Path(run["worktree"]), log, run["config"]["agent_timeout"],
-                                  **({"live_log": live_log} if pane else {}))
+                                  **({"live_log": live_log} if pane else {}),
+                                  **({"format_only": True} if purpose == "format_repair" else {}))
     reaped = reap_orphans(run["worktree"]) if reap else []
     run["agents"].append({"reaped_orphans": len(reaped),"role": role_name, "runtime": role["runtime"], "model": role["model"],
                           "provider": role["provider"],

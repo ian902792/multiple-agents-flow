@@ -234,7 +234,7 @@ def main(argv=None):
         if result is not None:
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return
-        core.root_for(repo)
+        core.git_state_dir(repo)  # Validate the root without writing state for read-only commands.
         if args.action == "mode" and not args.name:
             result = mode_info(repo, args.main)
         elif args.action == "status":
