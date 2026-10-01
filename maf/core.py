@@ -880,7 +880,7 @@ def review_result(text, head):
 
 
 def needs_repair(repo, run, feedback):
-    run.setdefault("first_failure", feedback[-2000:])  # Kept for learning review; later feedback overwrites.
+    run.setdefault("first_failure", feedback[-2000:])  # The first failure only, for learning review; feedback keeps the latest.
     run["feedback"] = feedback[-10000:]
     run.pop("tested_sha", None)
     run.pop("reviewed_sha", None)
