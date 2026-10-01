@@ -2,6 +2,13 @@
 
 版本號採用 [語意化版本](https://semver.org/lang/zh-TW/)：`主版號.次版號.修訂號`。1.0 以前，次版號代表新功能或行為改變，修訂號代表修正。每次發布的最新版本寫在最上面，且必須和 `maf/__init__.py` 的 `__version__` 相同。
 
+## [0.20.1] - 2026-10-01
+
+### 修正
+
+- 在 card worktree 送出的 run，從主工作區看不再顯示「狀態損壞（corrupt）」：`progress`、`report`、`stats`、`analyze` 與 `status` 會照實讀出同一個 repo 其他 worktree 的 run（標記 `foreign`），`stats` 不再把它們算成停止次數；worker、`cancel`、`clean` 仍只作用在自己 checkout 的 run。
+- `clean --apply` 會收掉 worktree 與分支都已不在的 run：只要它驗證過的 commit（verify 則用送出時的 HEAD）已在 base，就標記為已清理；沒有可比對 commit 的會列在「保留」並寫明原因，還在等建立 worktree 的 run 不受影響。不需要 migration。
+
 ## [0.20.0] - 2026-10-01
 
 ### 新功能

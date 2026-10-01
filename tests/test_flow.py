@@ -141,11 +141,40 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(run["status"], "verified")
         core.git(self.repo, "merge", "-q", "card")
         self.assertEqual(core.clean(self.repo)["removed"], [])  # Its worktree still exists: the card cleans it.
+        self.assertEqual(core.list_runs(self.repo)[0]["status"], "corrupt")  # Writers never act on another checkout's run.
         shutil.rmtree(card)  # The card worktree was removed before its own clean.
+        seen = core.list_runs(self.repo, others=True)  # Read-only views show its real state, not corrupt.
+        self.assertEqual([(r["id"], r["status"], r["foreign"]) for r in seen], [(run["id"], "verified", True)])
+        self.assertNotIn("corrupt", progress.stats(self.repo).get("stopped", {}))
         self.assertEqual(core.clean(self.repo, apply=True)["removed"], [{"run": run["id"], "reason": "已在 main"}])
         self.assertEqual(core.git(self.repo, "branch", "--list", run["branch"]), "")
         self.assertTrue(core.read_json(core.run_path(self.repo, run["id"]))["cleaned_at"])
         self.assertEqual(core.clean(self.repo)["removed"], [])
+
+    def test_clean_settles_runs_whose_worktree_and_branch_are_both_gone(self):
+        run = self.complete()
+        tested = run["tested_sha"]
+        core.git(self.repo, "worktree", "remove", "--force", run["worktree"])
+        core.git(self.repo, "branch", "-D", run["branch"])  # Removed by hand: nothing left to delete.
+        run.update(status="waiting_dependency")  # Its worktree is made later; not judged yet.
+        core.save(self.repo, run)
+        self.assertEqual(core.clean(self.repo), {"applied": False, "removed": [], "kept": []})
+        run.update(status="needs_human", tested_sha=None)  # A stuck delegate with no recorded commit.
+        core.save(self.repo, run)
+        self.assertEqual(core.clean(self.repo)["kept"], [{"run": run["id"], "reason": "worktree 與分支都已不在，沒有可比對的 commit"}])
+        self.assertEqual(core.clean(self.repo, apply=False)["removed"], [])
+        run["superseded_by"] = "retry-x"  # A retry replaced it: no commit is needed to drop it.
+        core.save(self.repo, run)
+        self.assertEqual(core.clean(self.repo)["removed"], [{"run": run["id"], "reason": "已被 retry-x 取代"}])
+        del run["superseded_by"]
+        run["tested_sha"] = tested
+        core.save(self.repo, run)
+        self.assertEqual(core.clean(self.repo)["kept"], [{"run": run["id"], "reason": "還沒整合進 main"}])
+        core.git(self.repo, "cherry-pick", tested)
+        self.assertEqual(core.clean(self.repo, apply=True)["removed"],
+                         [{"run": run["id"], "reason": "worktree 與分支已不在，內容已在 main"}])
+        self.assertTrue(core.load(self.repo, run["id"])["cleaned_at"])
+        self.assertEqual([row["run"] for row in progress.rows(self.repo)], [])
 
     def test_clean_removes_stuck_runs_only_when_their_committed_work_is_in_base(self):
         run = self.complete()

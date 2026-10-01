@@ -419,14 +419,33 @@ def load(repo, run_id):
     return run
 
 
-def list_runs(repo):
+def list_runs(repo, others=False):
+    """Runs of this checkout. With others, read-only views also get runs submitted from another worktree of this
+    repository, marked foreign, instead of reporting them corrupt; nothing that writes or executes asks for them."""
     runs = []
     for path in sorted((git_state_dir(Path(repo).resolve()) / "runs").glob("*/state.json")):
         try:
             runs.append(load(repo, path.parent.name))
         except (FlowError, KeyError, TypeError) as exc:
-            runs.append({"id": path.parent.name, "status": "corrupt", "feedback": str(exc)})
+            sibling = sibling_run(repo, path) if others else None
+            runs.append({**sibling, "foreign": True} if sibling else
+                        {"id": path.parent.name, "status": "corrupt", "feedback": str(exc)})
     return runs
+
+
+def sibling_run(repo, path):
+    """The run at path if another worktree of this repository submitted it (that worktree may since be gone), else
+    None. Git state is shared, so every checkout sees it."""
+    try:
+        run = read_json(path)
+        owner = Path(run["repo"])
+        if run["id"] != path.parent.name or Path(run["worktree"]) != worktrees_for(owner) / run["id"]:
+            return None
+        if owner.exists() and git_state_dir(owner) != git_state_dir(Path(repo).resolve()):
+            return None
+        return run
+    except (FlowError, KeyError, TypeError, OSError):
+        return None
 
 
 def approval_reasons(task, config, kind="delegate", require_approval=False):
@@ -655,17 +674,8 @@ def orphan_runs(repo):
     """Runs submitted from another worktree of this repository that no longer exists, e.g. a card worktree removed
     before its own clean. Git state is shared, so their branches are left behind unless some other checkout adopts
     them; runs of a worktree that still exists stay that worktree's to clean."""
-    runs = []
-    for path in sorted((root_for(repo) / "runs").glob("*/state.json")):
-        try:
-            run = read_json(path)
-            owner = Path(run["repo"])
-            if (run["id"] == path.parent.name and not owner.exists()
-                    and Path(run["worktree"]) == worktrees_for(owner) / run["id"]):
-                runs.append(run)
-        except (FlowError, KeyError, TypeError):
-            continue
-    return runs
+    return [run for path in sorted((root_for(repo) / "runs").glob("*/state.json"))
+            if (run := sibling_run(repo, path)) and not Path(run["repo"]).exists()]
 
 
 def clean(repo, apply=False):
@@ -678,13 +688,26 @@ def clean(repo, apply=False):
     for run in runs:
         worktree, branch = Path(run["worktree"]), run.get("branch") or ""
         has_branch = bool(branch) and bool(git(repo, "branch", "--list", branch))
-        if not worktree.exists() and not has_branch:
-            continue
-        # Without the branch (deleted by hand), compare the worktree's HEAD; a missing ref proves nothing.
-        head = git(repo, "rev-parse", branch) if has_branch else git(worktree, "rev-parse", "HEAD")
+        # Worktree and branch both gone (removed by hand, or with a card worktree): nothing is left on disk and the run
+        # can never progress, so only its recorded commit can show whether the work reached base.
+        gone = not worktree.exists() and not has_branch
+        if gone and (run.get("status") in ("queued", "creating", "waiting_dependency")
+                     or (run.get("status") == "awaiting_approval" and run.get("depends_on"))):
+            continue  # Its worktree is made later, when it runs or its dependency finishes.
+        if gone:
+            head = run.get("tested_sha") or (run.get("source_sha") if run.get("kind") == "verify" else None)
+            try:
+                head = head and git(repo, "rev-parse", "--verify", "--quiet", head + "^{commit}")
+            except FlowError:
+                head = None
+            if not head and not run.get("superseded_by") and run.get("status") != "cancelled":
+                kept.append((run, "worktree 與分支都已不在，沒有可比對的 commit"))
+                continue
+        else:  # Without the branch (deleted by hand), compare the worktree's HEAD; a missing ref proves nothing.
+            head = git(repo, "rev-parse", branch) if has_branch else git(worktree, "rev-parse", "HEAD")
         # A stuck verify tested the main agent's own commit; a stuck delegate counts only once its coder committed.
         # Otherwise it may hold a question for the person and must stay visible in report.
-        stuck = run.get("status") == "needs_human" and (run.get("kind") == "verify" or head != run.get("source_sha"))
+        stuck = gone or (run.get("status") == "needs_human" and (run.get("kind") == "verify" or head != run.get("source_sha")))
         if run["id"] in needed:
             kept.append((run, "後續任務還依賴它"))
         elif not run.get("superseded_by") and run.get("status") not in ("tested", "verified", "merged", "cancelled") and not stuck:
@@ -699,7 +722,8 @@ def clean(repo, apply=False):
         elif any(line.startswith("+") for line in git(repo, "cherry", run["config"]["base_branch"], head).splitlines()):
             kept.append((run, f"還沒整合進 {run['config']['base_branch']}"))
         else:
-            removable.append((run, ("卡住，但內容" if stuck else "") + f"已在 {run['config']['base_branch']}"))
+            removable.append((run, ("worktree 與分支已不在，內容" if gone else "卡住，但內容" if stuck else "")
+                                + f"已在 {run['config']['base_branch']}"))
     if apply and removable:
         # Hold every lock a run-state writer uses, and skip any run that changed since it was judged.
         with exclusive(repo), worker_exclusive(repo):
