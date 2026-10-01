@@ -700,7 +700,7 @@ def clean(repo, apply=False):
                 head = head and git(repo, "rev-parse", "--verify", "--quiet", head + "^{commit}")
             except FlowError:
                 head = None
-            if not head:
+            if not head and not run.get("superseded_by") and run.get("status") != "cancelled":
                 kept.append((run, "worktree 與分支都已不在，沒有可比對的 commit"))
                 continue
         else:  # Without the branch (deleted by hand), compare the worktree's HEAD; a missing ref proves nothing.

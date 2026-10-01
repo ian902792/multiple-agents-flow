@@ -162,6 +162,11 @@ class FlowTests(unittest.TestCase):
         run.update(status="needs_human", tested_sha=None)  # A stuck delegate with no recorded commit.
         core.save(self.repo, run)
         self.assertEqual(core.clean(self.repo)["kept"], [{"run": run["id"], "reason": "worktree 與分支都已不在，沒有可比對的 commit"}])
+        self.assertEqual(core.clean(self.repo, apply=False)["removed"], [])
+        run["superseded_by"] = "retry-x"  # A retry replaced it: no commit is needed to drop it.
+        core.save(self.repo, run)
+        self.assertEqual(core.clean(self.repo)["removed"], [{"run": run["id"], "reason": "已被 retry-x 取代"}])
+        del run["superseded_by"]
         run["tested_sha"] = tested
         core.save(self.repo, run)
         self.assertEqual(core.clean(self.repo)["kept"], [{"run": run["id"], "reason": "還沒整合進 main"}])
