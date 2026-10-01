@@ -615,6 +615,7 @@ def handoff(repo, run):
             "tests": [{"argv": item["argv"], "exit_code": item["exit_code"]} for item in run["tests"]],
             "review": run.get("review") if review_enabled(run["config"]) else None,
             "coder_notes": run.get("coder_notes"), "learning_candidates": learning_candidates(run.get("coder_notes")),
+            "repairs": run.get("repairs", 0), "first_failure": run.get("first_failure"),
             "depends_on": run.get("depends_on"),
             "agents": [{"role": a["role"], "runtime": a["runtime"], "model": a.get("model"),
                         "seconds": a.get("duration_seconds"), "cache_hit": cache_hit(a.get("usage")), **spend(a.get("usage"))}
@@ -879,6 +880,7 @@ def review_result(text, head):
 
 
 def needs_repair(repo, run, feedback):
+    run.setdefault("first_failure", feedback[-2000:])  # Kept for learning review; later feedback overwrites.
     run["feedback"] = feedback[-10000:]
     run.pop("tested_sha", None)
     run.pop("reviewed_sha", None)
@@ -1177,7 +1179,8 @@ def execute(repo, run, agent_panes=False):
             if text is None:
                 return
             if text.lstrip().startswith("MAF_NEEDS_HUMAN:"):
-                run.update(status="needs_human", stage="replan", feedback=text.strip()[:10000])
+                run.update(status="needs_human", stage="replan", feedback=text.strip()[:10000],
+                           coder_notes=text.strip()[-4000:])
                 save(repo, run)
                 return
             check_scope(run)

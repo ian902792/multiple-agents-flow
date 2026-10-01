@@ -465,6 +465,7 @@ def report(repo, hours=24):
                       "depends_on": run.get("depends_on"), "complete": row["complete"] == "yes",
                       "attention": row["attention"], "next": next_zh(run), "feedback": reason_zh(run, runs),
                       "unverified": clean(unverified, 200),
+                      "learning_candidates": core.learning_candidates(notes),
                       "agent_seconds": round(sum(a.get("duration_seconds") or 0 for a in row.get("agents", [])), 1),
                       "usage": total_usage([a for a in run.get("agents") or [] if isinstance(a, dict)])})
     rank = {status: index for index, status in enumerate(REPORT_ORDER)}
@@ -564,6 +565,8 @@ def render_report(data):
                 lines.append(f"    下一步：{item['next']}")
             if item["complete"] and item["unverified"] and not item["unverified"].endswith("none"):
                 lines.append(f"    存疑：{item['unverified']}")
+            for learning in item["learning_candidates"]:
+                lines.append(f"    經驗：{clean(learning, 200)}")
     if data["chains"]:
         lines.append("\n依賴鏈")
         for path in data["chains"]:
