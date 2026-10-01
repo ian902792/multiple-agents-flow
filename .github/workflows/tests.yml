@@ -16,4 +16,4 @@ jobs:
       - name: Verify Python version
         run: python3 -c 'import sys; assert sys.version_info >= (3, 11)'
       - name: Offline tests (no models, no credentials)
-        run: python3 -m unittest discover -s tests -v
+        run: python3 tests/parallel.py

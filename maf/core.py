@@ -1,6 +1,7 @@
 """Deterministic task engine. No model is used for scheduling or verification."""
 from __future__ import annotations
 
+import ast
 import contextlib
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import copy
@@ -975,34 +976,69 @@ def share_dependencies(repo, run):
         save(repo, run)
 
 
-REVIEW_FILES_BUDGET = 200_000  # bytes of changed files handed to the reviewer whole
+REVIEW_FILES_BUDGET = 200_000  # shared byte budget for changed files and direct import context
+
+
+def review_files(worktree, head, paths, budget):
+    sizes = {}  # Sized before reading, so a huge changed file is named instead of loaded (or tripping the output cap).
+    # Names are data, never patterns; say so rather than rely on how one git version's ls-tree matches paths.
+    for record in (git(worktree, "--literal-pathspecs", "ls-tree", "-l", "-z", head, "--", *sorted(paths))
+                   if paths else "").split("\0"):
+        meta, _, path = record.partition("\t")
+        if meta.split()[:2] in (["100644", "blob"], ["100755", "blob"]):  # No symlinks or gitlinks.
+            sizes[path] = int(meta.split()[3])
+    files, omitted = {}, []
+    for path in sorted(sizes, key=sizes.get):
+        if sizes[path] <= budget:
+            files[path] = git(worktree, "show", f"{head}:{path}")
+            budget -= sizes[path]
+        else:
+            omitted.append(path)
+    return files, omitted, budget
+
+
+def review_imports(path, text):
+    # ponytail: one-hop Python imports; dynamic, transitive and other-language dependencies stay reviewer reads.
+    if not path.endswith(".py"):
+        return set()
+    try:
+        nodes = ast.walk(ast.parse(text))
+    except (SyntaxError, ValueError, RecursionError):
+        return set()
+    package, paths = PurePosixPath(path).parent.parts, set()
+    for node in nodes:
+        if isinstance(node, ast.Import):
+            modules = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            if node.level > len(package):
+                continue
+            prefix = list(package[:len(package) - node.level + 1]) if node.level else []
+            if node.module:
+                prefix += node.module.split(".")
+            modules = [".".join(prefix), *(".".join([*prefix, alias.name])
+                                         for alias in node.names if alias.name != "*")]
+        else:
+            continue
+        for module in filter(None, modules):
+            parts = module.split(".")
+            paths.add("/".join(parts) + ".py")
+            paths.update("/".join(parts[:i]) + "/__init__.py" for i in range(1, len(parts) + 1))
+    return paths
 
 
 def review_prompt(run, head, tests):
     diff = git(run["worktree"], "diff", "--no-ext-diff", "--no-textconv", run["base_sha"], head, "--")
     if len(diff) > 120000:
         raise FlowError("Diff too large for a bounded review; split the task.")
-    # Reviewers read in ~70-line slices and reread files, and every turn resends the whole context; handing over the
-    # changed files whole cuts most of those turns. Deleted and binary files are left out.
     texts = [record.split("\t", 2)[2] for record in git(run["worktree"], "diff", "--numstat", "-z", "--diff-filter=d",
                                                        "--no-renames", run["base_sha"], head, "--").split("\0")
-             if record.count("\t") >= 2 and not record.startswith("-\t-\t")]  # -\t- marks a binary file
-    sizes = {}  # Sized before reading, so a huge changed file is named instead of loaded (or tripping the output cap).
-    # Names are data, never patterns; say so rather than rely on how one git version's ls-tree matches paths.
-    for record in (git(run["worktree"], "--literal-pathspecs", "ls-tree", "-l", "-z", head, "--", *texts)
-                   if texts else "").split("\0"):
-        meta, _, path = record.partition("\t")
-        if meta.split()[1:2] == ["blob"]:  # A submodule's gitlink has no content here.
-            sizes[path] = int(meta.split()[3])
-    files, omitted, budget = [], [], REVIEW_FILES_BUDGET
-    for path in sorted(sizes, key=sizes.get):
-        if sizes[path] <= budget:
-            files.append(f"--- {path} ---\n" + git(run["worktree"], "show", f"{head}:{path}"))
-            budget -= sizes[path]
-        else:
-            omitted.append(path)
-    return ("Independent read-only review. The changed files' full contents at HEAD follow the diff; do not reread "
-            "them. Read any other file you need whole and once, not in slices. Only read files inside this worktree "
+             if record.count("\t") >= 2 and not record.startswith("-\t-\t")]
+    files, omitted, budget = review_files(run["worktree"], head, texts, REVIEW_FILES_BUDGET)
+    imports = {p for path, text in files.items() for p in review_imports(path, text)} - set(texts)
+    context, context_omitted, _ = review_files(run["worktree"], head, imports, budget)
+    return ("Independent read-only review. Full contents of changed files and directly imported local Python modules "
+            "at HEAD follow the diff; do not reread supplied files. Import context is one-hop and best-effort; read "
+            "other dependencies as needed. Read any other file you need whole and once, not in slices. Only read files inside this worktree "
             "and the test logs named below; never home directories, transcripts or tool installations. "
             "Do not edit, run project code, or trust the implementer's claims. "
             "Find correctness/security/regression issues; assess whether this is genuinely low risk. "
@@ -1020,8 +1056,10 @@ def review_prompt(run, head, tests):
               [{k: result[k] for k in ("argv", "exit_code", "log")} for result in tests], ensure_ascii=False)
               if tests is not None else "the supervisor runs them beside this review; it counts only if they all pass")
             + "\nDIFF:\n" + diff
-            + "\nCHANGED FILES AT HEAD:\n" + "\n".join(files)
-            + ("\nNot included (over the size budget), read them yourself: " + ", ".join(omitted) if omitted else "")
+            + "\nCHANGED FILES AT HEAD:\n" + "\n".join(f"--- {p} ---\n{text}" for p, text in files.items())
+            + ("\nDIRECT PYTHON IMPORTS AT HEAD:\n" + "\n".join(f"--- {p} ---\n{text}" for p, text in context.items()) if context else "")
+            + ("\nNot included (over the size budget), read them yourself: " + ", ".join(omitted + context_omitted)
+               if omitted or context_omitted else "")
             + "\nOUTPUT CONTRACT: Return only one JSON object, starting with { and ending with }. "
               "No introduction, text outside JSON, or Markdown fences. Put every explanation in summary/findings/notes.")
 
