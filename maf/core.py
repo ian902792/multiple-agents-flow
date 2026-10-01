@@ -659,7 +659,7 @@ def cancel(repo, run_id, note=""):
                 raise
         if run.get("status") not in CANCELLABLE:
             raise FlowError(f"Only a queued or stopped run can be cancelled; this one is {run.get('status')}.")
-        dependents = [r["id"] for r in list_runs(repo) if r.get("depends_on") == run_id
+        dependents = [r["id"] for r in list_runs(repo, others=True) if r.get("depends_on") == run_id
                       and r.get("status") not in ("tested", "verified", "merged", "cancelled")]
         if dependents:
             raise FlowError("Unfinished runs depend on it; cancel them first: " + ", ".join(dependents))
