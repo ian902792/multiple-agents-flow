@@ -142,6 +142,8 @@ class FlowTests(unittest.TestCase):
         core.git(self.repo, "merge", "-q", "card")
         self.assertEqual(core.clean(self.repo)["removed"], [])  # Its worktree still exists: the card cleans it.
         self.assertEqual(core.list_runs(self.repo)[0]["status"], "corrupt")  # Writers never act on another checkout's run.
+        with self.assertRaisesRegex(core.FlowError, "identity"):
+            core.cancel(self.repo, run["id"])  # Its own worktree still exists: cancel it there.
         shutil.rmtree(card)  # The card worktree was removed before its own clean.
         seen = core.list_runs(self.repo, others=True)  # Read-only views show its real state, not corrupt.
         self.assertEqual([(r["id"], r["status"], r["foreign"]) for r in seen], [(run["id"], "verified", True)])
@@ -150,6 +152,8 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(core.git(self.repo, "branch", "--list", run["branch"]), "")
         self.assertTrue(core.read_json(core.run_path(self.repo, run["id"]))["cleaned_at"])
         self.assertEqual(core.clean(self.repo)["removed"], [])
+        self.assertEqual(core.cancel(self.repo, run["id"], "dropped")["status"], "cancelled")  # Orphans stay cancellable.
+        self.assertEqual(core.read_json(core.run_path(self.repo, run["id"]))["status"], "cancelled")
 
     def test_clean_settles_runs_whose_worktree_and_branch_are_both_gone(self):
         run = self.complete()

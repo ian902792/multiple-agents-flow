@@ -651,7 +651,12 @@ def cancel(repo, run_id, note=""):
     started is refused, and a running supervisor does not block cancelling the rest. Refuses while an unfinished run
     depends on it; lists commits clean would then discard. Nothing is deleted here."""
     with run_exclusive(repo, run_id):
-        run = load(repo, run_id)
+        try:
+            run = load(repo, run_id)
+        except FlowError:  # Its submitting worktree is gone, so no other checkout can ever cancel it.
+            run = sibling_run(repo, run_path(repo, run_id))
+            if not run or Path(run["repo"]).exists():
+                raise
         if run.get("status") not in CANCELLABLE:
             raise FlowError(f"Only a queued or stopped run can be cancelled; this one is {run.get('status')}.")
         dependents = [r["id"] for r in list_runs(repo) if r.get("depends_on") == run_id
