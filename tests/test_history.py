@@ -84,6 +84,29 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(group["seconds"]["reported"], 2)
         self.assertEqual(group["historical_completed"], 2)
 
+    def test_legacy_agent_error_uses_saved_failure_feedback_for_diagnosis_only(self):
+        runs = [self.run_case(run_id, status="needs_human", stage="coding",
+                              agents=[{"status": "error"}], feedback=feedback)
+                for run_id, feedback in (
+                    ("limited", "success: You've hit your monthly spend limit"),
+                    ("logged-out", "Not logged in. Please run /login"),
+                    ("ordinary", "incomplete turn (stopReason=stop)"),
+                    ("missing", None))]
+        runs.append(self.run_case("clean", feedback="Handled a monthly spend limit message"))
+        runs.append(dict(runs[0], id="recorded", failures=[{"kind": "agent_error"}]))
+        before = copy.deepcopy(runs)
+        with patch.object(core, "list_runs", return_value=runs):
+            data = history.analyze(Path.cwd())
+        kinds = {case["run"]: case["causes"] for case in data["cases"]}
+        self.assertEqual(kinds["limited"], [{"kind": "quota", "source": "inferred"}])
+        self.assertEqual(kinds["logged-out"], [{"kind": "authentication", "source": "inferred"}])
+        for run_id in ("ordinary", "missing"):
+            self.assertEqual(kinds[run_id], [{"kind": "agent_error", "source": "inferred"}])
+        self.assertEqual(kinds["clean"], [])
+        self.assertEqual(kinds["recorded"], [{"kind": "agent_error", "source": "recorded"}])
+        self.assertEqual(runs, before)  # Never change native status, evidence or retry eligibility.
+        self.assertFalse(next(c for c in data["cases"] if c["run"] == "limited")["historical_proof"])
+
     def test_corrupt_or_malformed_history_stays_unknown_without_aborting(self):
         runs = [{"id": "corrupt", "status": "corrupt"}, self.run_case("broken", tests=[None]),
                 self.run_case("missing-agents", agents=None)]
