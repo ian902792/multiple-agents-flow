@@ -40,6 +40,7 @@ tests and creates the GitHub release from that CHANGELOG section (`scripts/chang
 - `README.md`: human-oriented Traditional Chinese overview and quickstart.
 - `docs/CLI.md`: direct commands, task format, approval and recovery reference.
 - `docs/AGENT-INSTRUCTIONS.md`: optional personal Claude instruction template.
+- `docs/LEARNINGS.md`: `AGENT_LEARNINGS.md` format, retrieval and promotion workflow for the main chat.
 
 ## Agent adapter contract
 
@@ -100,7 +101,9 @@ Task JSON: `id`, `title`, `instructions`, `paths` (explicit relative path/glob a
 `tests` (nonempty arrays of argv arrays), `risk` (`manual`, `docs`, `style`, `tests`), and optional
 boolean `independent` for Pi, Antigravity or Codex delegates.
 Optional `acceptance_why` states the purpose tests must protect; it reaches coder and reviewer via the task JSON.
-`handoff` also returns `coder_notes`, the tail of the coder's final reply ending in `UNVERIFIED:` items.
+`handoff` also returns `coder_notes`, the tail of the coder's final reply ending in `UNVERIFIED:` items, and
+`learning_candidates`, its nonempty `LEARNING:` lines. The coder only proposes them; the main chat curates
+`AGENT_LEARNINGS.md` and asks the human before promoting one into `AGENTS.md` (docs/LEARNINGS.md).
 Task/config snapshots pin each run. Worktrees and branches are unique; never overwrite/reuse unrelated ones.
 
 Commands: `install-skills`, `settings`, `init`, `mode`, `flows`, `flow-save`, `ui`, `doctor`, `confirm-billing`, `plan`,

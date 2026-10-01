@@ -85,6 +85,7 @@ Opus 額度少、Pi 額度多就選 `quick-flash`，理由見[誰實作、誰審
 
 - [歷史案例與持續改善](docs/IMPROVEMENT.md)：`maf 分析歷史案例並改善效率`，或 `python3 flow.py analyze`；從失敗案例建立回歸測試，再比較後續新增案例。
 
+- [工程經驗記憶](docs/LEARNINGS.md)：coder 提出踩過的坑，主對話整理成 `AGENT_LEARNINGS.md`，下次只帶入相關條目；升級成 `AGENTS.md` 規則前會先問你。
 - [一晚跑一批任務](docs/OVERNIGHT.md)：規畫、決定、夜間執行、早上報告。
 - [讓主對話自動使用 MAF](docs/AGENT-INSTRUCTIONS.md)：七行提示詞，含自己的 repo 自動合併的選用設定。
 - [誰實作、誰審查](docs/ROLES.md)：強弱模型怎麼分工才省又好，以及審查迴圈為什麼會失控。

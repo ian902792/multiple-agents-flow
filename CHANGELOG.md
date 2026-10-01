@@ -2,6 +2,12 @@
 
 版本號採用 [語意化版本](https://semver.org/lang/zh-TW/)：`主版號.次版號.修訂號`。1.0 以前，次版號代表新功能或行為改變，修訂號代表修正。每次發布的最新版本寫在最上面，且必須和 `maf/__init__.py` 的 `__version__` 相同。
 
+## [0.19.0] - 2026-10-01
+
+### 新功能
+
+- 工程經驗記憶：coder 可在最後回覆以 `LEARNING: observation | cause | better approach | scope` 提出非顯而易見的坑，`handoff` 解析成 `learning_candidates`。主對話依新的 [docs/LEARNINGS.md](docs/LEARNINGS.md) 維護目標 repo 的 `AGENT_LEARNINGS.md`：開工時只把相關條目帶進任務，收工時只選一個動作（不動、新增、更新、提議升級、淘汰）；升級成 `AGENTS.md` 規則一律先問人，coder 不能改這些檔案。只在自己的 repo 建檔。不需要 migration；回退只要 revert，舊 run 的 `learning_candidates` 是空陣列。
+
 ## [0.18.2] - 2026-10-01
 
 ### 修正

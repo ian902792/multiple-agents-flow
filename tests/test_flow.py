@@ -191,6 +191,11 @@ class FlowTests(unittest.TestCase):
         self.assertTrue(reason.startswith("已取消，會捨棄 1 個未整合 commit："), reason)
         self.assertFalse(Path(run["worktree"]).exists())
 
+    def test_learning_candidates_come_only_from_learning_lines(self):
+        notes = "Done\n  LEARNING: a | b | c | maf/core.py\nnot LEARNING: x\nLEARNING:\nUNVERIFIED: none"
+        self.assertEqual(core.learning_candidates(notes), ["a | b | c | maf/core.py"])
+        self.assertEqual(core.learning_candidates(None), [])
+
     def test_offline_full_workflow(self):
         run = self.complete()
         self.assertEqual(core.verified(self.repo, run), run["tested_sha"])
@@ -199,6 +204,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual((self.repo / "README.md").read_text(), "Before\n")
         self.assertEqual([a["role"] for a in run["agents"]], ["coder", "reviewer"])
         self.assertEqual(core.handoff(self.repo, run)["coder_notes"], "Done")
+        self.assertEqual(core.handoff(self.repo, run)["learning_candidates"], [])
         self.assertEqual(run["maf_version"], maf.__version__)
         self.assertEqual([(a["role"], a["runtime"], a["cache_hit"], a["input_tokens"]) for a in core.handoff(self.repo, run)["agents"]],
                          [("coder", "pi", None, None), ("reviewer", "pi", None, None)])
