@@ -1202,7 +1202,8 @@ class FlowTests(unittest.TestCase):
                     result["text"] = original["json"]
                 else:
                     original["json"] = result["text"]
-                    original["raw"] = "Here is the review.\n```json\n" + result["text"] + "\n```"
+                    # Anonymized shape of the real failed case: prose with inline code before one fenced review.
+                    original["raw"] = "I traced the `eligible` gate and tests. Here is the review.\n```json\n" + result["text"] + "\n```"
                     result["text"] = original["raw"]
             return result
         with patch.object(core.agents, "run_agent", side_effect=agent) as calls, \
@@ -1249,7 +1250,8 @@ class FlowTests(unittest.TestCase):
     def test_ambiguous_and_contradictory_review_recovery_stays_blocked(self):
         base = {"decision": "approve", "head_sha": "a", "risk": "low", "summary": "ok", "findings": []}
         fenced = "```json\n" + json.dumps(base) + "\n```"
-        for text in (fenced + "\n" + fenced, "{}\n" + fenced, fenced.replace('"a"', '"stale"'),
+        for text in (fenced + "\n" + fenced, "{}\n" + fenced, "```python\npass\n```\n" + fenced,
+                     fenced.replace('"a"', '"stale"'),
                      fenced.replace('"decision": "approve"', '"decision": "changes_requested", "decision": "approve"')):
             with self.subTest(text=text), self.assertRaises(core.FlowError):
                 core.wrapped_review(text, "a")

@@ -1034,7 +1034,7 @@ def wrapped_review(text, head):
         raise FlowError("Format recovery requires exactly one fenced JSON review.")
     block = blocks[0]
     outside = text[:block.start()] + text[block.end():]
-    if any(char in outside for char in "{}[]`"):
+    if "```" in outside or any(char in outside for char in "{}[]"):
         raise FlowError("Ambiguous review wrapper; submit a new review.")
     return review_result(block.group(1), head)
 
