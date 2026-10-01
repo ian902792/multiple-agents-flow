@@ -2,6 +2,12 @@
 
 版本號採用 [語意化版本](https://semver.org/lang/zh-TW/)：`主版號.次版號.修訂號`。1.0 以前，次版號代表新功能或行為改變，修訂號代表修正。每次發布的最新版本寫在最上面，且必須和 `maf/__init__.py` 的 `__version__` 相同。
 
+## [0.20.2] - 2026-10-01
+
+### 修正
+
+- 送出它的 worktree 已刪除的 run，可以從同一個 repo 的任何 checkout `cancel`（以前會回「Run identity does not match」而無法處理）；worktree 還在的 run 仍只能在那個 worktree 取消。
+
 ## [0.20.1] - 2026-10-01
 
 ### 修正
