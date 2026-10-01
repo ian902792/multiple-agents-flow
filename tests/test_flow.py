@@ -1162,6 +1162,56 @@ class FlowTests(unittest.TestCase):
         self.assertEqual((run["status"], run["reviewed_sha"]), ("verified", run["tested_sha"]))
         self.assertEqual([a["role"] for a in run["agents"]], ["reviewer"])
 
+    def test_review_context_includes_direct_imports_at_head_with_one_shared_budget(self):
+        package = self.repo / "pkg"
+        package.mkdir()
+        (package / "__init__.py").write_text("")
+        (package / "helper.py").write_text("from . import deeper\nVALUE = 'committed helper'\n")
+        (package / "deeper.py").write_text("VALUE = 'transitive dependency'\n")
+        (package / "plain.py").write_text("VALUE = 'absolute import'\n")
+        (package / "huge.py").write_text("#" + "x" * 8_000_001)
+        outside = Path(self.temp.name + "-outside.py")
+        outside.write_text("VALUE = 'outside worktree'\n")
+        self.addCleanup(outside.unlink, missing_ok=True)
+        (package / "linked.py").symlink_to(outside)
+        (package / "app.py").write_text("VALUE = 0\n")
+        core.git(self.repo, "add", ".")
+        core.git(self.repo, "commit", "-qm", "Import fixtures")
+        base = core.git(self.repo, "rev-parse", "HEAD")
+        source = ("from . import helper, huge, linked\nfrom pkg.helper import VALUE\n"
+                  "import pkg.plain as plain\nimport json\nimport missing\n")
+        (package / "app.py").write_text(source)
+        core.git(self.repo, "commit", "-qam", "Use local helpers")
+        head = core.git(self.repo, "rev-parse", "HEAD")
+        (package / "helper.py").write_text("VALUE = 'uncommitted helper'\n")
+        run = {"worktree": str(self.repo), "base_sha": base, "task": self.task}
+        with patch.object(core, "command", wraps=core.command) as command:
+            prompt = core.review_prompt(run, head, [])
+        self.assertIn("--- pkg/app.py ---\n" + source.rstrip(), prompt)
+        self.assertIn("\nDIRECT PYTHON IMPORTS AT HEAD:\n", prompt)
+        self.assertEqual(prompt.count("--- pkg/helper.py ---"), 1)
+        self.assertIn("VALUE = 'committed helper'", prompt)
+        self.assertIn("--- pkg/plain.py ---\nVALUE = 'absolute import'", prompt)
+        self.assertNotIn("uncommitted helper", prompt)
+        self.assertNotIn("outside worktree", prompt)
+        self.assertNotIn("--- pkg/linked.py ---", prompt)
+        self.assertNotIn("--- pkg/deeper.py ---", prompt)
+        self.assertNotIn("--- pkg/huge.py ---", prompt)
+        self.assertIn("pkg/huge.py", prompt)
+        self.assertFalse([c for c in command.call_args_list
+                          if "show" in c.args[0] and any(a.endswith(":pkg/huge.py") for a in c.args[0])])
+        with patch.object(core, "REVIEW_FILES_BUDGET", len(source.encode())):
+            prompt = core.review_prompt(run, head, [])
+        self.assertIn("--- pkg/app.py ---", prompt)  # Changed files get the budget first.
+        self.assertNotIn("--- pkg/helper.py ---", prompt)
+        self.assertIn("pkg/helper.py", prompt)  # Over-budget dependencies are named for the reviewer.
+        (package / "app.py").write_text("from .helper import (\n")
+        core.git(self.repo, "add", "pkg/app.py")
+        core.git(self.repo, "commit", "-qm", "Invalid Python still needs review")
+        prompt = core.review_prompt(run, core.git(self.repo, "rev-parse", "HEAD"), [])
+        self.assertIn("from .helper import (", prompt)
+        self.assertNotIn("\nDIRECT PYTHON IMPORTS AT HEAD:\n", prompt)
+
     @unittest.skipUnless(sys.platform == "darwin", "libproc is macOS only")
     def test_libproc_falls_back_to_lsof_when_it_misreads_our_own_cwd(self):
         core.macos_libproc.cache_clear()

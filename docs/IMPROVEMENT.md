@@ -32,6 +32,22 @@ python3 flow.py stats --days 30
 
    baseline 排除已看過的 run，避免把原先案例反覆算成新結果。它不是跨期完整生命週期成本：如果 retry 跨過 baseline，舊 attempt 的花費在上一期。樣本少、任務或環境不同時，結果只代表觀察，不宣稱速度或準確率已改善。保存新的完整快照再開始下一輪。
 
+## 審查上下文與一次最終驗證
+
+審查 prompt 優先提供變更檔案，再以 Python AST 找出它們直接引用的本地模組與 package `__init__.py`。所有內容都從同一 HEAD 讀取，共用 200,000 bytes 上限；超出上限的檔案只列名稱，不先載入。只補一層、repo 根目錄的絕對 import 或檔案所在 package 的相對 import，不解析執行環境、動態 import 或其他語言；reviewer 仍可讀必要的其他相依檔案。
+
+2026-10-01，以 Pi DeepSeek V4.1 Flash / low 各跑一次舊版（`02d57cd`）與新版。沿用 effort benchmark 的 bug-chunk、clean-chunk，但在兩組暫存 fixture 都把原實作移到 base 的 `helper.py`，change 的 `chunks.py` 只保留 `from helper import chunk`；bug-path 保持原樣作無 import 對照。
+
+| 案例 | 舊版秒數 / 模型呼叫 | 新版秒數 / 模型呼叫 | 兩組判斷 |
+| --- | ---: | ---: | --- |
+| bug-chunk（直接 import） | 18.4 / 3 | 10.2 / 1 | changes_requested |
+| clean-chunk（直接 import） | 20.7 / 5 | 15.3 / 2 | approve |
+| bug-path（無 import） | 8.0 / 1 | 9.8 / 1 | changes_requested |
+
+這是每組每題一次的小樣本，只支持減少取得相依內容的來回，不宣稱一般加速倍率或完整審查準確率。200 KB 是預載預算，超出可按需讀取，不要求拆 commit；既有 120,000 字元 diff 硬限制維持，超過仍需拆任務。
+
+實作 commit 與 merge commit 的 tree 可以完全相同，兩次驗證不是內容檢查的必要條件。要保留 exact-SHA 證據又只驗證一次，可以在獨立 branch 先建立包含實作的最終 merge commit，對它執行完整測試與審查。CI 通過後，確認 main 仍在原 base，再讓 main fast-forward 到這個已驗證的 merge commit；其 merge 歷史保留，SHA 也不變。若 main 移動、解衝突或新增任何 commit，重新準備最終 commit 並驗證。GitHub 另行產生 merge commit 時也要驗證它的新 SHA，不能只憑 tree 相同沿用證據。
+
 ## 格式修復與證據重用
 
 原始審查回覆另存於 run 的私有 `review-response.json`，以雜湊、run ID、task/config scope 與 tested SHA 綁定。嚴格 parser 保持不變：只有一個完整、符合 schema 且 SHA 正確的 fenced JSON 候選才進入格式修復。多個候選、外部結構、重複欄位、過大回覆、失效 SHA 與矛盾 approve/findings 都阻擋。
