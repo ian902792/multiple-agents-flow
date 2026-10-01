@@ -2,6 +2,13 @@
 
 版本號採用 [語意化版本](https://semver.org/lang/zh-TW/)：`主版號.次版號.修訂號`。1.0 以前，次版號代表新功能或行為改變，修訂號代表修正。每次發布的最新版本寫在最上面，且必須和 `maf/__init__.py` 的 `__version__` 相同。
 
+## [0.20.0] - 2026-10-01
+
+### 新功能
+
+- 失敗時的經驗不再遺失：coder 回 `MAF_NEEDS_HUMAN:` 時也保留 `coder_notes`，`report` 會把卡住的 run 提出的 `LEARNING:` 列成「經驗」；`handoff` 新增 `repairs` 與 `first_failure`（第一次失敗的原因），讓主對話收工時看得到「第一次哪裡做錯」。
+- 開工前查 `AGENT_LEARNINGS.md` 改寫進[全域提示詞範本](docs/AGENT-INSTRUCTIONS.md)，主對話自己做的任務也會查；`docs/LEARNINGS.md` 說明如何用 `analyze` 的反覆失敗原因當 occurrences 證據。舊 run 的 `repairs` 為 0、`first_failure` 為 null，不需要 migration。
+
 ## [0.19.0] - 2026-10-01
 
 ### 新功能

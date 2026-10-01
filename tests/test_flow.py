@@ -205,6 +205,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual([a["role"] for a in run["agents"]], ["coder", "reviewer"])
         self.assertEqual(core.handoff(self.repo, run)["coder_notes"], "Done")
         self.assertEqual(core.handoff(self.repo, run)["learning_candidates"], [])
+        self.assertEqual((core.handoff(self.repo, run)["repairs"], core.handoff(self.repo, run)["first_failure"]), (0, None))
         self.assertEqual(run["maf_version"], maf.__version__)
         self.assertEqual([(a["role"], a["runtime"], a["cache_hit"], a["input_tokens"]) for a in core.handoff(self.repo, run)["agents"]],
                          [("coder", "pi", None, None), ("reviewer", "pi", None, None)])
@@ -417,6 +418,7 @@ class FlowTests(unittest.TestCase):
             core.execute(self.repo, run)
         self.assertEqual(agent.call_count, 1)
         self.assertEqual((run["status"], run["stage"]), ("needs_human", "replan"))
+        self.assertIn("MAF_NEEDS_HUMAN", core.load(self.repo, run["id"])["coder_notes"])
         with self.assertRaisesRegex(core.FlowError, "new approved task"):
             core.resume(self.repo, run["id"], True)
 
@@ -715,7 +717,8 @@ class FlowTests(unittest.TestCase):
                 if name in quota:
                     return {"status": "quota", "text": "", "session_id": None, "usage": None, "detail": "usage limit"}
                 if name in stuck:
-                    return {"status": "ok", "text": "MAF_NEEDS_HUMAN: requirements conflict", "session_id": "fake",
+                    return {"status": "ok", "text": "MAF_NEEDS_HUMAN: requirements conflict\nLEARNING: spec | cause | fix | docs",
+                            "session_id": "fake",
                             "usage": None, "detail": ""}
                 (cwd / "docs").mkdir(exist_ok=True)
                 (cwd / "docs" / f"{name}.md").write_text("After\n")
@@ -779,6 +782,7 @@ class FlowTests(unittest.TestCase):
         text = progress.render_report(progress.report(self.repo))
         self.assertIn("需要你處理", text)
         self.assertIn("上游無法完成", text)
+        self.assertIn("經驗：spec | cause | fix | docs", text)  # A stuck run's lesson still reaches the report.
         self.assertIn(f"{a['id']}（測試與審查通過） → {b['id']}（卡住） → {c['id']}（卡住）", text)
         self.assertIn(f"等 {x['id']} 完成後自動開始", text)
         self.assertNotIn("可以整合", text)
@@ -1519,6 +1523,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(run["status"], "needs_human")
         self.assertIsNotNone(run["approval"]["approved_at"])
         self.assertEqual(agent.call_count, self.config["max_repairs"] + 1)
+        self.assertIn("exit", run["first_failure"].lower())
 
     def test_test_command_cannot_mutate_verified_tree(self):
         self.task["tests"] = [[sys.executable, "-c", "from pathlib import Path; Path('README.md').write_text('tamper')"]]

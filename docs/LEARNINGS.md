@@ -14,11 +14,15 @@ Coder 只能「提出」：在最後回覆寫 `LEARNING: observation | cause | b
 
 ## 任務開始：只取相關的
 
+不論是自己做還是委派都要查。觸發點寫在全域指令檔（見[讓主對話自動使用 MAF](AGENT-INSTRUCTIONS.md)），因為主對話自己做的任務不會載入 skill。
+
 用任務關鍵字（模組、工具、概念）搜尋，例如 `rg -n -i -C12 'migration|schema' AGENT_LEARNINGS.md`，只把命中且 `Status` 為 `validated`／`candidate` 的條目貼進 task 的 `instructions`。reviewer 會從 TASK 看到它們，並檢查實作有沒有違反。不要整份塞給 worker。
 
 ## 任務結束：Learning review
 
 先問：**事先知道這件事，會不會明顯改善下一次類似任務？**不會就 `NO_ACTION`。typo、偶發 timeout、單次 flaky test、暫時環境問題、程式碼或官方文件已寫明的事，都不記。
+
+失敗是最好的來源：`handoff` 的 `repairs` 與 `first_failure` 會說明第一次為什麼沒通過，`report` 也會把卡住的 run 的 `LEARNING:` 列成「經驗」。`analyze` 排出的反覆失敗原因也算：occurrences 用它的案例數，evidence 寫案例 ID。
 
 只選一個動作：
 

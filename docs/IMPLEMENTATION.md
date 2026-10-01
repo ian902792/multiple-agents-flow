@@ -102,7 +102,8 @@ Task JSON: `id`, `title`, `instructions`, `paths` (explicit relative path/glob a
 boolean `independent` for Pi, Antigravity or Codex delegates.
 Optional `acceptance_why` states the purpose tests must protect; it reaches coder and reviewer via the task JSON.
 `handoff` also returns `coder_notes`, the tail of the coder's final reply ending in `UNVERIFIED:` items, and
-`learning_candidates`, its nonempty `LEARNING:` lines. The coder only proposes them; the main chat curates
+`learning_candidates`, its nonempty `LEARNING:` lines, plus `repairs` and `first_failure` (the first repair's feedback
+tail). A `MAF_NEEDS_HUMAN:` reply is kept in `coder_notes` too, so `report` lists its candidates. The coder only proposes them; the main chat curates
 `AGENT_LEARNINGS.md` and asks the human before promoting one into `AGENTS.md` (docs/LEARNINGS.md).
 Task/config snapshots pin each run. Worktrees and branches are unique; never overwrite/reuse unrelated ones.
 

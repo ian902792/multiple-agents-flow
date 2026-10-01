@@ -271,8 +271,8 @@ new chain from there.
 Target repositories may keep `AGENT_LEARNINGS.md` (format and lifecycle: the tool's
 `docs/LEARNINGS.md`; read it before writing an entry). Before writing a task, `rg` that file
 for the task's modules and concepts and paste only matching `candidate`/`validated` entries
-into `instructions`; never the whole file. After integrating, read `learning_candidates` from
-`handoff` and your own surprises, then take exactly one action: NO_ACTION, CREATE (search
+into `instructions`; never the whole file. After integrating, read `learning_candidates`, `repairs` and `first_failure` from
+`handoff` (or the report's 經驗 lines for stuck runs) and your own surprises, then take exactly one action: NO_ACTION, CREATE (search
 first; no duplicates), UPDATE (occurrences, last verified, evidence), PROPOSE_PROMOTION or
 RETIRE. Most tasks are NO_ACTION. Promotion into `AGENTS.md` always asks the human first and is
 its own commit; never write global rules. Create or commit the file only in the user's own
