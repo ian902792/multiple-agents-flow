@@ -433,7 +433,7 @@ def usage_text(run, head):
 def rows(repo):
     """One row per run, grouped by task id then age. Reads state and local Git only; no lock, no agents."""
     result = []
-    for run in core.list_runs(repo):
+    for run in core.list_runs(repo, others=True):
         if run.get("cleaned_at") or run.get("status") == "cancelled":
             continue  # Integrated and removed by clean, or dropped by a person; history stays in stats.
         try:
@@ -451,7 +451,7 @@ REPORT_ORDER = ("needs_human", "corrupt", "awaiting_approval", "waiting_quota", 
 def report(repo, hours=24):
     """Read-only summary of recent runs for a batch left running unattended: what needs you, chains, what to integrate."""
     since = time.time() - hours * 3600
-    runs = {run["id"]: run for run in core.list_runs(repo)
+    runs = {run["id"]: run for run in core.list_runs(repo, others=True)
             if (run.get("status") == "corrupt" or float(run.get("created_at") or 0) >= since)
             and not run.get("superseded_by") and not run.get("cleaned_at")
             and run.get("status") != "cancelled"}  # Replaced by a retry, integrated and cleaned, or cancelled.
@@ -682,7 +682,7 @@ USAGE_KEYS = ("seconds", "input_tokens", "output_tokens", "cost_usd")
 def stats(repo, days=30):
     """Read-only spend and outcome totals over this repository's runs, for tuning flows and models."""
     since = time.time() - days * 3600 * 24
-    every = core.list_runs(repo)
+    every = core.list_runs(repo, others=True)
     runs = [run for run in every if run.get("status") != "corrupt" and float(run.get("created_at") or 0) >= since]
     # A corrupt run has no readable timestamp or agents; count it as a stop, like report does.
     flows, models = {}, {}

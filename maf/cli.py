@@ -240,7 +240,7 @@ def main(argv=None):
         elif args.action == "status":
             result = core.load(repo, args.run_id) if args.run_id else [
                 {k: run.get(k) for k in ("id", "status", "stage", "repairs", "not_before", "pr_url", "feedback")}
-                for run in core.list_runs(repo)]
+                for run in core.list_runs(repo, others=True)]
         elif args.action == "handoff":
             result = core.handoff(repo, core.load(repo, args.run_id))
         elif args.action == "decide":

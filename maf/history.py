@@ -79,7 +79,7 @@ def analyze(repo, days=30, baseline=None):
                 or any(not isinstance(c, dict) or not isinstance(c.get("run"), str) for c in data["cases"])):
             raise core.FlowError("Baseline must be an analyze JSON snapshot from this repository.")
         prior = {c["run"] for c in data["cases"]}
-    every = core.list_runs(repo)
+    every = core.list_runs(repo, others=True)
     since = time.time() - days * 86400
     runs = [r for r in every if r["id"] not in prior and
             (r.get("status") == "corrupt" or float(r.get("created_at") or 0) >= since)]
