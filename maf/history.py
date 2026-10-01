@@ -5,7 +5,7 @@ import math
 from pathlib import Path
 import time
 
-from . import core, progress
+from . import agents, core, progress
 
 
 def proof(run):
@@ -44,8 +44,12 @@ def causes(run):
         return [("invalid_evidence", "inferred")]
     attempts = run.get("agents") or []
     if attempts and attempts[-1].get("status") != "ok":
+        status = attempts[-1].get("status")
+        # Older adapters saved explicit quota/auth failures as generic errors. Diagnose only; never rewrite state.
+        if status == "error" and isinstance(run.get("feedback"), str):
+            status = agents._classify(run["feedback"])["status"]
         return [({"quota": "quota", "blocked": "authentication", "error": "agent_error"}
-                 .get(attempts[-1].get("status"), "unknown"), "inferred")]
+                 .get(status, "unknown"), "inferred")]
     if not proof(run) and run.get("status") in ("needs_human", "corrupt", "waiting_quota"):
         return [("unknown", "unknown")]
     return []

@@ -11,6 +11,8 @@ python3 flow.py stats --days 30
 
 `stats` 的「正常結束」表示原生 CLI 正常結束，不表示審查通過。原因有三種來源：新 run 記錄的 `recorded`、從舊 run 明確證據推得的 `inferred`、無法確認的 `unknown`。缺少用量仍是未知，不算零。改善優先序按受影響 run 數排列，不能據此排名模型或推定因果。
 
+舊 adapter 曾把額度或登入失敗記為一般 `error`；沒有 recorded 原因時，`analyze` 用保存的失敗 feedback 與現行 adapter 分類器辨識，仍標為 inferred。這只改善診斷，不改原始 run、正常結束率、驗證證據或恢復條件。
+
 ## 一次改善的循環
 
 1. 先保存原始快照；它含本機 repository 路徑與 run ID，留在 Git 私有資料中：
