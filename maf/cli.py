@@ -1,5 +1,6 @@
 """Small, explicit CLI. No hidden network/model calls in init/submit/status."""
 import argparse
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -55,7 +56,8 @@ def parser():
     p.add_argument("--auto-merge", action="store_true", help="Authorize low-risk merge if all policy/GitHub gates pass")
     p.add_argument("--require-approval", action="store_true", help="Hold execution for one plan/scope approval")
     for name in ("delegate", "verify"):
-        p = commands.add_parser(name, help="Queue lightweight work or verify the current main chat's commit")
+        p = commands.add_parser(name, help="Queue lightweight work" if name == "delegate" else
+                                "Test the current commit and return exact-SHA evidence in one command")
         p.add_argument("task", type=Path)
         p.add_argument("--mode", help="Use this mode or named flow for this task only")
         p.add_argument("--require-approval", action="store_true", help="Hold execution for one plan/scope approval")
@@ -244,6 +246,14 @@ def main(argv=None):
                 for run in core.list_runs(repo, others=True)]
         elif args.action == "handoff":
             result = core.handoff(repo, core.load(repo, args.run_id))
+        elif args.action == "verify":
+            with contextlib.redirect_stdout(sys.stderr):
+                result = core.verify(repo, core.read_json(args.task), mode=args.mode, base_ref=args.base,
+                                     require_approval=args.require_approval, main_runtime=args.main, isolated=args.isolated)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            if not result["passed"]:
+                raise SystemExit(2 if result["status"] == "awaiting_approval" else 1)
+            return
         elif args.action == "decide":
             print(plans.render(args.plan_id, plans.decide(repo, args.plan_id, args.number, args.answer)))
             return
@@ -404,10 +414,10 @@ def main(argv=None):
                     elif args.action == "submit":
                         result = core.submit(repo, core.read_json(args.task), args.publish, args.auto_merge, args.mode,
                                              require_approval=args.require_approval, main_runtime=args.main)
-                    elif args.action in ("delegate", "verify"):
-                        result = core.submit(repo, core.read_json(args.task), mode=args.mode, kind=args.action,
-                                             base_ref=getattr(args, "base", None), require_approval=args.require_approval,
-                                             main_runtime=args.main, depends_on=getattr(args, "depends_on", None),
+                    elif args.action == "delegate":
+                        result = core.submit(repo, core.read_json(args.task), mode=args.mode, kind="delegate",
+                                             require_approval=args.require_approval,
+                                             main_runtime=args.main, depends_on=args.depends_on,
                                              isolated=args.isolated)
                     elif args.action == "cancel":
                         result = core.cancel(repo, args.run_id, args.note)

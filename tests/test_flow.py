@@ -768,16 +768,120 @@ class FlowTests(unittest.TestCase):
         task_file = Path(self.config_temp.name) / "verify.json"
         task_file.write_text(json.dumps(self.task))
         output = io.StringIO()
-        with contextlib.redirect_stdout(output):
+        with contextlib.redirect_stdout(output), patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
             cli.main(["--repo", str(self.repo), "verify", str(task_file), "--base", "HEAD^", "--isolated"])
-        run = json.loads(output.getvalue())
+        result = json.loads(output.getvalue())
+        run = core.load(self.repo, result["run"])
         self.assertFalse(core.in_place(run))
         self.assertEqual(Path(run["worktree"]), core.worktrees_for(self.repo) / run["id"])
         (self.repo / "README.md").write_text("Main keeps working\n")
-        with patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
-            core.execute(self.repo, run)
-        self.assertEqual(run["status"], "verified")
+        self.assertEqual(core.handoff(self.repo, run)["status"], "verified")
         self.assertEqual((self.repo / "README.md").read_text(), "Main keeps working\n")
+
+    def verify_cli(self, *args):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        (self.repo / "README.md").write_text("After\n")
+        core.git(self.repo, "commit", "-qam", "Implementation")
+        path = Path(self.config_temp.name) / "verify.json"
+        path.write_text(json.dumps(self.task))
+        return ["--repo", str(self.repo), "verify", str(path), "--base", "HEAD^", *args]
+
+    def test_cli_verify_returns_exact_evidence_and_timings_without_followup_commands(self):
+        argv = self.verify_cli()
+        unrelated = core.submit(self.repo, dict(self.task, id="other-task"))
+        output, errors = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors), \
+                patch.object(core.agents, "run_agent", side_effect=self.fake_agent) as agent:
+            cli.main(argv)
+        result = json.loads(output.getvalue())  # Progress stays on stderr, stdout is one JSON document.
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["status"], "verified")
+        self.assertEqual(result["head_sha"], core.git(self.repo, "rev-parse", "HEAD"))
+        self.assertEqual(agent.call_count, 1)
+        self.assertIn(result["run"], errors.getvalue())
+        self.assertEqual(core.load(self.repo, unrelated["id"])["status"], "queued")
+        timing = result["timings"]
+        self.assertTrue(all(v >= 0 for v in timing.values()))
+        self.assertAlmostEqual(timing["active_seconds"], timing["prepare_seconds"] + timing["execution_seconds"], places=3)
+        self.assertEqual(result["tests"][0]["seconds"], timing["tests_seconds"])
+
+    def test_cli_verify_tests_only_and_plain_worker_exit_without_idle_poll(self):
+        self.config["roles"]["reviewer"]["enabled"] = False
+        core.atomic(self.repo / ".maf.json", self.config)
+        core.confirm_billing(self.repo, self.config)
+        argv = self.verify_cli()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()), \
+                patch.object(core.agents, "run_agent") as agent:
+            cli.main(argv)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["status"], "tested")
+        self.assertEqual(result["timings"]["review_seconds"], 0)
+        self.assertIsNone(result["review"])
+        agent.assert_not_called()
+        queued = core.submit(self.repo, dict(self.task, id="plain-worker"), kind="verify", base_ref="HEAD^")
+        with contextlib.redirect_stdout(io.StringIO()), \
+                patch.object(core, "time", wraps=time) as clock:
+            clock.sleep.side_effect = AssertionError("idle poll after completed work")
+            core.work(self.repo, run_id=queued["id"])
+        self.assertEqual(core.load(self.repo, queued["id"])["status"], "tested")
+
+    def test_cli_verify_approval_stops_before_any_test_or_agent(self):
+        argv = self.verify_cli("--require-approval")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), patch.object(core, "run_tests") as tests, \
+                patch.object(core.agents, "run_agent") as agent, self.assertRaises(SystemExit) as exit:
+            cli.main(argv)
+        self.assertEqual(exit.exception.code, 2)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["status"], "awaiting_approval")
+        self.assertFalse(result["passed"])
+        self.assertIn("approve", result["next"])
+        self.assertTrue(result["approval_reasons"])
+        self.assertEqual(result["timings"]["execution_seconds"], 0)
+        tests.assert_not_called()
+        agent.assert_not_called()
+
+    def test_cli_verify_failure_has_nonzero_exit_and_actionable_cause(self):
+        self.task["tests"] = [[sys.executable, "-c", "assert False, 'acceptance failed'"]]
+        argv = self.verify_cli()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()), \
+                patch.object(core.agents, "run_agent", side_effect=self.fake_agent) as agent, \
+                self.assertRaises(SystemExit) as exit:
+            cli.main(argv)
+        self.assertEqual(exit.exception.code, 1)
+        result = json.loads(output.getvalue())
+        self.assertFalse(result["passed"])
+        self.assertEqual((result["status"], result["stage"]), ("needs_human", "external_fix"))
+        self.assertEqual(result["failure_causes"], [{"kind": "tests_failed", "evidence": "recorded"}])
+        self.assertIn("acceptance failed", result["feedback"])
+        self.assertIn("new SHA", result["next"])
+        self.assertEqual([c.args[0]["access"] for c in agent.call_args_list], ["read"])
+
+    def test_cli_verify_busy_worker_keeps_run_id_and_does_not_start_agents(self):
+        argv = self.verify_cli()
+        output = io.StringIO()
+        with core.worker_exclusive(self.repo), contextlib.redirect_stdout(output), \
+                patch.object(core.agents, "run_agent") as agent, self.assertRaises(SystemExit) as exit:
+            cli.main(argv)
+        self.assertEqual(exit.exception.code, 1)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["status"], "queued")
+        self.assertIn("Another flow worker", result["feedback"])
+        self.assertIn(result["run"], result["next"])
+        self.assertIn("do not submit again", result["next"])
+        self.assertEqual(core.load(self.repo, result["run"])["status"], "queued")
+        agent.assert_not_called()
+
+    def test_unmeasured_timings_stay_unknown(self):
+        timing = core.timings({"agents": [], "tests": [{"duration_seconds": None}]})
+        self.assertIsNone(timing["prepare_seconds"])
+        self.assertIsNone(timing["tests_seconds"])
+        self.assertIsNone(timing["execution_seconds"])
+        self.assertIsNone(timing["active_seconds"])
+        self.assertEqual(timing["review_seconds"], 0)
 
     def test_independent_pi_delegates_overlap_and_allow_new_submission(self):
         self.assertEqual(cli.parser().parse_args(["work", "--run-id", "a", "--run-id", "b"]).run_id, ["a", "b"])
@@ -1400,11 +1504,15 @@ class FlowTests(unittest.TestCase):
             core.execute(self.repo, run)
         self.assertEqual((run["status"], run["stage"], run["tested_sha"]), ("waiting_quota", "reviewing", run["source_sha"]))
         self.assertEqual(run["tests"][0]["exit_code"], 0)
+        before = core.timings(run)
         run["status"] = "queued"  # What a confirmed quota reset does
         with patch.object(core.agents, "run_agent", side_effect=self.fake_agent), \
                 patch.object(core, "run_tests", side_effect=AssertionError("tests rerun")):
             core.execute(self.repo, run)
         self.assertEqual((run["status"], run["reviewed_sha"]), ("verified", run["tested_sha"]))
+        after = core.handoff(self.repo, core.load(self.repo, run["id"]))["timings"]
+        self.assertGreater(after["execution_seconds"], before["execution_seconds"])
+        self.assertEqual(after["tests_seconds"], before["tests_seconds"])
 
     def test_review_format_repair_preserves_original_without_retesting(self):
         run = core.submit(self.repo, self.task)

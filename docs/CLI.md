@@ -26,7 +26,7 @@ python3 "$FLOW" --repo "$TARGET" --main codex mode
 | `plan --from-file FILE`／`plan --schema` | 主對話自己寫的計畫：`--schema` 印出格式，`--from-file` 驗證後存起來並印出摘要，不呼叫任何模型，也沒有第二個模型把關。 |
 | `decide PLAN_ID 題號 答案` | 記下計畫中一個問題的答案；還有未決定的問題時，`night --plan` 不會執行。 |
 | `delegate TASK.json [--isolated] [--depends-on RUN_ID]` | 把明確小任務排給所選 flow 的 Pi／Antigravity／Codex，預設共用目前目錄與分支；回傳 run ID 與狀態。`--isolated` 使用獨立 worktree；加 `--depends-on` 時隔離執行，等上游 `tested` 後從它的 commit 接著做。 |
-| `verify TASK.json [--isolated]` | 在目前目錄排入目前 commit 的測試；若 flow 啟用獨立審查才呼叫 reviewer。`--isolated` 使用獨立 worktree。回傳 run ID 與來源 SHA。 |
+| `verify TASK.json [--isolated]` | 一次完成目前 commit 的測試與已啟用的審查，回傳精確 SHA、結果、耗時與用量；阻塞時回傳 run ID 和下一步。`--isolated` 使用獨立 worktree。 |
 | `submit TASK.json` | 排入獨立 coder 的批次任務；回傳 run ID 與狀態。 |
 | `approve RUN_ID` | 放行一份已檢視的凍結任務範圍；回傳更新後的 run。 |
 | `work [--once] [--run-id ID ...] [--delegate-concurrency N] [--daemon]` | 執行佇列；多個獨立 Pi／Antigravity／Codex 任務預設最多同時 3 個，印出各自階段與結果。沒有任務能自己往下走（都完成或都要人處理）時自動結束，背景執行的主對話會收到完成通知；`--daemon` 才會一直等新任務（Herdr supervisor 用）。 |
@@ -102,11 +102,15 @@ Planner 只回傳建議與私有結果檔，不會自動排隊或執行計畫。
 
 ```sh
 python3 "$FLOW" --repo "$TARGET" verify /private/path/task.json --mode quick
-python3 "$FLOW" --repo "$TARGET" work --once --run-id RUN_ID
-python3 "$FLOW" --repo "$TARGET" handoff RUN_ID
 ```
 
 `verify` 只針對乾淨的目前 HEAD 跑測試，不啟動新 coder。flow 的獨立審查預設關閉；開啟後才會呼叫與主 Agent 不同的 reviewer。Codex 主導且啟用審查時，可用 Claude Opus 5.5。測試通過時，關閉審查的 run 為 `tested`，開啟並通過審查的 run 為 `verified`。預設與 base branch 的共同祖先比較；若直接在 base branch 驗證單一 commit，可明確加 `--base HEAD^`。來源 commit 一旦改變，舊證據不能套用到新 SHA，應重新建立 verify run。
+
+`verify` 會立即執行自己的 run 一次，不消耗其他排隊任務。stdout 是單份 JSON，進度寫到 stderr；成功退出碼為 `0`，等待核准為 `2`，失敗或其他阻塞為 `1`。結果含 `passed`；未通過時依 `next` 處理原 run，不要重複提交。成功結果就是 `handoff`，不必再呼叫 `work` 或 `handoff`。
+
+`timings` 列出準備、測試、審查與執行秒數。準備包含建立任務及執行前檢查、隔離模式的依賴複製；執行包含各次實際處理時間，不包含排隊或等人核准。`active_seconds` 是準備加執行；測試與審查可能並行，不能把兩者相加當總耗時。沒有量測的欄位為 `null`。
+
+開發中只跑相關測試，最終 commit 的完整測試交給一次 `verify`。若同一 SHA 已有成功 handoff，只有 base、路徑範圍、測試 argv、flow 相同，且依賴和相關外部環境確認未變，才沿用；不確定就重驗。MAF 不會只憑 SHA 自動快取。重複失敗先用 `analyze` 查原因。
 
 **委派 Pi／Antigravity／Codex 小任務：**
 
@@ -118,7 +122,7 @@ python3 "$FLOW" --repo "$TARGET" work --once --run-id RUN_ID
 python3 "$FLOW" --repo "$TARGET" handoff RUN_ID
 ```
 
-串行委派由 supervisor 直接在來源分支提交，主 Agent 檢查 diff 與 `handoff`，不必 cherry-pick。同一 SHA 已通過的驗證不必重跑。隔離委派的結果仍須主 Agent 檢查並整合，對新的整合 commit 再執行 `verify`。正式驗收測試由 supervisor 執行；Codex coder 也會先在自己的 sandbox 跑任務測試。
+串行委派由 supervisor 直接在來源分支提交，主 Agent 檢查 diff 與 `handoff`，不必 cherry-pick。沿用驗證須符合上述證據與環境條件。隔離委派的結果仍須主 Agent 檢查並整合，對新的整合 commit 再執行 `verify`。正式驗收測試由 supervisor 執行；Codex coder 也會先在自己的 sandbox 跑任務測試。
 
 ### 多個 Pi／Antigravity／Codex 任務並行
 

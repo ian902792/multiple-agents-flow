@@ -116,7 +116,15 @@ after verification. `clean` never removes a shared source checkout or branch; ca
 Commands: `install-skills`, `settings`, `init`, `mode`, `flows`, `flow-save`, `ui`, `doctor`, `confirm-billing`, `plan`,
 `submit`, `delegate`, `verify`, `approve`, `work`, `status`, `handoff`, `progress`, `resume`, `publish`, `merge`, `herdr`.
 `submit` only queues. `work --once` executes one runnable task or one parallel wave of eligible lightweight
-delegates; with repeated `--run-id`, it drains those IDs once each. `work` polls local state.
+delegates; with repeated `--run-id`, it drains those IDs once each. `work` polls local state, but immediately
+reevaluates the queue after serial execution instead of sleeping once after completion.
+`verify` submits and executes only its new run once through that same worker, then returns passing handoff
+evidence or a compact failure/blocker with `passed: false`, its run ID and actionable `next`. CLI progress
+goes to stderr and stdout contains one JSON result; exit codes are 0 for passing, 2 for approval, 1 otherwise.
+It never implicitly resumes, bypasses approval, drains unrelated work or caches a previous verification.
+`handoff.timings` records preparation and accumulated execution wall time separately, plus test and reviewer
+attempt durations. Active time is preparation + execution; overlapping test/review times are not added.
+Queue and approval waits are excluded; unmeasured historical values stay null.
 `submit --mode NAME` overrides the mode for one task without changing the local default.
 `work --once --run-id ID` processes only that run; repeating `--run-id` names a bounded set without
 consuming other queued tasks. Interrupted stages are never implicitly replayed. `--delegate-concurrency N`

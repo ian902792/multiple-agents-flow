@@ -39,7 +39,7 @@ as a request, never as shell text. With no action, show mode and progress.
 | `setup [MODE]` | Check readiness; optional mode sets a project override. |
 | `mode [MODE\|default]` | Show or persist a project override; `default` restores the global flow. No inference. |
 | `delegate <requirements>` | Give a bounded task to the selected lightweight coder in the current checkout; isolate parallel work. |
-| `verify <requirement>` | Test the main agent's current committed HEAD; independently review only when the selected flow enables it. |
+| `verify <requirement>` | Test committed HEAD and return exact-SHA evidence in one command; review only when the selected flow enables it. |
 | `handoff RUN_ID` | Read a completed run's concise exact-SHA evidence. |
 | `run <requirement>` | Explicit legacy batch run with a separate coder. |
 | `approve RUN_ID` | After the human accepts a frozen task plan, release its one-time execution gate. |
@@ -171,11 +171,19 @@ to another flow unless the user requests it.
   The worker checks the frozen HEAD, branch and clean tree before execution and after verification.
   The reviewer must use a different runtime from the selected flow's main agent. By default it
   compares with the merge-base of the configured base branch. For work on the
-  base branch, pass an exact ancestor with `--base`. Run its ID through
-  `work --once --run-id ID`; `handoff ID` gives the tested SHA and optional review.
+  base branch, pass an exact ancestor with `--base`. The command executes only its new run once and
+  returns the handoff, including timings and `usage_text`; no follow-up `work` or `handoff` is needed.
+  Progress goes to stderr; stdout is one JSON result. Wait for completion without status polling.
   On failure, the main agent fixes the source branch, commits, and starts a new verify
-  run. Resolve any `awaiting_approval` gate before `work`. Never let a delegated coder
+  run. For approval, quota or a busy worker, follow the returned `next` on that same run ID;
+  do not submit a duplicate. Resolve any `awaiting_approval` gate before targeted `work`, then read `handoff`.
+  Never let a delegated coder
   repair an external main-agent commit.
+
+Before repeating verification, use an existing successful handoff only when the exact SHA, base,
+editable scope, test argv and selected flow match, and dependencies and relevant external environment
+are confirmed unchanged. If any of these are unknown or changed, verify again. SHA alone is insufficient;
+MAF does not automatically cache verification. Use `analyze` for recurring failures rather than blindly retrying.
 
 If the coder returns `MAF_NEEDS_HUMAN:` or the reviewer marks a security,
 permission or requirements finding as manual risk, stop and report the concrete
@@ -187,7 +195,7 @@ The review's `notes` are non-blocking doubts that did not trigger a repair; weig
 Reviewers misread code: open each review finding's path:line and confirm it before acting; state a
 one-line reason for any finding you reject.
 
-Only claim completion if `handoff` succeeds for the current exact commit.
+Only claim completion if `verify` returns passing handoff evidence or `handoff` succeeds for the current exact commit.
 When reporting completion, paste `handoff`'s `usage_text` verbatim in a code block; do not reformat,
 round or translate it. It is reference data for tuning later flows. In Claude Code, add the main chat's
 own usage in the same code block from one run of
