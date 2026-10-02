@@ -74,7 +74,8 @@ python3 flow.py --repo /path/to/project --main codex doctor</pre><p><code>doctor
       <tr><td><code>init</code>、<code>mode [NAME|default]</code></td><td>可選專案政策／模式覆寫</td><td>路徑／有效模式與角色</td></tr>
       <tr><td><code>doctor</code>、<code>confirm-billing --no-overage</code></td><td>唯讀檢查／記錄人工訂閱確認</td><td>問題陣列／確認 JSON</td></tr>
       <tr><td><code>plan --goal-file FILE</code></td><td>只讀規畫</td><td>建議與私有結果路徑</td></tr>
-      <tr><td><code>delegate TASK.json</code>、<code>verify TASK.json</code>、<code>submit TASK.json</code></td><td>排入小任務／驗證／批次任務</td><td>run ID 與狀態</td></tr>
+      <tr><td><code>delegate TASK.json</code>、<code>submit TASK.json</code></td><td>排入小任務／批次任務</td><td>run ID 與狀態</td></tr>
+      <tr><td><code>verify TASK.json</code></td><td>一次完成測試與已啟用的審查</td><td>精確 SHA 證據、耗時；阻塞時附下一步</td></tr>
       <tr><td><code>approve RUN_ID</code>、<code>resume RUN_ID</code></td><td>放行／恢復任務</td><td>更新後的 run JSON</td></tr>
       <tr><td><code>work --once --run-id ID</code></td><td>執行指定任務；可重複 ID 並行</td><td>各階段與完成結果</td></tr>
       <tr><td><code>status [RUN_ID]</code>、<code>progress --json</code></td><td>讀取狀態與證據</td><td>run JSON／摘要</td></tr>

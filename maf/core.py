@@ -13,6 +13,7 @@ import fnmatch
 import functools
 import hashlib
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -476,6 +477,7 @@ def approval_reasons(task, config, kind="delegate", require_approval=False):
 
 def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch", base_ref=None,
            require_approval=False, main_runtime="claude", depends_on=None, isolated=False):
+    started = time.monotonic()
     repo = Path(repo).resolve()
     config_hash = digest(config_for(repo))
     mode, config = execution_config(repo, mode, main_runtime)
@@ -540,6 +542,7 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch",
            "status": "creating", "stage": "testing" if kind == "verify" else "coding", "repairs": 0, "created_at": time.time(),
            "publish": bool(publish), "auto_merge": bool(auto_merge), "feedback": "", "agents": [],
            "maf_version": __version__,
+           "prepare_seconds": round(time.monotonic() - started, 3), "execution_seconds": 0,
            # Who started this run, e.g. "runcard:<task id>" set by the launcher; display only
            "origin": os.environ.get("MAF_ORIGIN", "")[:200]}
     if depends_on is not None:
@@ -559,9 +562,11 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch",
             git(repo, "worktree", "add", "-b", branch, str(worktree), source_head)
     except (FlowError, subprocess.SubprocessError, OSError) as exc:
         run.update(status="creating", feedback=f"Worktree creation incomplete: {exc}")
+        run["prepare_seconds"] = round(time.monotonic() - started, 3)
         save(repo, run)
         raise
     run["status"] = "awaiting_approval" if reasons else "queued"
+    run["prepare_seconds"] = round(time.monotonic() - started, 3)
     save(repo, run)
     return run
 
@@ -639,6 +644,20 @@ def learning_candidates(notes):
     return [text for line in lines if line.startswith("LEARNING:") and (text := line[len("LEARNING:"):].strip())]
 
 
+def timings(run):
+    def seconds(items):
+        if items is None:
+            return None
+        values = [item.get("duration_seconds") for item in items]
+        return (round(sum(values), 3) if all(type(v) in (int, float) and math.isfinite(v) and v >= 0 for v in values)
+                else None)
+    prepare, execution = run.get("prepare_seconds"), run.get("execution_seconds")
+    reviewers = None if "agents" not in run else [a for a in run["agents"] if a["role"] == "reviewer"]
+    return {"prepare_seconds": prepare, "tests_seconds": seconds(run.get("tests")),
+            "review_seconds": seconds(reviewers), "execution_seconds": execution,
+            "active_seconds": round(prepare + execution, 3) if prepare is not None and execution is not None else None}
+
+
 def handoff(repo, run):
     from .progress import cache_hit, eligible, spend, usage_text
     if run.get("cleaned_at"):
@@ -647,7 +666,8 @@ def handoff(repo, run):
     return {"run": run["id"], "kind": run.get("kind", "batch"), "status": run["status"],
             "source_sha": run.get("source_sha", run["base_sha"]), "head_sha": head,
             "branch": run["branch"], "paths": changed_paths(run),
-            "tests": [{"argv": item["argv"], "exit_code": item["exit_code"]} for item in run["tests"]],
+            "tests": [{"argv": item["argv"], "exit_code": item["exit_code"], "seconds": item.get("duration_seconds")}
+                      for item in run["tests"]], "timings": timings(run),
             "review": run.get("review") if review_enabled(run["config"]) else None,
             "coder_notes": run.get("coder_notes"), "learning_candidates": learning_candidates(run.get("coder_notes")),
             "repairs": run.get("repairs", 0), "first_failure": run.get("first_failure"),
@@ -1190,6 +1210,7 @@ def finish_review(repo, run, review):
 
 def execute(repo, run, agent_panes=False):
     """One task, at most max_repairs additional passes. No unbounded model loop."""
+    preparing = time.monotonic()
     if (not isinstance(run.get("mode"), str)
             or run["mode"] not in MODES and not re.fullmatch(r"[a-z][a-z0-9-]{0,39}", run["mode"])):
         raise FlowError("Run has no explicit supported mode. Inspect it and submit a new task; do not replay old role routing.")
@@ -1200,6 +1221,17 @@ def execute(repo, run, agent_panes=False):
         raise FlowError("Worktree changed before execution; inspect and submit a new run.")
     if not in_place(run):
         share_dependencies(repo, run)
+    previous = run.get("prepare_seconds")
+    run["prepare_seconds"] = round(previous + time.monotonic() - preparing, 3) if previous is not None else None
+    started, previous = time.monotonic(), run.get("execution_seconds")
+    try:
+        _execute(repo, run, agent_panes)
+    finally:
+        run["execution_seconds"] = round(previous + time.monotonic() - started, 3) if previous is not None else None
+        save(repo, run)
+
+
+def _execute(repo, run, agent_panes):
     directory = run_path(repo, run["id"]).parent
     while run["status"] == "queued":
         if run["stage"] not in ("coding", "testing", "reviewing", "review_format"):
@@ -1568,6 +1600,35 @@ def run_until_settled(repo, run_ids, poll=30):
     return [load(repo, run_id) for run_id in run_ids]
 
 
+def verify(repo, task, mode=None, base_ref=None, require_approval=False, main_runtime="claude", isolated=False):
+    """Submit, execute only this verification once, and return its exact-SHA evidence or actionable stop."""
+    from .history import causes
+    from .progress import diagnostics, clean
+    with exclusive(repo):
+        run = submit(repo, task, mode=mode, kind="verify", base_ref=base_ref,
+                     require_approval=require_approval, main_runtime=main_runtime, isolated=isolated)
+    error = ""
+    try:
+        if run["status"] == "queued":
+            work(repo, once=True, run_id=run["id"])
+        run = load(repo, run["id"])
+        if run["status"] in ("tested", "verified"):
+            return {**handoff(repo, run), "passed": True}
+    except FlowError as exc:
+        error = str(exc)
+        run = load(repo, run["id"])
+    next_step = diagnostics(run)["next"]
+    if run["status"] == "queued":
+        next_step = f"Run work --once --run-id {run['id']} after the active worker finishes; do not submit again."
+    return {"run": run["id"], "kind": "verify", "status": run["status"], "stage": run["stage"],
+            "passed": False, "source_sha": run["source_sha"], "mode": run["mode"],
+            "feedback": clean(error or run.get("feedback", ""), 2000), "next": next_step,
+            "approval_reasons": run["approval"]["reasons"], "timings": timings(run),
+            "tests": [{"argv": t["argv"], "exit_code": t["exit_code"], "seconds": t.get("duration_seconds")}
+                      for t in run.get("tests", [])],
+            "failure_causes": [{"kind": kind, "evidence": evidence} for kind, evidence in causes(run)]}
+
+
 def parallel_lightweight(run):
     """Only an explicitly independent, narrow lightweight handoff can share execution time."""
     return (not in_place(run) and run.get("kind") == "delegate" and run["task"].get("independent") is True
@@ -1660,7 +1721,7 @@ def work(repo, once=False, poll=30, run_id=None, agent_panes=False, delegate_con
                         finally:
                             guard.__exit__(None, None, None)
                         print(f"[{run['id']}] {run['status']}: {run.get('feedback', '')[:500]}", flush=True)
-                elif not once:
+                elif not once and not ran_serial:
                     time.sleep(poll)
         finally:
             # Ctrl-C stops new scheduling but lets active subprocesses reach a safe checkpoint.
