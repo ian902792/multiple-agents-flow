@@ -26,7 +26,7 @@ details{background:#fff;border:1px solid #dce4f0;border-radius:9px;padding:17px 
   <section aria-labelledby="why"><h2 id="why">設計理念</h2><div class="grid">
     <div class="card"><h3>主對話保持短而清楚</h3><p>Claude 或 Codex 處理日常開發與整合；路徑清楚、可單獨驗收的小工作，才交給 Pi 或 Antigravity。獨立任務最多可同時跑三個。</p></div>
     <div class="card"><h3>規畫由你決定</h3><p>大型任務可輸入 <code>/maf-plan</code>（Codex 用 <code>$maf-plan</code>），或由主對話先問你、你同意後啟動，請另一家的強模型規畫：Claude 對話交給 Codex，Codex 對話交給 Claude Opus 5.5 或 Fable 5.1。沒有你的同意不會啟動規畫。</p></div>
-    <div class="card"><h3>證據對準同一個 commit</h3><p>MAF 在獨立 worktree 執行你指定的測試。審查可選：未勾選時結果是 <code>tested</code>；勾選且審查通過才是 <code>verified</code>。</p></div>
+    <div class="card"><h3>證據對準同一個 commit</h3><p>串行委派與驗證預設共用目前目錄，執行期間暫停修改；並行工作或加 <code>--isolated</code> 才使用獨立 worktree。審查可選：未勾選時結果是 <code>tested</code>；勾選且審查通過才是 <code>verified</code>。</p></div>
     <div class="card"><h3>少打擾，仍保留控制權</h3><p>普通小任務在既定範圍內自動往下做；範圍敏感或需求不明時先請你核准一次，風險或權限問題才再次停下。發布與合併要另外授權。</p></div>
   </div></section>
   <section aria-labelledby="start"><h2 id="start">三步開始</h2><div class="steps">

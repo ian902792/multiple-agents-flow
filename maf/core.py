@@ -108,6 +108,10 @@ def worktrees_for(repo):
     return Path(repo).resolve() / ".maf-worktrees"
 
 
+def in_place(run):
+    return Path(run["worktree"]).resolve() == Path(run["repo"]).resolve()
+
+
 @contextlib.contextmanager
 def locked(path, message, wait=False):
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -313,7 +317,8 @@ def approval_scope(run):
     # A chained delegate starts from its dependency's future tested commit, so it binds to that run instead.
     start = ("depends_on",) if run.get("depends_on") else ("base_sha", "source_sha")
     try:
-        return digest({key: run[key] for key in ("task", "config", "mode", "kind", *start, "publish", "auto_merge")})
+        return digest({key: run[key] for key in ("repo", "worktree", "branch", "task", "config", "mode", "kind",
+                                               *start, "publish", "auto_merge")})
     except (KeyError, TypeError, ValueError) as exc:
         raise FlowError("Invalid approval scope; inspect the run and submit a new task.") from exc
 
@@ -413,9 +418,14 @@ def load(repo, run_id):
     run = read_json(run_path(repo, run_id))
     if not isinstance(run, dict) or run.get("id") != run_id or run.get("repo") != str(Path(repo).resolve()):
         raise FlowError("Run identity does not match this repository.")
-    expected = worktrees_for(repo) / run_id
+    expected = Path(repo) if in_place(run) else worktrees_for(repo) / run_id
     if Path(run["worktree"]).resolve() != expected.resolve():
         raise FlowError("Worktree identity mismatch.")
+    if in_place(run) and (run.get("kind") not in ("delegate", "verify")
+                          or run["branch"] != run["source_branch"]
+                          or run.get("publish") or run.get("auto_merge") or run["task"].get("independent")
+                          or run.get("depends_on")):
+        raise FlowError("Invalid shared workspace identity.")
     return run
 
 
@@ -439,7 +449,8 @@ def sibling_run(repo, path):
     try:
         run = read_json(path)
         owner = Path(run["repo"])
-        if run["id"] != path.parent.name or Path(run["worktree"]) != worktrees_for(owner) / run["id"]:
+        expected = owner if in_place(run) else worktrees_for(owner) / run["id"]
+        if run["id"] != path.parent.name or Path(run["worktree"]) != expected:
             return None
         if owner.exists() and git_state_dir(owner) != git_state_dir(Path(repo).resolve()):
             return None
@@ -464,7 +475,7 @@ def approval_reasons(task, config, kind="delegate", require_approval=False):
 
 
 def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch", base_ref=None,
-           require_approval=False, main_runtime="claude", depends_on=None):
+           require_approval=False, main_runtime="claude", depends_on=None, isolated=False):
     repo = Path(repo).resolve()
     config_hash = digest(config_for(repo))
     mode, config = execution_config(repo, mode, main_runtime)
@@ -514,13 +525,15 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch",
     else:
         base = source_head
     run_id = task["id"] + "-" + uuid.uuid4().hex[:10]
-    worktree = worktrees_for(repo) / run_id
-    worktree.parent.mkdir(exist_ok=True, mode=0o700)
-    exclude = root_for(repo).parent / "info" / "exclude"
-    if "/.maf-worktrees/" not in exclude.read_text().splitlines():
-        with exclude.open("a") as stream:
-            stream.write("\n/.maf-worktrees/\n")
-    branch = "maf/" + run_id
+    isolated = isolated or kind == "batch" or task.get("independent", False) or depends_on is not None
+    worktree = worktrees_for(repo) / run_id if isolated else repo
+    branch = "maf/" + run_id if isolated else current_branch
+    if isolated:
+        worktree.parent.mkdir(exist_ok=True, mode=0o700)
+        exclude = root_for(repo).parent / "info" / "exclude"
+        if "/.maf-worktrees/" not in exclude.read_text().splitlines():
+            with exclude.open("a") as stream:
+                stream.write("\n/.maf-worktrees/\n")
     run = {"id": run_id, "repo": str(repo), "worktree": str(worktree), "branch": branch,
            "base_sha": base, "owned_head": source_head, "source_sha": source_head, "source_branch": current_branch,
            "kind": kind, "config": config, "config_hash": config_hash, "mode": mode, "task": task,
@@ -542,7 +555,8 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch",
         return run
     save(repo, run)
     try:
-        git(repo, "worktree", "add", "-b", branch, str(worktree), source_head)
+        if isolated:
+            git(repo, "worktree", "add", "-b", branch, str(worktree), source_head)
     except (FlowError, subprocess.SubprocessError, OSError) as exc:
         run.update(status="creating", feedback=f"Worktree creation incomplete: {exc}")
         save(repo, run)
@@ -590,6 +604,8 @@ def unchanged(repo, run):
         raise FlowError("Configuration changed since submission. Submit a new run; do not silently change policy.")
     if git(run["worktree"], "branch", "--show-current") != run["branch"]:
         raise FlowError("Worktree branch changed.")
+    if git(run["worktree"], "rev-parse", "HEAD") != run["owned_head"]:
+        raise FlowError("Commit history changed outside the supervisor; submit a new run.")
 
 
 def tested(repo, run):
@@ -672,7 +688,8 @@ def cancel(repo, run_id, note=""):
         run["status"] = "cancelled"
         save(repo, run)
     return {"run": run_id, "status": "cancelled", "unintegrated": unintegrated,
-            "next": "clean --apply removes its worktree and branch" + (", discarding the commits above." if unintegrated else ".")}
+            "next": ("Source checkout and branch are retained." if in_place(run) else
+                     "clean --apply removes its worktree and branch" + (", discarding the commits above." if unintegrated else "."))}
 
 
 def orphan_runs(repo):
@@ -691,8 +708,9 @@ def clean(repo, apply=False):
     needed = {run.get("depends_on") for run in runs if run.get("depends_on") and run.get("status") != "cancelled"}
     removable, kept = [], []
     for run in runs:
+        shared = in_place(run)
         worktree, branch = Path(run["worktree"]), run.get("branch") or ""
-        has_branch = bool(branch) and bool(git(repo, "branch", "--list", branch))
+        has_branch = not shared and bool(branch) and bool(git(repo, "branch", "--list", branch))
         # Worktree and branch both gone (removed by hand, or with a card worktree): nothing is left on disk and the run
         # can never progress, so only its recorded commit can show whether the work reached base.
         gone = not worktree.exists() and not has_branch
@@ -709,7 +727,8 @@ def clean(repo, apply=False):
                 kept.append((run, "worktree 與分支都已不在，沒有可比對的 commit"))
                 continue
         else:  # Without the branch (deleted by hand), compare the worktree's HEAD; a missing ref proves nothing.
-            head = git(repo, "rev-parse", branch) if has_branch else git(worktree, "rev-parse", "HEAD")
+            head = ((run.get("tested_sha") or run["owned_head"]) if shared else
+                    git(repo, "rev-parse", branch) if has_branch else git(worktree, "rev-parse", "HEAD"))
         # A stuck verify tested the main agent's own commit; a stuck delegate counts only once its coder committed.
         # Otherwise it may hold a question for the person and must stay visible in report.
         stuck = gone or (run.get("status") == "needs_human" and (run.get("kind") == "verify" or head != run.get("source_sha")))
@@ -722,8 +741,9 @@ def clean(repo, apply=False):
         elif run.get("superseded_by"):
             removable.append((run, f"已被 {run['superseded_by']} 取代"))
         elif run.get("status") == "cancelled":  # A person chose to drop it, unintegrated commits included.
-            lost = (run.get("cancelled") or {}).get("unintegrated") or []
-            removable.append((run, "已取消" + (f"，會捨棄 {len(lost)} 個未整合 commit：" + "；".join(lost) if lost else "")))
+            lost = [] if shared else (run.get("cancelled") or {}).get("unintegrated") or []
+            removable.append((run, "已取消" + ("，來源目錄與分支保留" if shared else
+                              f"，會捨棄 {len(lost)} 個未整合 commit：" + "；".join(lost) if lost else "")))
         elif any(line.startswith("+") for line in git(repo, "cherry", run["config"]["base_branch"], head).splitlines()):
             kept.append((run, f"還沒整合進 {run['config']['base_branch']}"))
         else:
@@ -741,10 +761,11 @@ def clean(repo, apply=False):
                     if fresh.get("updated_at") != run.get("updated_at"):
                         kept.append((fresh, "狀態剛變動，下次再判斷"))
                         continue
-                    if Path(fresh["worktree"]).exists():
-                        git(repo, "worktree", "remove", fresh["worktree"])
-                    if fresh.get("branch") and git(repo, "branch", "--list", fresh["branch"]):
-                        git(repo, "branch", "-D", fresh["branch"])  # Patches are in base, or a retry replaced them.
+                    if not in_place(fresh):  # Shared source checkouts and branches are never owned by clean.
+                        if Path(fresh["worktree"]).exists():
+                            git(repo, "worktree", "remove", fresh["worktree"])
+                        if fresh.get("branch") and git(repo, "branch", "--list", fresh["branch"]):
+                            git(repo, "branch", "-D", fresh["branch"])  # Patches are in base, or a retry replaced them.
                     fresh["cleaned_at"] = time.time()
                     save(repo, fresh)
                     removable.append((fresh, why))
@@ -875,7 +896,7 @@ def run_tests(run, directory, reap=True):
                         "duration_seconds": round(time.time() - run["activity"]["started_at"], 2)})
         if code:
             break
-    if reap:
+    if reap and not in_place(run):
         reap_orphans(run["worktree"])
     return results
 
@@ -944,7 +965,7 @@ def invoke(repo, run, role_name, prompt, agent_panes=False, reap=True, purpose="
         result = agents.run_agent(role, prompt, Path(run["worktree"]), log, run["config"]["agent_timeout"],
                                   **({"live_log": live_log} if pane else {}),
                                   **({"format_only": True} if purpose == "format_repair" else {}))
-    reaped = reap_orphans(run["worktree"]) if reap else []
+    reaped = reap_orphans(run["worktree"]) if reap and not in_place(run) else []
     run["agents"].append({"reaped_orphans": len(reaped),"role": role_name, "runtime": role["runtime"], "model": role["model"],
                           "provider": role["provider"],
                           "usage_scope": "model_calls" if role["runtime"] == "pi" else "provider",
@@ -995,6 +1016,8 @@ def repoint_venv(venv, old, new):
 
 def share_dependencies(repo, run):
     """Give the worktree the main checkout's installed dependencies, unless its manifests or lockfiles differ."""
+    if in_place(run):
+        return
     repo, worktree, shared = Path(repo).resolve(), Path(run["worktree"]), []
     for name, manifests in DEPENDENCY_DIRS.items():
         source, target = repo / name, worktree / name
@@ -1175,7 +1198,8 @@ def execute(repo, run, agent_panes=False):
     unchanged(repo, run)
     if not run["agents"] and not run.get("tests") and git(run["worktree"], "status", "--porcelain"):
         raise FlowError("Worktree changed before execution; inspect and submit a new run.")
-    share_dependencies(repo, run)
+    if not in_place(run):
+        share_dependencies(repo, run)
     directory = run_path(repo, run["id"]).parent
     while run["status"] == "queued":
         if run["stage"] not in ("coding", "testing", "reviewing", "review_format"):
@@ -1205,6 +1229,7 @@ def execute(repo, run, agent_panes=False):
             text = invoke(repo, run, "coder", prompt, agent_panes)
             if git(run["worktree"], "rev-parse", "HEAD") != head_before:
                 raise FlowError("Coder changed commit history. Only the supervisor may commit; inspect manually.")
+            unchanged(repo, run)
             if text is None:
                 return
             if text.lstrip().startswith("MAF_NEEDS_HUMAN:"):
@@ -1237,10 +1262,12 @@ def execute(repo, run, agent_panes=False):
                 run["tests"] = run_tests(run, directory, reap=not early)
                 text = early.result() if early else None
             if early:
-                run["agents"].append({**shadow["agents"][-1], "reaped_orphans": len(reap_orphans(run["worktree"]))})
+                reaped = [] if in_place(run) else reap_orphans(run["worktree"])
+                run["agents"].append({**shadow["agents"][-1], "reaped_orphans": len(reaped)})
                 run["failures"] = shadow.get("failures", run.get("failures", []))
             if head != git(run["worktree"], "rev-parse", "HEAD") or git(run["worktree"], "status", "--porcelain"):
                 raise FlowError("Verification changed tracked files/HEAD or left untracked files; inspect manually.")
+            unchanged(repo, run)
             if any(result["exit_code"] for result in run["tests"]):
                 failure(run, "tests_failed")
                 needs_repair(repo, run, json.dumps([result for result in run["tests"] if result["exit_code"]], ensure_ascii=False))
@@ -1347,7 +1374,7 @@ def resume(repo, run_id, acknowledge=False, after=None):
         raise FlowError("Use --acknowledge-stopped only after confirming the previous agent/test is stopped and state is safe.")
     if run["stage"] in ("tested", "verified", "publishing", "pr", "merging", "merged"):
         raise FlowError("Agent stages already finished. Use publish/merge to reconcile; never replay the reviewer.")
-    if run["status"] == "creating":
+    if run["status"] == "creating" and not in_place(run):
         if digest(config_for(repo)) != run["config_hash"]:
             raise FlowError("Configuration changed; submit a new task.")
         source = run.get("source_sha", run["base_sha"])
@@ -1405,7 +1432,8 @@ def queue_chains(repo, chains, mode=None, main_runtime="claude", approve_all=Fal
     for chain in chains:
         previous = None
         for task in chain:
-            run = submit(repo, task, mode=mode, kind="delegate", main_runtime=main_runtime, depends_on=previous)
+            run = submit(repo, task, mode=mode, kind="delegate", main_runtime=main_runtime,
+                         depends_on=previous, isolated=True)
             if plan_id:
                 run["plan_id"] = plan_id
                 save(repo, run)
@@ -1450,6 +1478,8 @@ def integrate(repo, chains, mode=None, main_runtime="claude", approve_all=False,
         try:
             for index, run in enumerate(runs):
                 eligible(repo, run)
+                if in_place(run):
+                    raise FlowError("Shared workspace commits are already on the source branch; inspect handoff instead.")
                 if index and (run.get("depends_on") != runs[index - 1]["id"]
                               or run["base_sha"] != runs[index - 1]["tested_sha"]):
                     raise FlowError("Chain does not follow its verified dependency commits.")
@@ -1494,7 +1524,8 @@ def retry(repo, run_id, note="", main_runtime="claude"):
         context.append(f"Note from the main chat: {note.strip()}"[:2000])
     task = copy.deepcopy(old["task"])
     task["instructions"] = (task["instructions"] + "\n\n" + "\n".join(context))[-30000:]
-    new = submit(repo, task, mode=old["mode"], kind="delegate", main_runtime=main_runtime, depends_on=old.get("depends_on"))
+    new = submit(repo, task, mode=old["mode"], kind="delegate", main_runtime=main_runtime,
+                 depends_on=old.get("depends_on"), isolated=not in_place(old))
     if old.get("plan_id"):
         new["plan_id"] = old["plan_id"]
         save(repo, new)
@@ -1539,7 +1570,7 @@ def run_until_settled(repo, run_ids, poll=30):
 
 def parallel_lightweight(run):
     """Only an explicitly independent, narrow lightweight handoff can share execution time."""
-    return (run.get("kind") == "delegate" and run["task"].get("independent") is True
+    return (not in_place(run) and run.get("kind") == "delegate" and run["task"].get("independent") is True
             and run["task"]["risk"] != "manual" and not run["approval"]["required"]
             and not run["publish"] and not run["auto_merge"]
             and run["config"]["roles"]["coder"]["runtime"] in LIGHTWEIGHT
