@@ -542,6 +542,8 @@ def submit(repo, task, publish=False, auto_merge=False, mode=None, kind="batch",
            "status": "creating", "stage": "testing" if kind == "verify" else "coding", "repairs": 0, "created_at": time.time(),
            "publish": bool(publish), "auto_merge": bool(auto_merge), "feedback": "", "agents": [],
            "maf_version": __version__,
+           "main_runtime": main_runtime, "environment": {"python": sys.version.split()[0], "platform": sys.platform},
+           "test_attempts": [], "test_history_complete": True, "observations": [],
            "prepare_seconds": round(time.monotonic() - started, 3), "execution_seconds": 0,
            # Who started this run, e.g. "runcard:<task id>" set by the launcher; display only
            "origin": os.environ.get("MAF_ORIGIN", "")[:200]}
@@ -646,14 +648,23 @@ def learning_candidates(notes):
 
 def timings(run):
     def seconds(items):
-        if items is None:
+        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
             return None
         values = [item.get("duration_seconds") for item in items]
         return (round(sum(values), 3) if all(type(v) in (int, float) and math.isfinite(v) and v >= 0 for v in values)
                 else None)
     prepare, execution = run.get("prepare_seconds"), run.get("execution_seconds")
-    reviewers = None if "agents" not in run else [a for a in run["agents"] if a["role"] == "reviewer"]
-    return {"prepare_seconds": prepare, "tests_seconds": seconds(run.get("tests")),
+    if type(prepare) not in (int, float) or not math.isfinite(prepare) or prepare < 0:
+        prepare = None
+    if type(execution) not in (int, float) or not math.isfinite(execution) or execution < 0:
+        execution = None
+    attempts = run.get("agents")
+    known = isinstance(attempts, list) and all(isinstance(a, dict) and a.get("role") in ("coder", "reviewer") for a in attempts)
+    reviewers = [a for a in attempts if a["role"] == "reviewer"] if known else None
+    coders = [a for a in attempts if a["role"] == "coder"] if known else None
+    return {"prepare_seconds": prepare,
+            "tests_seconds": seconds(run.get("test_attempts")) if run.get("test_history_complete") is True else None,
+            "coding_seconds": seconds(coders),
             "review_seconds": seconds(reviewers), "execution_seconds": execution,
             "active_seconds": round(prepare + execution, 3) if prepare is not None and execution is not None else None}
 
@@ -672,6 +683,7 @@ def handoff(repo, run):
             "coder_notes": run.get("coder_notes"), "learning_candidates": learning_candidates(run.get("coder_notes")),
             "repairs": run.get("repairs", 0), "first_failure": run.get("first_failure"),
             "depends_on": run.get("depends_on"),
+            "observations": run.get("observations", []),
             "agents": [{"role": a["role"], "runtime": a["runtime"], "model": a.get("model"),
                         "seconds": a.get("duration_seconds"), "cache_hit": cache_hit(a.get("usage")), **spend(a.get("usage"))}
                        for a in run.get("agents", [])],
@@ -892,8 +904,9 @@ def reap_orphans(folder):
 
 def run_tests(run, directory, reap=True):
     results = []
+    head = git(run["worktree"], "rev-parse", "HEAD")
     for index, argv in enumerate(run["task"]["tests"]):
-        path = directory / f"test-{run['repairs']}-{index}.log"
+        path = directory / f"test-{len(run.get('test_attempts', []))}.log"
         run["activity"] = {"label": f"test {index + 1}/{len(run['task']['tests'])}: {argv[0]}",
                            "started_at": time.time(), "timeout": run["config"]["test_timeout"], "log": str(path)}
         save(run["repo"], run)
@@ -912,8 +925,13 @@ def run_tests(run, directory, reap=True):
                 raise
             reap_group(proc)
         tail = path.read_text(errors="replace")[-6000:]
-        results.append({"argv": argv, "exit_code": code, "log": str(path), "tail": tail,
-                        "duration_seconds": round(time.time() - run["activity"]["started_at"], 2)})
+        result = {"argv": argv, "exit_code": code, "log": str(path), "tail": tail,
+                  "duration_seconds": round(time.time() - run["activity"]["started_at"], 2)}
+        results.append(result)
+        run.setdefault("test_attempts", []).append({**copy.deepcopy(result), "head_sha": head,
+                                                   "repair": run["repairs"],
+                                                   "started_at": run["activity"]["started_at"]})
+        save(run["repo"], run)  # Keep failed commands and their logs when a repair replaces final evidence.
         if code:
             break
     if reap and not in_place(run):
@@ -988,6 +1006,8 @@ def invoke(repo, run, role_name, prompt, agent_panes=False, reap=True, purpose="
     reaped = reap_orphans(run["worktree"]) if reap and not in_place(run) else []
     run["agents"].append({"reaped_orphans": len(reaped),"role": role_name, "runtime": role["runtime"], "model": role["model"],
                           "provider": role["provider"],
+                          "started_at": run["activity"]["started_at"], "head_sha": run["owned_head"],
+                          "prompt_bytes": len(prompt.encode()), "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
                           "usage_scope": "model_calls" if role["runtime"] == "pi" else "provider",
                           "duration_seconds": round(time.time() - run["activity"]["started_at"], 2),
                           "session_id": result.get("session_id"), "usage": result.get("usage"),
@@ -1600,16 +1620,19 @@ def run_until_settled(repo, run_ids, poll=30):
     return [load(repo, run_id) for run_id in run_ids]
 
 
-def verify(repo, task, mode=None, base_ref=None, require_approval=False, main_runtime="claude", isolated=False):
-    """Submit, execute only this verification once, and return its exact-SHA evidence or actionable stop."""
+def run_task(repo, task, kind, mode=None, base_ref=None, require_approval=False, main_runtime="claude",
+             isolated=False, depends_on=None):
+    """Complete one bounded delegate/verification through the existing worker; never drain unrelated work."""
     from .history import causes
     from .progress import diagnostics, clean
+    if kind not in ("delegate", "verify"):
+        raise FlowError("One-command execution requires delegate or verify.")
     with exclusive(repo):
-        run = submit(repo, task, mode=mode, kind="verify", base_ref=base_ref,
+        run = submit(repo, task, mode=mode, kind=kind, base_ref=base_ref, depends_on=depends_on,
                      require_approval=require_approval, main_runtime=main_runtime, isolated=isolated)
     error = ""
     try:
-        if run["status"] == "queued":
+        if run["status"] in ("queued", "waiting_dependency"):
             work(repo, once=True, run_id=run["id"])
         run = load(repo, run["id"])
         if run["status"] in ("tested", "verified"):
@@ -1620,10 +1643,11 @@ def verify(repo, task, mode=None, base_ref=None, require_approval=False, main_ru
     next_step = diagnostics(run)["next"]
     if run["status"] == "queued":
         next_step = f"Run work --once --run-id {run['id']} after the active worker finishes; do not submit again."
-    return {"run": run["id"], "kind": "verify", "status": run["status"], "stage": run["stage"],
+    return {"run": run["id"], "kind": kind, "status": run["status"], "stage": run["stage"],
             "passed": False, "source_sha": run["source_sha"], "mode": run["mode"],
             "feedback": clean(error or run.get("feedback", ""), 2000), "next": next_step,
             "approval_reasons": run["approval"]["reasons"], "timings": timings(run),
+            "observations": run.get("observations", []),
             "tests": [{"argv": t["argv"], "exit_code": t["exit_code"], "seconds": t.get("duration_seconds")}
                       for t in run.get("tests", [])],
             "failure_causes": [{"kind": kind, "evidence": evidence} for kind, evidence in causes(run)]}

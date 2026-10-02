@@ -1,17 +1,12 @@
 """Attributed main-chat measurements. Historical observations only: recording never changes eligibility,
 verification status, approvals, tests or configuration, and it never aggregates session level usage into a
 run's task totals. No model is called and no provider data is read."""
-from __future__ import annotations
-
 import copy
 import math
-import re
 import time
 
-from . import core
+from . import core, progress
 
-# Same control set as progress.CONTROL: C0/C1, DEL and the Unicode line/paragraph separators.
-CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 STRINGS = (("experiment", 80), ("case", 80), ("source", 200))
 REQUIRED = ("experiment", "case", "strategy", "main_runtime", "source", "scope")
 TOKENS = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
@@ -23,7 +18,7 @@ SCOPES = ("task", "session")
 
 def _string(data, key, limit):
     value = data.get(key)
-    if not isinstance(value, str) or not value.strip() or len(value) > limit or CONTROL.search(value):
+    if not isinstance(value, str) or not value.strip() or len(value) > limit or progress.CONTROL.search(value):
         raise core.FlowError(f"{key} must be a nonempty string of at most {limit} characters without control characters.")
     return value
 
@@ -39,7 +34,7 @@ def _count(value, key):
 def _seconds(value):
     if value is None:
         return None
-    if type(value) not in (int, float) or not math.isfinite(value) or value < 0:  # bool is not in (int, float).
+    if type(value) not in (int, float) or value < 0 or type(value) is float and not math.isfinite(value):
         raise core.FlowError("seconds must be a finite nonnegative number or null.")
     return value
 
@@ -86,7 +81,7 @@ def record(repo, run_id, data):
         previous = run.get("observations")
         if previous is None:
             previous = []
-        elif not isinstance(previous, list):
+        elif not isinstance(previous, list) or any(not isinstance(entry, dict) for entry in previous):
             raise core.FlowError("Saved run observations are corrupt; refusing to overwrite them.")
         entry = copy.deepcopy(observation)
         entry["recorded_at"] = time.time()

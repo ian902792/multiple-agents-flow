@@ -56,7 +56,7 @@ def parser():
     p.add_argument("--auto-merge", action="store_true", help="Authorize low-risk merge if all policy/GitHub gates pass")
     p.add_argument("--require-approval", action="store_true", help="Hold execution for one plan/scope approval")
     for name in ("delegate", "verify"):
-        p = commands.add_parser(name, help="Queue lightweight work" if name == "delegate" else
+        p = commands.add_parser(name, help="Complete lightweight implementation, tests and bounded repairs" if name == "delegate" else
                                 "Test the current commit and return exact-SHA evidence in one command")
         p.add_argument("task", type=Path)
         p.add_argument("--mode", help="Use this mode or named flow for this task only")
@@ -65,6 +65,7 @@ def parser():
         if name == "verify":
             p.add_argument("--base", help="Exact ancestor ref to compare with HEAD; default is merge-base with base branch")
         else:
+            p.add_argument("--queue", action="store_true", help="Only queue this delegate for a batch or existing supervisor")
             p.add_argument("--depends-on", metavar="RUN_ID",
                            help="Start from this delegate run's tested commit once it finishes (chains unattended work)")
     p = commands.add_parser("work", help="Process queued work; waits consume no model tokens")
@@ -85,6 +86,9 @@ def parser():
     p.add_argument("run_id")
     p = commands.add_parser("handoff", help="Show compact, exact-SHA evidence for a verified run")
     p.add_argument("run_id")
+    p = commands.add_parser("observe", help="Append attributed main-chat measurements to private run history; no model calls")
+    p.add_argument("run_id")
+    p.add_argument("file", type=Path, help="Private JSON with experiment/case, strategy, source, scope and observed main usage")
     p = commands.add_parser("progress", help="Read-only terminal summary of every run; no lock, no model calls")
     p.add_argument("--watch", action="store_true", help="Keep polling and print only when the summary changes; Ctrl-C exits")
     p.add_argument("--poll", type=int, default=5)
@@ -246,14 +250,18 @@ def main(argv=None):
                 for run in core.list_runs(repo, others=True)]
         elif args.action == "handoff":
             result = core.handoff(repo, core.load(repo, args.run_id))
-        elif args.action == "verify":
+        elif args.action == "verify" or args.action == "delegate" and not args.queue:
+            options = {"base_ref": args.base} if args.action == "verify" else {"depends_on": args.depends_on}
             with contextlib.redirect_stdout(sys.stderr):
-                result = core.verify(repo, core.read_json(args.task), mode=args.mode, base_ref=args.base,
-                                     require_approval=args.require_approval, main_runtime=args.main, isolated=args.isolated)
+                result = core.run_task(repo, core.read_json(args.task), kind=args.action, mode=args.mode, **options,
+                                      require_approval=args.require_approval, main_runtime=args.main, isolated=args.isolated)
             print(json.dumps(result, ensure_ascii=False, indent=2))
             if not result["passed"]:
                 raise SystemExit(2 if result["status"] == "awaiting_approval" else 1)
             return
+        elif args.action == "observe":
+            from . import measurements
+            result = measurements.record(repo, args.run_id, core.read_json(args.file))
         elif args.action == "decide":
             print(plans.render(args.plan_id, plans.decide(repo, args.plan_id, args.number, args.answer)))
             return

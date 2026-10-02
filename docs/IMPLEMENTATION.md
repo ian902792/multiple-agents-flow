@@ -115,16 +115,25 @@ after verification. `clean` never removes a shared source checkout or branch; ca
 
 Commands: `install-skills`, `settings`, `init`, `mode`, `flows`, `flow-save`, `ui`, `doctor`, `confirm-billing`, `plan`,
 `submit`, `delegate`, `verify`, `approve`, `work`, `status`, `handoff`, `progress`, `resume`, `publish`, `merge`, `herdr`.
-`submit` only queues. `work --once` executes one runnable task or one parallel wave of eligible lightweight
+`submit` and `delegate --queue` only queue. `work --once` executes one runnable task or one parallel wave of eligible lightweight
 delegates; with repeated `--run-id`, it drains those IDs once each. `work` polls local state, but immediately
 reevaluates the queue after serial execution instead of sleeping once after completion.
-`verify` submits and executes only its new run once through that same worker, then returns passing handoff
+`delegate` and `verify` submit and execute only their new run once through that same worker, then return passing handoff
 evidence or a compact failure/blocker with `passed: false`, its run ID and actionable `next`. CLI progress
 goes to stderr and stdout contains one JSON result; exit codes are 0 for passing, 2 for approval, 1 otherwise.
 It never implicitly resumes, bypasses approval, drains unrelated work or caches a previous verification.
-`handoff.timings` records preparation and accumulated execution wall time separately, plus test and reviewer
+`handoff.timings` records preparation and accumulated execution wall time separately, plus coder, test and reviewer
 attempt durations. Active time is preparation + execution; overlapping test/review times are not added.
 Queue and approval waits are excluded; unmeasured historical values stay null.
+New runs record main runtime and Python/platform alongside the task/config snapshots. Completed test commands
+append to `test_attempts` with SHA, repair round, start time, duration and exit code; each uses a unique private
+log, so reruns and repairs cannot overwrite earlier failures. `tests` remains the final acceptance evidence.
+Agent attempts retain start time, SHA and request bytes/hash alongside native usage; bytes are not token counts.
+`observe RUN_ID FILE` appends validated, attributed main-chat observations under repository/run locks, including
+on cleaned runs. Unknown values stay null; task/session scope, experiment/case, strategy and source are explicit.
+Observations do not affect approval, status or eligibility and are never added to child usage. `analyze --json`
+exports observations, environment, per-attempt metrics and complete-test-history flags without logs/transcripts;
+partial/older history remains unknown. Cleanup keeps these state files and logs.
 `submit --mode NAME` overrides the mode for one task without changing the local default.
 `work --once --run-id ID` processes only that run; repeating `--run-id` names a bounded set without
 consuming other queued tasks. Interrupted stages are never implicitly replayed. `--delegate-concurrency N`

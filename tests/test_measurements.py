@@ -101,6 +101,10 @@ class MeasurementTests(unittest.TestCase):
             self.record(observation())
         self.assertIsNone(self.saved)
         self.assertEqual(self.state, before)
+        self.state["observations"] = [None]
+        with self.assertRaisesRegex(core.FlowError, "corrupt"):
+            self.record(observation())
+        self.assertIsNone(self.saved)
 
     def test_invalid_inputs_leave_state_unchanged(self):
         too_long = "x" * 81
@@ -148,6 +152,7 @@ class MeasurementTests(unittest.TestCase):
         first["experiment"] = "changed"
         self.assertEqual(data["experiment"], "exp-1")
         self.assertEqual(second["experiment"], "exp-1")
+        self.assertEqual(measurements.validate(observation(seconds=10 ** 400))["seconds"], 10 ** 400)
 
 
 if __name__ == "__main__":

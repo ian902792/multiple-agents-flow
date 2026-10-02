@@ -25,7 +25,7 @@ python3 "$FLOW" --repo "$TARGET" --main codex mode
 | `plan --goal-file FILE [--mode NAME]` | 只讀規畫：規畫者交回結構化計畫，MAF 驗證後存在私人目錄並印出計畫 ID 與中文摘要；不排入任務。 |
 | `plan --from-file FILE`／`plan --schema` | 主對話自己寫的計畫：`--schema` 印出格式，`--from-file` 驗證後存起來並印出摘要，不呼叫任何模型，也沒有第二個模型把關。 |
 | `decide PLAN_ID 題號 答案` | 記下計畫中一個問題的答案；還有未決定的問題時，`night --plan` 不會執行。 |
-| `delegate TASK.json [--isolated] [--depends-on RUN_ID]` | 把明確小任務排給所選 flow 的 Pi／Antigravity／Codex，預設共用目前目錄與分支；回傳 run ID 與狀態。`--isolated` 使用獨立 worktree；加 `--depends-on` 時隔離執行，等上游 `tested` 後從它的 commit 接著做。 |
+| `delegate TASK.json [--queue] [--isolated] [--depends-on RUN_ID]` | 一次完成限定範圍的實作、測試、修復與已啟用審查，回傳精確 SHA 與 handoff；`--queue` 才只排隊。預設共用目前目錄與分支，`--isolated` 使用獨立 worktree；依賴任務隔離執行。 |
 | `verify TASK.json [--isolated]` | 一次完成目前 commit 的測試與已啟用的審查，回傳精確 SHA、結果、耗時與用量；阻塞時回傳 run ID 和下一步。`--isolated` 使用獨立 worktree。 |
 | `submit TASK.json` | 排入獨立 coder 的批次任務；回傳 run ID 與狀態。 |
 | `approve RUN_ID` | 放行一份已檢視的凍結任務範圍；回傳更新後的 run。 |
@@ -38,6 +38,7 @@ python3 "$FLOW" --repo "$TARGET" --main codex mode
 | `clean [--apply] [--json]` | 列出可以刪除的 worktree 與 `maf/*` branch，加 `--apply` 才刪除。可以刪的是：已完成且內容已在 base branch 的 run（用 `git cherry` 比對）、已被 retry 取代的 run，以及卡住但要驗的 commit 或 coder 的 commit 已在 base 的 run。其餘都保留：進行中、未整合、有未提交改動、還有後續任務依賴，或卡住時 coder 還沒 commit（可能在問你問題）。送出 run 的 worktree（例如卡片 worktree）已被刪掉時，從主 checkout 或同 repo 的其他 worktree 執行也會接手它的 run；還在的 worktree 的 run 仍由它自己清。run 紀錄保留給 `stats`。 |
 | `stats [--days N] [--json]` | 按 flow、角色及模型統計耗時、token、花費與快取。「正常結束」是 native_ok_rate，表示 CLI 正常結束，並非審查通過或準確率。缺少資料不算 0；唯讀、不啟動 agent。 |
 | `analyze [--days N] [--baseline FILE] [--json]` | 分析本機歷史案例，列出可追溯的失敗原因、改善優先序與每件成果的花費，分開 verify/delegate 並合併明確相連的 retry。baseline 是同 repo 的先前 analyze JSON，排除已看過的 run。唯讀、不讀 transcript、不呼叫模型；[持續改善流程](IMPROVEMENT.md)。 |
+| `observe RUN_ID FILE.json` | 追加有來源與範圍標記的主對話量測，綁定 run SHA，保存於私有歷史；未知值留 null，不改驗證狀態、不呼叫模型。清理過的 run 也能記錄。 |
 | `report [--hours N] [--json]` | 無人看管批次的中文總結：需要你處理的、仍在等待的、已完成的，依賴鏈進度，以及可直接整合的 commit 範圍。見[一晚跑一批任務](OVERNIGHT.md)。 |
 | `handoff RUN_ID` | 完成任務的精確 SHA、測試與可選審查摘要，以及各次 agent 呼叫的快取命中率。 |
 | `resume RUN_ID` | 診斷中斷後明確恢復；回傳更新後的 run。 |
@@ -118,9 +119,9 @@ python3 "$FLOW" --repo "$TARGET" verify /private/path/task.json --mode quick
 
 ```sh
 python3 "$FLOW" --repo "$TARGET" delegate /private/path/task.json
-python3 "$FLOW" --repo "$TARGET" work --once --run-id RUN_ID
-python3 "$FLOW" --repo "$TARGET" handoff RUN_ID
 ```
+
+`delegate` 讓 coder 在核准的模組範圍內自行讀檔定位、完成實作；supervisor 跑測試，失敗時在原修復預算內直接回饋 coder。主對話只需驗收 scoped diff、`coder_notes` 與最終證據。它與 `verify` 使用相同的 JSON／退出碼規則，不消耗其他排隊任務；需人工處理時依 `next` 操作原 run。
 
 串行委派由 supervisor 直接在來源分支提交，主 Agent 檢查 diff 與 `handoff`，不必 cherry-pick。沿用驗證須符合上述證據與環境條件。隔離委派的結果仍須主 Agent 檢查並整合，對新的整合 commit 再執行 `verify`。正式驗收測試由 supervisor 執行；Codex coder 也會先在自己的 sandbox 跑任務測試。
 
@@ -135,9 +136,9 @@ python3 "$FLOW" --repo "$TARGET" handoff RUN_ID
 第二、三份分別只修改 `docs/faq.md` 與 `docs/troubleshooting.md`，並各用自己的測試檢查。儲存為三份私人 JSON 後：
 
 ```sh
-python3 "$FLOW" --repo "$TARGET" delegate /private/path/install.json
-python3 "$FLOW" --repo "$TARGET" delegate /private/path/faq.json
-python3 "$FLOW" --repo "$TARGET" delegate /private/path/troubleshooting.json
+python3 "$FLOW" --repo "$TARGET" delegate /private/path/install.json --queue
+python3 "$FLOW" --repo "$TARGET" delegate /private/path/faq.json --queue
+python3 "$FLOW" --repo "$TARGET" delegate /private/path/troubleshooting.json --queue
 python3 "$FLOW" --repo "$TARGET" work --once --run-id INSTALL_RUN_ID --run-id FAQ_RUN_ID --run-id TROUBLESHOOTING_RUN_ID
 python3 "$FLOW" --repo "$TARGET" handoff INSTALL_RUN_ID
 python3 "$FLOW" --repo "$TARGET" handoff FAQ_RUN_ID
