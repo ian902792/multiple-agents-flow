@@ -677,9 +677,29 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(len(core.git(self.repo, "worktree", "list", "--porcelain").split("worktree ")) - 1, 1)
         self.assertEqual(core.clean(self.repo, apply=True)["removed"], [])
         core.cancel(self.repo, run["id"])
-        self.assertEqual(core.clean(self.repo, apply=True)["removed"], [])
+        self.assertEqual(core.clean(self.repo, apply=True)["removed"],
+                         [{"run": run["id"], "reason": "已取消，來源目錄與分支保留"}])
         self.assertTrue((self.repo / "README.md").exists())
         self.assertEqual(core.git(self.repo, "branch", "--show-current"), "feature")
+
+    def test_clean_settles_integrated_shared_runs_without_deleting_source(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        core.git(self.repo, "switch", "-c", "feature")
+        (self.repo / "README.md").write_text("After\n")
+        core.git(self.repo, "commit", "-qam", "Implementation")
+        run = core.submit(self.repo, self.task, kind="verify")
+        with patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
+            core.execute(self.repo, run)
+        core.git(self.repo, "switch", "main")
+        core.git(self.repo, "merge", "--no-ff", "-m", "Integrate", "feature")
+        self.assertEqual(core.clean(self.repo, apply=True)["removed"], [{"run": run["id"], "reason": "已在 main"}])
+        self.assertTrue(core.load(self.repo, run["id"])["cleaned_at"])
+        self.assertEqual(core.git(self.repo, "branch", "--show-current"), "main")
+        self.assertEqual(core.git(self.repo, "branch", "--list", "feature"), "  feature")
+        self.assertEqual((self.repo / "README.md").read_text(), "After\n")
+        self.assertEqual(progress.rows(self.repo), [])
+        self.assertEqual(progress.stats(self.repo)["runs"], 1)
 
     def test_shared_delegate_commits_in_source_and_refuses_stale_queued_work(self):
         core.git(self.repo, "add", ".maf.json")

@@ -708,10 +708,9 @@ def clean(repo, apply=False):
     needed = {run.get("depends_on") for run in runs if run.get("depends_on") and run.get("status") != "cancelled"}
     removable, kept = [], []
     for run in runs:
-        if in_place(run):
-            continue  # The source checkout and branch belong to the person, never to clean.
+        shared = in_place(run)
         worktree, branch = Path(run["worktree"]), run.get("branch") or ""
-        has_branch = bool(branch) and bool(git(repo, "branch", "--list", branch))
+        has_branch = not shared and bool(branch) and bool(git(repo, "branch", "--list", branch))
         # Worktree and branch both gone (removed by hand, or with a card worktree): nothing is left on disk and the run
         # can never progress, so only its recorded commit can show whether the work reached base.
         gone = not worktree.exists() and not has_branch
@@ -728,7 +727,8 @@ def clean(repo, apply=False):
                 kept.append((run, "worktree 與分支都已不在，沒有可比對的 commit"))
                 continue
         else:  # Without the branch (deleted by hand), compare the worktree's HEAD; a missing ref proves nothing.
-            head = git(repo, "rev-parse", branch) if has_branch else git(worktree, "rev-parse", "HEAD")
+            head = ((run.get("tested_sha") or run["owned_head"]) if shared else
+                    git(repo, "rev-parse", branch) if has_branch else git(worktree, "rev-parse", "HEAD"))
         # A stuck verify tested the main agent's own commit; a stuck delegate counts only once its coder committed.
         # Otherwise it may hold a question for the person and must stay visible in report.
         stuck = gone or (run.get("status") == "needs_human" and (run.get("kind") == "verify" or head != run.get("source_sha")))
@@ -741,8 +741,9 @@ def clean(repo, apply=False):
         elif run.get("superseded_by"):
             removable.append((run, f"已被 {run['superseded_by']} 取代"))
         elif run.get("status") == "cancelled":  # A person chose to drop it, unintegrated commits included.
-            lost = (run.get("cancelled") or {}).get("unintegrated") or []
-            removable.append((run, "已取消" + (f"，會捨棄 {len(lost)} 個未整合 commit：" + "；".join(lost) if lost else "")))
+            lost = [] if shared else (run.get("cancelled") or {}).get("unintegrated") or []
+            removable.append((run, "已取消" + ("，來源目錄與分支保留" if shared else
+                              f"，會捨棄 {len(lost)} 個未整合 commit：" + "；".join(lost) if lost else "")))
         elif any(line.startswith("+") for line in git(repo, "cherry", run["config"]["base_branch"], head).splitlines()):
             kept.append((run, f"還沒整合進 {run['config']['base_branch']}"))
         else:
@@ -760,10 +761,11 @@ def clean(repo, apply=False):
                     if fresh.get("updated_at") != run.get("updated_at"):
                         kept.append((fresh, "狀態剛變動，下次再判斷"))
                         continue
-                    if Path(fresh["worktree"]).exists():
-                        git(repo, "worktree", "remove", fresh["worktree"])
-                    if fresh.get("branch") and git(repo, "branch", "--list", fresh["branch"]):
-                        git(repo, "branch", "-D", fresh["branch"])  # Patches are in base, or a retry replaced them.
+                    if not in_place(fresh):  # Shared source checkouts and branches are never owned by clean.
+                        if Path(fresh["worktree"]).exists():
+                            git(repo, "worktree", "remove", fresh["worktree"])
+                        if fresh.get("branch") and git(repo, "branch", "--list", fresh["branch"]):
+                            git(repo, "branch", "-D", fresh["branch"])  # Patches are in base, or a retry replaced them.
                     fresh["cleaned_at"] = time.time()
                     save(repo, fresh)
                     removable.append((fresh, why))
