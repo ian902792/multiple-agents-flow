@@ -59,6 +59,7 @@ def parser():
         p.add_argument("task", type=Path)
         p.add_argument("--mode", help="Use this mode or named flow for this task only")
         p.add_argument("--require-approval", action="store_true", help="Hold execution for one plan/scope approval")
+        p.add_argument("--isolated", action="store_true", help="Use a separate worktree so the main checkout stays available")
         if name == "verify":
             p.add_argument("--base", help="Exact ancestor ref to compare with HEAD; default is merge-base with base branch")
         else:
@@ -406,7 +407,8 @@ def main(argv=None):
                     elif args.action in ("delegate", "verify"):
                         result = core.submit(repo, core.read_json(args.task), mode=args.mode, kind=args.action,
                                              base_ref=getattr(args, "base", None), require_approval=args.require_approval,
-                                             main_runtime=args.main, depends_on=getattr(args, "depends_on", None))
+                                             main_runtime=args.main, depends_on=getattr(args, "depends_on", None),
+                                             isolated=args.isolated)
                     elif args.action == "cancel":
                         result = core.cancel(repo, args.run_id, args.note)
                     elif args.action == "retry":

@@ -25,8 +25,8 @@ python3 "$FLOW" --repo "$TARGET" --main codex mode
 | `plan --goal-file FILE [--mode NAME]` | 只讀規畫：規畫者交回結構化計畫，MAF 驗證後存在私人目錄並印出計畫 ID 與中文摘要；不排入任務。 |
 | `plan --from-file FILE`／`plan --schema` | 主對話自己寫的計畫：`--schema` 印出格式，`--from-file` 驗證後存起來並印出摘要，不呼叫任何模型，也沒有第二個模型把關。 |
 | `decide PLAN_ID 題號 答案` | 記下計畫中一個問題的答案；還有未決定的問題時，`night --plan` 不會執行。 |
-| `delegate TASK.json [--depends-on RUN_ID]` | 把明確小任務排給所選 flow 的 Pi／Antigravity／Codex；回傳 run ID 與狀態。加 `--depends-on` 時等該 run `tested` 後，從它測試通過的 commit 接著做。 |
-| `verify TASK.json` | 排入目前 commit 的測試；若 flow 啟用獨立審查才呼叫 reviewer。回傳 run ID 與來源 SHA。 |
+| `delegate TASK.json [--isolated] [--depends-on RUN_ID]` | 把明確小任務排給所選 flow 的 Pi／Antigravity／Codex，預設共用目前目錄與分支；回傳 run ID 與狀態。`--isolated` 使用獨立 worktree；加 `--depends-on` 時隔離執行，等上游 `tested` 後從它的 commit 接著做。 |
+| `verify TASK.json [--isolated]` | 在目前目錄排入目前 commit 的測試；若 flow 啟用獨立審查才呼叫 reviewer。`--isolated` 使用獨立 worktree。回傳 run ID 與來源 SHA。 |
 | `submit TASK.json` | 排入獨立 coder 的批次任務；回傳 run ID 與狀態。 |
 | `approve RUN_ID` | 放行一份已檢視的凍結任務範圍；回傳更新後的 run。 |
 | `work [--once] [--run-id ID ...] [--delegate-concurrency N] [--daemon]` | 執行佇列；多個獨立 Pi／Antigravity／Codex 任務預設最多同時 3 個，印出各自階段與結果。沒有任務能自己往下走（都完成或都要人處理）時自動結束，背景執行的主對話會收到完成通知；`--daemon` 才會一直等新任務（Herdr supervisor 用）。 |
@@ -110,13 +110,15 @@ python3 "$FLOW" --repo "$TARGET" handoff RUN_ID
 
 **委派 Pi／Antigravity／Codex 小任務：**
 
+一般 `verify` 和串行 `delegate` 共用目前目錄，省掉 worktree 建立與依賴複製。執行期間主 Agent 必須暫停修改；MAF 會檢查來源 SHA、分支及檔案狀態，狀態改變就停止，不會 reset 或 stash。需要繼續開發或保留獨立實驗分支時，為 `verify`／`delegate` 加 `--isolated`。標記 `independent: true` 的並行委派、`--depends-on` 和 `night` 批次鏈保留隔離分支，供逐項驗證與整合。
+
 ```sh
 python3 "$FLOW" --repo "$TARGET" delegate /private/path/task.json
 python3 "$FLOW" --repo "$TARGET" work --once --run-id RUN_ID
 python3 "$FLOW" --repo "$TARGET" handoff RUN_ID
 ```
 
-所選小任務 Agent 在獨立 worktree 工作；MAF 不會自動把結果合進主 Agent 的分支。主 Agent 檢查並整合後，對新的整合 commit 再執行 `verify`。Agent 不負責執行 shell 驗收測試；測試由 supervisor 執行。
+串行委派由 supervisor 直接在來源分支提交，主 Agent 檢查 diff 與 `handoff`，不必 cherry-pick。同一 SHA 已通過的驗證不必重跑。隔離委派的結果仍須主 Agent 檢查並整合，對新的整合 commit 再執行 `verify`。正式驗收測試由 supervisor 執行；Codex coder 也會先在自己的 sandbox 跑任務測試。
 
 ### 多個 Pi／Antigravity／Codex 任務並行
 
@@ -205,4 +207,4 @@ python3 "$FLOW" --repo "$TARGET" submit /private/path/task.json --publish --auto
 
 Codex coder（`quick-codex`）使用 `codex exec -s workspace-write`，預設模型 `gpt-6-luna`、推理 `none`（Luna 支援 none／low／medium／high／xhigh／max，不支援 minimal），走 ChatGPT 登入。Antigravity coder 預設使用 `agy --model gemini-3.8-flash-low --effort low`；每個強度是不同的模型 ID（`-low`／`-medium`／`-high`），兩者必須一致，模型清單可用 `agy models` 查看。MAF 只接受 Google 帳號登入，不允許 `modelProvider: gemini` 的 API key 路由或預先放行工具；使用 CLI sandbox 與 headless `request-review` 權限，且只讓 Antigravity 擔任可編輯 coder。這個 CLI 沒有像 Pi 一樣的工具白名單；請只在信任的 repository 使用，正式測試仍由 MAF supervisor 執行。登入、額度或模型可用性不明時停止，不自動換模型。
 
-Run 狀態、agent log、測試證據存在目標 repo 的 Git common directory 下 `maf/`，不進 Git；工作樹在 `.maf-worktrees/`。全域 flow、設定與角色模型確認存在使用者設定目錄，不進 Git。Log 可能含程式片段或敏感資訊，分享前先檢查。不要提交 token、個人設定或完整 transcript。
+Run 狀態、agent log、測試證據存在目標 repo 的 Git common directory 下 `maf/`，不進 Git；隔離工作樹在 `.maf-worktrees/`，串行工作使用來源目錄。`clean --apply` 和取消任務都不會刪除共用的來源目錄或分支。全域 flow、設定與角色模型確認存在使用者設定目錄，不進 Git。Log 可能含程式片段或敏感資訊，分享前先檢查。不要提交 token、個人設定或完整 transcript。

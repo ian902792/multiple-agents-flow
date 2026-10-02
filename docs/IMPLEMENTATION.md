@@ -105,7 +105,13 @@ Optional `acceptance_why` states the purpose tests must protect; it reaches code
 `learning_candidates`, its nonempty `LEARNING:` lines, plus `repairs` and `first_failure` (the first repair's feedback
 tail). A `MAF_NEEDS_HUMAN:` reply is kept in `coder_notes` too, so `report` lists its candidates. The coder only proposes them; the main chat curates
 `AGENT_LEARNINGS.md` and asks the human before promoting one into `AGENTS.md` (docs/LEARNINGS.md).
-Task/config snapshots pin each run. Worktrees and branches are unique; never overwrite/reuse unrelated ones.
+Task/config snapshots pin each run. Serial `delegate` and `verify` use the clean source checkout and source branch
+by default; the main agent must pause edits until completion. `--isolated`, `independent: true`, dependent runs,
+`night` chains and legacy batch submissions use unique worktrees and branches. This preserves separate batch
+results for explicit integration. Never overwrite/reuse unrelated worktrees.
+Shared runs skip dependency copying and directory-wide orphan sweeps (owned subprocess groups are still reaped).
+The worker rejects a moved HEAD, changed branch or dirty initial tree, and checks HEAD/branch/cleanliness again
+after verification. `clean` never removes a shared source checkout or branch; cancellation only records state.
 
 Commands: `install-skills`, `settings`, `init`, `mode`, `flows`, `flow-save`, `ui`, `doctor`, `confirm-billing`, `plan`,
 `submit`, `delegate`, `verify`, `approve`, `work`, `status`, `handoff`, `progress`, `resume`, `publish`, `merge`, `herdr`.
@@ -132,14 +138,16 @@ plus consent-gated `maf-plan` in both `~/.agents/skills` and `~/.claude/skills`.
 Before its first agent or test, `execute` copies the main checkout's installed `node_modules`, `.venv` or `venv` into the worktree (`share_dependencies`) when the folder is ignored by Git in both checkouts, is absent from the worktree, and every manifest/lockfile that decides its contents is identical in both; the copy is copy-on-write (`cp -c` on macOS, `--reflink=auto` elsewhere, plain `cp -R` fallback), so writes never reach the main checkout, and a venv's absolute paths to the main checkout (bin scripts, `*.pth`, `__editable__*` finders, `direct_url.json`, `pyvenv.cfg`) are rewritten to the worktree so tests import the worktree's code. Only top-level folders are shared. `shared_dependencies` records what was copied.
 
 Execution: awaiting_approval (when required) -> queued -> coding -> testing -> `tested` when review is off, or reviewing -> `verified` when review is on. Publishing requires the latter. A verify run starts its read-only review beside its tests, on the same HEAD and a copy of the run state; the review counts only when every test passes (a failed test still records the reviewer's usage), and a reviewer stopped by quota resumes at reviewing without rerunning the tests. Neither side sweeps orphans while the other runs; one sweep follows both. The review prompt carries the diff plus each changed non-binary, non-deleted file's full text at HEAD, smallest first within `REVIEW_FILES_BUDGET` (200,000 bytes, sized with `git ls-tree -l` before any file is read; the rest are named for the reviewer to read; submodule gitlinks are skipped), and asks for whole-file reads confined to the worktree and the named test logs. That confinement is an instruction, not a sandbox: Pi's read-only tool set limits writes, not which paths it reads. A delegate reviews only after its tests pass, so repair rounds do not pay for discarded reviews. The state directory lookup (`git rev-parse` twice) and the base-branch name check are cached per process; on macOS the orphan sweep reads each process's cwd through libproc instead of lsof.
-The frozen task/config/mode/kind/source SHA/publication flags are hashed at submit. Sensitive/broad edit
+The frozen repository/workspace/branch/task/config/mode/kind/source SHA/publication flags are hashed at submit.
+Runs frozen under an older scope contract cannot execute or hand off under the new contract; inspect their
+existing evidence and submit a new task, without migration or silent changes to isolation. Sensitive/broad edit
 paths, shell tests and manual-risk batch runs wait for `approve RUN_ID`; callers can explicitly request the
 gate for semantic high-risk work. Approval checks the pristine worktree and exact frozen scope once before
 release. The worker ignores pending runs and rechecks the scope hash before execution/publication. Bounded
 repair within that scope needs no new approval. A coder escalation or reviewer manual-risk finding stops
 at `needs_human/replan`; resume cannot silently replay it. A changed scope requires a new run.
-`delegate` snapshots a fully clean current branch HEAD, runs the selected Pi, Antigravity or Codex coder in a new worktree, then tests and optionally reviews
-the resulting commit. It never integrates the result into the source branch. `verify` snapshots a fully clean
+`delegate` snapshots a fully clean current branch HEAD, runs the selected Pi, Antigravity or Codex coder, then tests and optionally reviews
+the resulting commit. A serial delegate commits directly on the source branch; an isolated delegate leaves integration to the main agent. `verify` snapshots a fully clean
 current HEAD, checks the changed paths against an exact base/merge-base, and starts at testing without a coder.
 Failed tests or review of external work stop for Claude to fix and require a new run at the new SHA. `handoff`
 returns compact evidence only after the selected checks and worktree HEAD match; its `review` value is null when review is off.

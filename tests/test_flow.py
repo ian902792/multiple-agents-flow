@@ -135,7 +135,7 @@ class FlowTests(unittest.TestCase):
         core.git(self.repo, "worktree", "add", "-q", "-b", "card", str(card))
         (card / "README.md").write_text("After\n")
         core.git(card, "commit", "-qam", "Card work")
-        run = core.submit(card, self.task, kind="verify", base_ref="HEAD^")  # As the card's main chat does.
+        run = core.submit(card, self.task, kind="verify", base_ref="HEAD^", isolated=True)
         with patch.object(core.agents, "doctor_role", return_value=[]), patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
             core.execute(card, run)
         self.assertEqual(run["status"], "verified")
@@ -655,7 +655,109 @@ class FlowTests(unittest.TestCase):
         self.assertEqual([a["runtime"] for a in delegate["agents"]], ["pi", "codex"])
         self.assertEqual(delegate["source_sha"], source)
         self.assertNotEqual(core.handoff(self.repo, delegate)["head_sha"], source)
-        self.assertEqual(core.git(self.repo, "rev-parse", "HEAD"), source)
+        self.assertEqual(core.git(self.repo, "rev-parse", "HEAD"), delegate["tested_sha"])
+        self.assertEqual(Path(delegate["worktree"]), self.repo.resolve())
+        self.assertEqual(delegate["branch"], "feature")
+
+    def test_shared_verify_reuses_dependencies_without_creating_or_cleaning_worktrees(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        core.git(self.repo, "switch", "-c", "feature")
+        (self.repo / "README.md").write_text("After\n")
+        core.git(self.repo, "commit", "-qam", "Implementation")
+        with patch.object(core, "share_dependencies", side_effect=AssertionError("copied dependencies")), \
+                patch.object(core, "reap_orphans", side_effect=AssertionError("swept the source checkout")), \
+                patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
+            run = core.submit(self.repo, self.task, kind="verify")
+            self.assertEqual(Path(run["worktree"]), self.repo.resolve())
+            self.assertEqual(run["branch"], "feature")
+            self.assertFalse(core.worktrees_for(self.repo).exists())
+            core.execute(self.repo, run)
+        self.assertEqual(core.handoff(self.repo, core.load(self.repo, run["id"]))["head_sha"], run["source_sha"])
+        self.assertEqual(len(core.git(self.repo, "worktree", "list", "--porcelain").split("worktree ")) - 1, 1)
+        self.assertEqual(core.clean(self.repo, apply=True)["removed"], [])
+        core.cancel(self.repo, run["id"])
+        self.assertEqual(core.clean(self.repo, apply=True)["removed"], [])
+        self.assertTrue((self.repo / "README.md").exists())
+        self.assertEqual(core.git(self.repo, "branch", "--show-current"), "feature")
+
+    def test_shared_delegate_commits_in_source_and_refuses_stale_queued_work(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        first = core.submit(self.repo, self.task, kind="delegate")
+        stale = core.submit(self.repo, dict(self.task, id="later-fix"), kind="delegate")
+        with patch.object(core, "share_dependencies", side_effect=AssertionError("copied dependencies")), \
+                patch.object(core, "reap_orphans", side_effect=AssertionError("swept the source checkout")), \
+                patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
+            core.execute(self.repo, first)
+        self.assertEqual(core.handoff(self.repo, first)["head_sha"], core.git(self.repo, "rev-parse", "HEAD"))
+        self.assertEqual((self.repo / "README.md").read_text(), "After\n")
+        with patch.object(core.agents, "run_agent") as agent, self.assertRaisesRegex(core.FlowError, "history changed"):
+            core.execute(self.repo, stale)
+        agent.assert_not_called()
+        picked, skipped, verified = core.integrate(self.repo, [[first["id"]]])
+        self.assertEqual(picked, [])
+        self.assertIn("already on the source branch", skipped[0][1])
+        self.assertIsNone(verified)
+
+    def test_shared_workspace_rejects_changes_before_execution_and_during_verification(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        core.git(self.repo, "switch", "-c", "feature")
+        (self.repo / "README.md").write_text("After\n")
+        core.git(self.repo, "commit", "-qam", "Implementation")
+        run = core.submit(self.repo, self.task, kind="verify")
+        (self.repo / "user-note.md").write_text("Keep this\n")
+        with patch.object(core.agents, "run_agent") as agent, self.assertRaisesRegex(core.FlowError, "changed before execution"):
+            core.execute(self.repo, run)
+        agent.assert_not_called()
+        (self.repo / "user-note.md").unlink()
+        run["task"]["tests"] = [[sys.executable, "-c", "from pathlib import Path; Path('README.md').write_text('Dirty')"]]
+        run["approval"]["scope_hash"] = core.approval_scope(run)
+        with patch.object(core.agents, "run_agent", side_effect=self.fake_agent), \
+                self.assertRaisesRegex(core.FlowError, "Verification changed"):
+            core.execute(self.repo, run)
+        self.assertEqual((self.repo / "README.md").read_text(), "Dirty")  # Never reset somebody's checkout.
+
+    def test_shared_workspace_checks_branch_even_when_sha_is_unchanged(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        run = core.submit(self.repo, self.task, kind="delegate")
+        def agent(role, prompt, cwd, log, timeout):
+            core.git(cwd, "switch", "-c", "other")
+            return self.fake_agent(role, prompt, cwd, log, timeout)
+        with patch.object(core.agents, "run_agent", side_effect=agent), \
+                self.assertRaisesRegex(core.FlowError, "branch changed"):
+            core.execute(self.repo, run)
+        self.assertEqual(core.git(self.repo, "rev-parse", "HEAD"), run["source_sha"])
+
+    def test_isolation_cannot_change_after_scope_is_frozen(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        run = core.submit(self.repo, self.task, kind="delegate", isolated=True)
+        run.update(worktree=str(self.repo.resolve()), branch=run["source_branch"])
+        with patch.object(core.agents, "run_agent") as agent, self.assertRaisesRegex(core.FlowError, "scope"):
+            core.execute(self.repo, run)
+        agent.assert_not_called()
+
+    def test_cli_isolated_verify_keeps_source_available(self):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        (self.repo / "README.md").write_text("After\n")
+        core.git(self.repo, "commit", "-qam", "Implementation")
+        task_file = Path(self.config_temp.name) / "verify.json"
+        task_file.write_text(json.dumps(self.task))
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            cli.main(["--repo", str(self.repo), "verify", str(task_file), "--base", "HEAD^", "--isolated"])
+        run = json.loads(output.getvalue())
+        self.assertFalse(core.in_place(run))
+        self.assertEqual(Path(run["worktree"]), core.worktrees_for(self.repo) / run["id"])
+        (self.repo / "README.md").write_text("Main keeps working\n")
+        with patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
+            core.execute(self.repo, run)
+        self.assertEqual(run["status"], "verified")
+        self.assertEqual((self.repo / "README.md").read_text(), "Main keeps working\n")
 
     def test_independent_pi_delegates_overlap_and_allow_new_submission(self):
         self.assertEqual(cli.parser().parse_args(["work", "--run-id", "a", "--run-id", "b"]).run_id, ["a", "b"])
@@ -745,8 +847,8 @@ class FlowTests(unittest.TestCase):
 
     def night_agent(self, stuck=(), quota=()):
         def agent(role, prompt, cwd, log, timeout):
-            name = cwd.name.split("-")[1]
             if role["access"] == "edit":
+                name = re.search(r'"id": "night-([a-z]+)"', prompt)[1]
                 if name in quota:
                     return {"status": "quota", "text": "", "session_id": None, "usage": None, "detail": "usage limit"}
                 if name in stuck:
@@ -765,10 +867,10 @@ class FlowTests(unittest.TestCase):
     def test_overnight_chain_starts_each_task_from_its_dependency(self):
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")
-        a = core.submit(self.repo, self.night_task("a"), kind="delegate")
+        a = core.submit(self.repo, self.night_task("a"), kind="delegate", isolated=True)
         b = core.submit(self.repo, self.night_task("b", ["a"]), kind="delegate", depends_on=a["id"])
         c = core.submit(self.repo, self.night_task("c", ["a", "b"]), kind="delegate", depends_on=b["id"])
-        d = core.submit(self.repo, self.night_task("d"), kind="delegate")
+        d = core.submit(self.repo, self.night_task("d"), kind="delegate", isolated=True)
         self.assertEqual((b["status"], b["source_sha"]), ("waiting_dependency", None))
         self.assertFalse(Path(b["worktree"]).exists())
         ids = [run["id"] for run in (a, b, c, d)]
@@ -793,10 +895,10 @@ class FlowTests(unittest.TestCase):
     def test_overnight_chain_stops_downstream_but_waits_for_quota(self):
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")
-        a = core.submit(self.repo, self.night_task("a"), kind="delegate")
+        a = core.submit(self.repo, self.night_task("a"), kind="delegate", isolated=True)
         b = core.submit(self.repo, self.night_task("b", ["a"]), kind="delegate", depends_on=a["id"])
         c = core.submit(self.repo, self.night_task("c", ["a", "b"]), kind="delegate", depends_on=b["id"])
-        x = core.submit(self.repo, self.night_task("x"), kind="delegate")
+        x = core.submit(self.repo, self.night_task("x"), kind="delegate", isolated=True)
         y = core.submit(self.repo, self.night_task("y", ["x"]), kind="delegate", depends_on=x["id"])
         ids = [run["id"] for run in (a, b, c, x, y)]
         with patch.object(core.agents, "doctor_role", return_value=[]), \
@@ -1063,7 +1165,7 @@ class FlowTests(unittest.TestCase):
     def test_integrate_rechecks_every_runs_evidence_before_cherry_pick(self):
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")
-        original = self.complete(kind="delegate")
+        original = self.complete(kind="delegate", isolated=True)
         head = core.git(self.repo, "rev-parse", "HEAD")
         for defect in ("test_exit", "test_argv", "tested_sha", "reviewed_sha", "dirty"):
             with self.subTest(defect=defect):
@@ -1087,7 +1189,7 @@ class FlowTests(unittest.TestCase):
                 self.assertEqual((self.repo / "README.md").read_text(), "Before\n")
                 (Path(run["worktree"]) / "README.md").write_text("After\n")
         core.save(self.repo, original)
-        unrelated = self.complete(kind="delegate")
+        unrelated = self.complete(kind="delegate", isolated=True)
         picked, skipped, verify = core.integrate(self.repo, [[original["id"], unrelated["id"]]])
         self.assertEqual(picked, [])
         self.assertIn("dependency commits", skipped[0][1])
@@ -1098,7 +1200,7 @@ class FlowTests(unittest.TestCase):
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")
         self.task["instructions"] = "x" * 30000
-        run = self.complete(kind="delegate")
+        run = self.complete(kind="delegate", isolated=True)
         head = core.git(self.repo, "rev-parse", "HEAD")
         picked, skipped, verify = core.integrate(self.repo, [[run["id"]]])
         self.assertEqual(picked, [])
@@ -1110,7 +1212,7 @@ class FlowTests(unittest.TestCase):
     def test_retry_carries_the_failure_and_moves_dependents(self):
         core.git(self.repo, "add", ".maf.json")
         core.git(self.repo, "commit", "-qm", "Configure MAF")
-        a = core.submit(self.repo, self.night_task("a"), kind="delegate")
+        a = core.submit(self.repo, self.night_task("a"), kind="delegate", isolated=True)
         b = core.submit(self.repo, self.night_task("b", ["a"]), kind="delegate", depends_on=a["id"])
         stuck_once = self.night_agent(stuck={"a"})
         working = self.night_agent()
@@ -1183,7 +1285,7 @@ class FlowTests(unittest.TestCase):
                                f"    if pathlib.Path({str(marker)!r}).exists(): raise SystemExit(0)\n"
                                "    time.sleep(0.05)\nraise SystemExit(1)"]]
         self.task["paths"] = ["README.md", "notes[[]1].md"]  # Task paths are fnmatch patterns
-        run = core.approve(self.repo, core.submit(self.repo, self.task, kind="verify")["id"])  # Wildcards need approval
+        run = core.approve(self.repo, core.submit(self.repo, self.task, kind="verify", isolated=True)["id"])  # Wildcards need approval
         def agent(role, prompt, cwd, log, timeout):
             marker.touch()
             self.assertIn("counts only if they all pass", prompt)

@@ -38,7 +38,7 @@ as a request, never as shell text. With no action, show mode and progress.
 | --- | --- |
 | `setup [MODE]` | Check readiness; optional mode sets a project override. |
 | `mode [MODE\|default]` | Show or persist a project override; `default` restores the global flow. No inference. |
-| `delegate <requirements>` | Give one or more bounded tasks to the selected lightweight coder, in separate worktrees. |
+| `delegate <requirements>` | Give a bounded task to the selected lightweight coder in the current checkout; isolate parallel work. |
 | `verify <requirement>` | Test the main agent's current committed HEAD; independently review only when the selected flow enables it. |
 | `handoff RUN_ID` | Read a completed run's concise exact-SHA evidence. |
 | `run <requirement>` | Explicit legacy batch run with a separate coder. |
@@ -150,18 +150,26 @@ clean; these commands snapshot exact HEAD. Do not stash or reset user changes.
 Read `mode` first. Follow the selected global or project flow; do not switch
 to another flow unless the user requests it.
 
-- `delegate <task-file> [--mode NAME]` queues the selected Pi, Antigravity or Codex coder in an isolated
-  worktree at HEAD. For multiple independent requirements, prepare and submit
+- `delegate <task-file> [--mode NAME] [--isolated]` queues the selected Pi, Antigravity or Codex coder
+  at clean HEAD. Ordinary serial delegation uses the current checkout and commits on its source branch:
+  the main agent must pause edits until the run finishes, then inspect the scoped diff and handoff.
+  Use `--isolated` when the main agent must keep editing or wants a separate experimental branch.
+  Tasks marked `independent: true`, dependent runs, and unattended `night` chains use separate worktrees.
+  For multiple independent requirements, prepare and submit
   each task before starting the worker. Resolve any `awaiting_approval` gate,
   then run `work --once --run-id ID` with one `--run-id` per submitted task;
   the worker runs eligible tasks concurrently and drains those IDs without
   consuming unrelated queued work. Read each `handoff ID` after `tested` or `verified`
-  completion. Inspect each scoped diff and integrate its commit range into the
+  completion. Shared-checkout commits are already on the source branch; do not cherry-pick them.
+  Inspect each isolated run's scoped diff and integrate its commit range into the
   main branch yourself. A cherry-pick creates a new SHA, so run `verify` on
   that combined commit before calling it complete.
-- `verify <task-file> [--base ANCESTOR] [--mode NAME]` tests the current HEAD
+- `verify <task-file> [--base ANCESTOR] [--mode NAME] [--isolated]` tests the current HEAD
   and calls the selected independent reviewer only when enabled. The reviewer
-  must use a different runtime from the selected flow's main agent. By default it
+  and tests use the current checkout by default, without creating a worktree or copying dependencies.
+  Pause source edits until completion; `--isolated` keeps the source checkout available for continued work.
+  The worker checks the frozen HEAD, branch and clean tree before execution and after verification.
+  The reviewer must use a different runtime from the selected flow's main agent. By default it
   compares with the merge-base of the configured base branch. For work on the
   base branch, pass an exact ancestor with `--base`. Run its ID through
   `work --once --run-id ID`; `handoff ID` gives the tested SHA and optional review.
