@@ -97,6 +97,8 @@ def analyze(repo, days=30, baseline=None):
         raw_agents = run.get("agents")
         known_agents = isinstance(raw_agents, list) and all(isinstance(a, dict) for a in raw_agents)
         agents = raw_agents if known_agents else []
+        tests = run.get("test_attempts")
+        known_tests = isinstance(tests, list) and all(isinstance(t, dict) for t in tests)
         usage = progress.total_usage(agents) if agents else dict.fromkeys(progress.USAGE_KEYS, 0 if known_agents else None)
         case = {"run": progress.clean(run["id"], 80), "work": work_id(run),
                 "kind": run.get("kind", "unknown"), "flow": progress.clean(run.get("mode", "unknown"), 40),
@@ -105,6 +107,17 @@ def analyze(repo, days=30, baseline=None):
                 "native_ok": sum(a.get("status") == "ok" for a in agents) if known_agents else None,
                 "format_repairs": sum(a.get("purpose") == "format_repair" for a in agents),
                 "causes": [{"kind": k, "source": s} for k, s in causes(run)],
+                "main_runtime": run.get("main_runtime"), "maf_version": run.get("maf_version"),
+                "environment": run.get("environment"), "timings": core.timings(run),
+                "repairs": run.get("repairs"), "failures": run.get("failures", []),
+                "agent_attempts": [{k: a.get(k) for k in ("role", "runtime", "provider", "model", "status", "purpose",
+                                                       "outcome", "duration_seconds", "started_at", "head_sha",
+                                                       "prompt_bytes", "prompt_sha256", "usage_scope", "usage")}
+                                   for a in agents] if known_agents else None,
+                "test_history_complete": known_tests and run.get("test_history_complete") is True,
+                "test_attempts": [{k: t.get(k) for k in ("argv", "exit_code", "duration_seconds", "head_sha", "repair", "started_at")}
+                                  for t in tests] if known_tests else None,
+                "observations": run.get("observations", []),
                 **{k: usage[k] for k in progress.USAGE_KEYS}}
         cases.append(case)
         groups.setdefault((case["kind"], case["flow"]), []).append(case)

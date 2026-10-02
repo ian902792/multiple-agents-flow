@@ -13,6 +13,41 @@ python3 flow.py stats --days 30
 
 舊 adapter 曾把額度或登入失敗記為一般 `error`；沒有 recorded 原因時，`analyze` 用保存的失敗 feedback 與現行 adapter 分類器辨識，仍標為 inferred。這只改善診斷，不改原始 run、正常結束率、驗證證據或恢復條件。
 
+## 主對話與委派的量測
+
+`delegate TASK.json` 一次完成限定範圍的實作、supervisor 測試、預算內修復與已啟用審查；`--queue` 才只排隊。主對話給目標、邊界與真正的驗收條件，讓 coder 在範圍內定位細節，再檢查 diff 和 handoff。幾行的小改動直接做，架構與需求判斷由主對話處理。這是減少主對話工作量的設計，尚不代表已量出 Opus 額度節省。
+
+新 run 自動保存主 runtime、Python/platform、每次 agent 的模型、原生用量、耗時、狀態、request bytes/hash，以及完成測試命令的 SHA、退出碼、耗時、修復輪次與獨立 log。修復後不刪除早先失敗的紀錄。`tests` 仍只表示最終驗收；`test_history_complete` 表示是否從任務建立時完整記錄已完成的測試命令，中斷命令保留 activity/log，沒有退出碼就不假造結果。`timings.tests_seconds` 包含完整歷史中的失敗與重跑；舊或不完整歷史留 `null`。`stats` 的秒數仍是 child agent 耗時，完整執行耗時看 `timings`。
+
+主對話用量不在 child agent 的原生回報裡。用 `observe RUN_ID FILE.json` 追加量測，例如下列私人 JSON；它可以在 run 清理之後記錄，不修改驗證狀態：
+
+```json
+{
+  "experiment": "delegation-pilot",
+  "case": "bounded-module",
+  "strategy": "delegate",
+  "main_runtime": "codex",
+  "source": "Main-chat usage unavailable in this host",
+  "scope": "task",
+  "input_tokens": null,
+  "output_tokens": null,
+  "cache_read_tokens": null,
+  "cache_write_tokens": null,
+  "seconds": null
+}
+```
+
+`strategy` 是 `direct` 或 `delegate`，`main_runtime` 是 `codex` 或 `claude`，`scope` 是 `task` 或 `session`。來源要寫實際取得方法，token 欄位分開記錄未快取輸入、輸出、cache read/write；若來源只提供含快取的總 input，無法拆分就留 null，不能重複計算。tokens 須為非負整數，秒數須為有限非負數；未知用 null，不用零。字串不得有控制字元；不要填 token、私人 transcript 或帳號秘密。每筆追加伺服器記錄時間和當時 run 的 tested/owned SHA；舊紀錄不覆寫，session 用量不加到 task 或 child 總數。
+
+選一小批工作量相近的任務，以相同 `experiment`、可比較的 `case` 記錄兩種策略。保存主 agent 實際用量（含快取分類）、總等待時間、失敗與返工，再比較每件完成工作的代價。不同模型、測試、依賴、任務難度或只有 session 總數時，不能宣稱差額由委派造成。只有 Pi 成功率或花費，不足以證明主 agent 更省；本次由 Codex 主導的 pilot 也不能直接推算 Opus 節省比例。
+
+```sh
+python3 flow.py --repo "$TARGET" --main codex observe RUN_ID /private/path/observation.json
+python3 flow.py --repo "$TARGET" --main codex analyze --json > /private/path/analysis.json
+```
+
+`analyze --json` 的 cases 包含各次 agent 原生用量、測試命令歷史、耗時、主對話 observations 和工具版本，沒有 transcript 或測試 tail。快照可能含本機路徑，留在 Git 私有目錄。`clean --apply` 只清理已整合工作樹/分支，仍保留 run state、測試 log 與模型呼叫 log。缺少舊資料就保持未知，不回填推估數字。
+
 ## 一次改善的循環
 
 1. 先保存原始快照；它含本機 repository 路徑與 run ID，留在 Git 私有資料中：

@@ -883,6 +883,105 @@ class FlowTests(unittest.TestCase):
         self.assertIsNone(timing["active_seconds"])
         self.assertEqual(timing["review_seconds"], 0)
 
+    def delegate_cli(self, *args):
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        path = Path(self.config_temp.name) / "delegate.json"
+        path.write_text(json.dumps(self.task))
+        return ["--repo", str(self.repo), "delegate", str(path), *args]
+
+    def test_cli_delegate_completes_repairs_and_preserves_every_attempt(self):
+        argv = self.delegate_cli()
+        unrelated = core.submit(self.repo, dict(self.task, id="unrelated"))
+        calls = []
+        def coder(role, prompt, cwd, log, timeout, **kwargs):
+            calls.append((role["access"], prompt))
+            result = self.fake_agent(role, prompt, cwd, log, timeout, **kwargs)
+            if len(calls) == 1:
+                (cwd / "README.md").write_text("Incomplete\n")
+            return result
+        output, errors = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors), \
+                patch.object(core.agents, "run_agent", side_effect=coder):
+            cli.main(argv)
+        result = json.loads(output.getvalue())
+        run = core.load(self.repo, result["run"])
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["kind"], "delegate")
+        self.assertEqual(result["head_sha"], core.git(self.repo, "rev-parse", "HEAD"))
+        self.assertEqual(result["repairs"], 1)
+        self.assertEqual([c[0] for c in calls], ["edit", "edit", "read"])
+        self.assertIn("AssertionError", calls[1][1])  # Supervisor feeds failure back without a main-chat turn.
+        self.assertIn(run["id"], errors.getvalue())
+        self.assertEqual(core.load(self.repo, unrelated["id"])["status"], "queued")
+        self.assertEqual([t["exit_code"] for t in run["test_attempts"]], [1, 0])
+        self.assertNotEqual(run["test_attempts"][0]["head_sha"], run["test_attempts"][1]["head_sha"])
+        self.assertEqual(run["test_attempts"][1]["head_sha"], run["tested_sha"])
+        self.assertEqual([t["repair"] for t in run["test_attempts"]], [0, 1])
+        self.assertEqual(len({t["log"] for t in run["test_attempts"]}), 2)
+        self.assertTrue(all(Path(t["log"]).is_file() for t in run["test_attempts"]))
+        self.assertEqual(result["timings"]["tests_seconds"], round(sum(t["duration_seconds"] for t in run["test_attempts"]), 3))
+        self.assertEqual(run["main_runtime"], "claude")
+        self.assertTrue(all(a["prompt_bytes"] > 0 and len(a["prompt_sha256"]) == 64 for a in run["agents"]))
+        self.assertTrue(all(a["head_sha"] and a["started_at"] for a in run["agents"]))
+
+    def test_cli_delegate_queue_and_approval_never_start_agents(self):
+        argv = self.delegate_cli()
+        for flag, status in (("--queue", "queued"), ("--require-approval", "awaiting_approval")):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), patch.object(core.agents, "run_agent") as agent:
+                if flag == "--require-approval":
+                    with self.assertRaises(SystemExit) as stopped:
+                        cli.main([*argv, flag])
+                    self.assertEqual(stopped.exception.code, 2)
+                else:
+                    cli.main([*argv, flag])
+            result = json.loads(output.getvalue())
+            self.assertEqual(result["status"], status)
+            agent.assert_not_called()
+
+    def test_cli_delegate_quota_returns_same_run_without_replay(self):
+        argv = self.delegate_cli()
+        output = io.StringIO()
+        quota = {"status": "quota", "text": "", "session_id": "pi", "usage": None, "detail": "usage limit"}
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()), \
+                patch.object(core.agents, "run_agent", return_value=quota) as agent, \
+                self.assertRaises(SystemExit) as stopped:
+            cli.main(argv)
+        result = json.loads(output.getvalue())
+        self.assertEqual(stopped.exception.code, 1)
+        self.assertEqual(result["status"], "waiting_quota")
+        self.assertFalse(result["passed"])
+        self.assertEqual(agent.call_count, 1)
+        run = core.load(self.repo, result["run"])
+        self.assertEqual(run["test_attempts"], [])
+        self.assertIsNone(run["agents"][0]["usage"])
+
+    def test_test_logs_are_not_overwritten_on_repeated_execution(self):
+        run = self.complete()
+        directory = core.run_path(self.repo, run["id"]).parent
+        first = run["test_attempts"][0]["log"]
+        core.run_tests(run, directory)
+        self.assertNotEqual(first, run["test_attempts"][-1]["log"])
+        self.assertEqual(len(core.load(self.repo, run["id"])["test_attempts"]), 2)
+
+    def test_cli_observe_appends_data_without_changing_verification(self):
+        argv = self.delegate_cli()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()), \
+                patch.object(core.agents, "run_agent", side_effect=self.fake_agent):
+            cli.main(argv)
+        result = json.loads(output.getvalue())
+        path = Path(self.config_temp.name) / "observation.json"
+        path.write_text(json.dumps({"experiment": "pilot", "case": "docs", "strategy": "delegate",
+                                    "main_runtime": "claude", "source": "unavailable", "scope": "task"}))
+        with contextlib.redirect_stdout(io.StringIO()), patch.object(core.agents, "run_agent") as agent:
+            cli.main(["--repo", str(self.repo), "observe", result["run"], str(path)])
+        handoff = core.handoff(self.repo, core.load(self.repo, result["run"]))
+        self.assertEqual(handoff["head_sha"], result["head_sha"])
+        self.assertIsNone(handoff["observations"][0]["input_tokens"])
+        agent.assert_not_called()
+
     def test_independent_pi_delegates_overlap_and_allow_new_submission(self):
         self.assertEqual(cli.parser().parse_args(["work", "--run-id", "a", "--run-id", "b"]).run_id, ["a", "b"])
         self.assertEqual(cli.parser().parse_args(["work"]).delegate_concurrency, 3)

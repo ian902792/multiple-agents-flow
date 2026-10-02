@@ -121,6 +121,26 @@ class HistoryTests(unittest.TestCase):
                          [{"kind": "unknown", "source": "unknown"}])
         self.assertIsNone(next(c for c in data["cases"] if c["run"] == "missing-agents")["seconds"])
 
+    def test_export_keeps_tests_and_main_observations_separate_from_child_usage(self):
+        observed = [{"experiment": "pilot", "strategy": "delegate", "scope": "session", "input_tokens": 9999}]
+        attempts = [{"argv": ["python3", "tests.py"], "exit_code": code, "duration_seconds": 2,
+                     "head_sha": str(code), "repair": i, "started_at": 1, "tail": "private failure"}
+                    for i, code in enumerate((1, 0))]
+        run = self.run_case("measured", test_attempts=attempts, test_history_complete=True, observations=observed, main_runtime="codex",
+                            prepare_seconds=1, execution_seconds=24, environment={"python": "3.11"})
+        with patch.object(core, "list_runs", return_value=[run, self.run_case("old")]):
+            cases = history.analyze(Path.cwd())["cases"]
+        measured, old = cases
+        self.assertEqual(measured["observations"], observed)
+        self.assertEqual(measured["input_tokens"], 100)  # Main session counts are never added to child/task totals.
+        self.assertEqual(measured["timings"]["tests_seconds"], 4)
+        self.assertEqual([t["exit_code"] for t in measured["test_attempts"]], [1, 0])
+        self.assertTrue(measured["test_history_complete"])
+        self.assertFalse(old["test_history_complete"])
+        self.assertIsNone(old["test_attempts"])
+        self.assertIsNone(old["timings"]["tests_seconds"])
+        self.assertNotIn("private failure", json.dumps(cases))
+
 
 if __name__ == "__main__":
     unittest.main()

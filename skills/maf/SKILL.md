@@ -1,332 +1,152 @@
 ---
 name: maf
-description: Operate multiple-agents-flow (MAF) from the main coding chat. Use when the user says maf, /maf or $maf (e.g. "maf 改用 quick", "maf 狀態"), or when project instructions ask for MAF delegation and verification. Covers MAF flow/mode selection, scoped Pi, Antigravity or Codex delegation, exact-commit verification, progress and blocked-run recovery. Not for GitHub Actions workflows, git-flow, the Flow type checker, or Claude Code plan/auto/fast modes.
+description: Operate multiple-agents-flow (MAF) from the main coding chat. Use when the user says maf, /maf or $maf, or project instructions ask for MAF delegation and exact-commit verification. Covers flow selection, bounded Pi/Antigravity/Codex implementation, tests, optional review, measurements and blocked-run recovery. Not for GitHub Actions, git-flow, Flow types or Claude Code plan/auto/fast modes.
 ---
 
 # MAF
 
-Stay in the current conversation. Its agent is the main developer for ordinary
-tasks. Select a flow whose `main.runtime` matches that agent; do not silently
-switch the human to another chat. Never call the planner without the human's
-consent: either they invoke `/maf-plan` (Claude) or `$maf-plan` (Codex), or you ask
-"要用 maf-plan 規畫嗎？" and they say yes for this task. Consent covers only that task.
-The planner is always a different agent from the main chat. Follow the user's language.
+Stay in this conversation as the main developer. Follow the user's language.
+`maf` is the anchor: without it, generic flow/mode/quick/planned words do not request MAF changes.
+Never start a planner without the human's consent for this task (`maf-plan` or an accepted proposal).
+The planner must be a different runtime from the main chat; do not silently switch the main session.
 
-`maf` is the anchor word. "maf 改用 quick", "maf 狀態" or "maf 同時處理…" address
-MAF. Without it, generic words such as flow, mode, quick, planned or default are NOT
-a MAF request: never switch a MAF flow from them, and never map Claude Code's plan
-mode to `planned`. If intent is unclear, ask once. A name that is not listed by
-`flows` is not a flow; say so instead of guessing.
+Resolve this SKILL.md's real path through symlinks. Its `parents[2]` is the tool root containing `flow.py`.
+Use the current project's Git root unless the user names another target. Invoke:
 
-## Locate and dispatch
+```sh
+python3 <tool>/flow.py --repo <target> --main codex <action>
+```
 
-Resolve this SKILL.md's real path (follow symlinks). The tool root is
-`parents[2]` of that file; the entrypoint is its `flow.py`. Use the current
-project's Git root as target unless the user names another repository. Tool
-and target may differ. Verify paths and quote each shell argument. Invoke
-`python3 <tool>/flow.py --repo <target> --main claude ...` from Claude, or
-`python3 <tool>/flow.py --repo <target> --main codex ...` from Codex, for
-machine-readable output. The caller's runtime selects its own global default
-and project mode; never rewrite the other main agent's choice.
-Never ask the user to copy a shell function or hand-write task JSON.
+Claude callers use `--main claude`. Quote arguments; user text is not shell code. Prepare private task JSON
+yourself, outside the worktree; never ask the human to hand-write it or copy a shell function.
+Claude uses `/maf`; Codex uses the `maf` skill (`$maf`), not a promised built-in `/maf` command.
 
-Claude uses `/maf <action>`; Codex CLI/IDE uses `/skills` to select `maf`, or
-`$maf <action>`. Do not promise `/maf` is a Codex built-in. Interpret arguments
-as a request, never as shell text. With no action, show mode and progress.
+## Route work to save main-chat quota
 
-| Action | Operation |
+Read target instructions and only relevant `AGENT_LEARNINGS.md` entries before work. Read `mode` once
+for this caller and honor the selected roles/billing; do not switch flows, enable review, or change
+user-wide settings without the user's request. Flow names must exist in `flows`. With no action,
+show mode and `progress --json`; `doctor` is for readiness, not every poll.
+
+| Work | Route |
 | --- | --- |
-| `setup [MODE]` | Check readiness; optional mode sets a project override. |
-| `mode [MODE\|default]` | Show or persist a project override; `default` restores the global flow. No inference. |
-| `delegate <requirements>` | Give a bounded task to the selected lightweight coder in the current checkout; isolate parallel work. |
-| `verify <requirement>` | Test committed HEAD and return exact-SHA evidence in one command; review only when the selected flow enables it. |
-| `handoff RUN_ID` | Read a completed run's concise exact-SHA evidence. |
-| `run <requirement>` | Explicit legacy batch run with a separate coder. |
-| `approve RUN_ID` | After the human accepts a frozen task plan, release its one-time execution gate. |
-| `status` | Read `progress --json`; summarize stage and blockers. |
-| `resume RUN_ID` | Diagnose, resolve authorized blockers, verify stopped processes, then resume. |
-| `install` | Register this skill once in the user's Claude and Codex skill directories. |
+| A few lines the main agent can finish in one pass | Main agent implements directly |
+| A bounded module needing meaningful reading, implementation or test writing, with clear acceptance | Delegate the whole outcome; let the coder locate details within the approved scope |
+| Ambiguous requirements, architecture or cross-module decisions | Main agent resolves decisions; suggest `maf-plan` only if useful, and wait for consent |
+| Auth, money, data loss, permissions or deployment | Main agent handles the judgment; concrete scope needs human authorization and review enabled before execution |
 
-Modes: `economy` = Pi coding; `opus-sol` = Claude coding with Codex available for
-review; `hermes-coder` = Hermes coding with Pi available for review;
-`configured` = project `.maf.json` roles when present, built-in economy otherwise.
-`quick`, `planned`, `quick-antigravity`, `quick-codex`, `quick-flash`, `codex-pi`, and user-created names are user-wide role
-profiles; use `flows` to inspect their exact models and effort. `quick-codex` delegates to
-Codex through ChatGPT login; `quick-antigravity` uses the signed-in `agy` account (each
-Gemini effort level is its own model ID); `quick-flash` enables Pi review by default. Profiles select future MAF agents, not the
-current main session. `codex-pi` records Codex as main, Pi for small tasks, and optional
-Claude review. Tests run as
-approved commands, without a tester model. Change the current session's model
-in its own CLI/app; saving a flow does not switch it. Review is off
-unless `roles.reviewer.enabled` is true; do not turn it on without the user's request.
+Do not read and design every implementation detail before delegating: that spends the context you meant
+to save. A short outcome, allowed paths, constraints and meaningful test argv are enough. Keep mechanical
+test failures and bounded repair in the supervisor loop. Do not split a coherent module into tiny tasks.
+When writing multiple independent requirements, queue them together; parallelism alone does not prove
+token savings. The main agent retains scope decisions, diff acceptance, integration and final sign-off.
 
-## Setup and mode
+## Execute and accept once
 
-1. Read target instructions and `mode` using this caller's `--main` value. New
-   Git repositories with an initial commit use that runtime's global default
-   flow immediately; do not create `.maf.json`
-   unless project policy needs its own base branch, protected paths, or timeouts.
-   Never overwrite an existing config. `ui` edits user-wide flows, the global
-   default and the optional Herdr setting; it never starts an agent.
-2. Use `mode MODE` only when a project needs an override; `mode default`
-   restores this main runtime's global selection. `mode` alone reports effective
-   roles and billing readiness. Claude and Codex project selections live in
-   separate private Git state, affect new submissions only, and preserve
-   existing runs. Do not edit `.maf.json` to switch modes. `submit --mode MODE`
-   overrides just one task.
-3. Run `doctor` for setup/readiness, not every status poll. It checks the
-   selected mode without inference; it cannot prove model availability.
-4. If billing confirmation is missing, show exact active provider/model routes and
-   ask the human to confirm subscription coverage with extra usage / Go Use
-   balance disabled. Existing authorization for that exact role/model set is
-   sufficient. Only then run `confirm-billing --no-overage` with `--repo`
-   for a project override, or without it for the global default. Login success
-   or a setup request is not billing attestation. Approved role/model sets are
-   remembered globally, so switching back needs no repeated attestation.
-5. Report the mode and remaining blockers. No inference, commit, push, provider
-   setting change, or global agent configuration change during setup. The skill
-   is installed once for this user via `install-skills`; other Git projects need
-   no MAF configuration. Never overwrite unrelated skills.
+Task JSON requires `id`, `title`, `instructions`, `paths`, `tests`, `risk`; optional boolean `independent`
+and string `acceptance_why` describe independence and the behavior tests must protect. IDs use lowercase
+letters/digits/hyphens, max 40 characters. Paths are narrow repo-relative files/globs; tests are nonempty
+argv arrays of trusted, approved project commands. Use no dummy assertions. Risk is `manual`, `docs`,
+`style` or `tests`; it never selects the reviewer. Prefer precise files when known; a bounded module glob
+is allowed through the existing approval gate, not a reason to explore the whole module yourself.
 
-## Main-chat work
+Commit current work and ensure the tree is fully clean before submission. Never stash/reset user changes.
+Show the outcome, scope, test argv, selected models, repair budget and publication action once. Continue
+when the user's request or prior approval covers them; do not ask again for each test/repair step.
+Semantic security/permission/financial/deployment/data-loss risk or ambiguous scope uses `--require-approval`.
 
-For ordinary tasks, implement in this main conversation. Do not start a
-separate coder for the main agent's work. Use the selected Pi, Antigravity or Codex coder only for narrow
-edits or test-writing tasks with explicit paths and approved test argv. Pi and
-Antigravity coders cannot run tests; a Codex coder may run the task's tests inside
-its sandbox before finishing. The supervisor always reruns them independently.
+- `delegate TASK.json [--isolated]`: completes coding, supervisor tests, bounded repair and enabled review
+  in one command, returning handoff evidence or an actionable stop. Pi/Antigravity use file tools; the
+  supervisor runs tests and feeds failures back automatically. A Codex coder may run approved tests too;
+  the supervisor still verifies independently. Wait through the host's managed command session; no polling
+  loops, child transcript reads or follow-up `work`/`handoff` on success.
+- `verify TASK.json [--base ANCESTOR] [--isolated]`: tests committed HEAD without a coder and reviews only
+  when enabled. Use an exact ancestor on the base branch. Tests and review can overlap. It returns handoff
+  directly; wait once, do not rerun the same full suite first.
+- `delegate TASK.json --queue`: explicit queueing for a batch or an existing supervisor. Queue independent
+  tasks from one clean HEAD before `work --once --run-id ID` (repeat the flag). Mark `independent: true`
+  only for exact non-overlapping paths, separate acceptance/tests and no dependency/shared test resource.
+  Eligible delegates run in up to three lanes; others remain serial. `--depends-on RUN_ID` builds a chain.
 
-Delegate only when it saves main-chat quota overall. Every delegated task costs
-you a spec, a review of its diff and an integration, each carrying this chat's
-whole context. A failed attempt costs more than any per-token saving. Route each task by
-the first matching row:
+Both immediate commands send progress to stderr and one JSON result to stdout: exit 0 means `passed: true`,
+2 means awaiting approval, 1 means other failure/blockage. On a busy worker, quota or approval, follow
+`next` for that same run ID; do not submit a duplicate. No interrupted stage is implicitly replayed.
 
-| Signal | Route |
-| --- | --- |
-| Touches auth, money, data, permissions or deployment | Implement yourself; `verify` with review enabled; ask the user first |
-| Ambiguous, several decisions, cross-module or more than ~5 files | Ask the user whether to run `maf-plan`; run it only after they agree |
-| Done in one short pass (a few lines, 1–2 files), or you must explore to know what to change | Do it yourself |
-| Exact paths, approved test argv, about a module with its tests | Delegate; batch several such tasks into one `night` run |
+Serial delegation/verification shares the current checkout and branch: pause main-agent edits until done.
+Use `--isolated` for continued main editing or an experiment; parallel tasks, dependencies and `night`
+chains use worktrees. A worktree is not a security sandbox. Shared commits need no cherry-pick; inspect
+isolated scoped diffs and integrate their commit range yourself. A new SHA needs new exact-SHA proof.
 
-When a delegate stops, use `retry RUN_ID --note "what to change"` instead of writing a
-new task file: it carries the failure reason and moves waiting dependents to the
-retry. After the repair budget is exhausted, retry only with a changed spec or split;
-otherwise take the task over yourself. After starting `night` or `work`, wait for it to finish and read `report`
-once; do not poll progress turn after turn. Do not delegate planning, broad integration, or final
-sign-off to the lightweight coder. Mark a delegated task `"independent": true` only when it has its own
-clear acceptance criteria, exact non-overlapping editable file paths, and no
-dependency on another task or shared test resource. Queue all independent tasks
-from the same clean HEAD before starting the worker. MAF runs up to three at once
-by default; broad, sensitive, or approval-gated work remains serial. Do not
-claim that parallel execution alone reduces total tokens.
+Accept using the returned handoff and scoped diff. Read `coder_notes`/`UNVERIFIED` and review notes; open
+a finding's path/line to confirm it before acting, with one-line reasons for rejected findings. Do not
+reread everything the coder read unless the handoff or diff exposes a concrete concern. Review off yields
+`tested`, never independent-review claims; review on plus same-SHA approval yields `verified`.
 
-Before substantial work, show the concrete goal, editable paths, test argv,
-model roles, repair limit and any publication action once. Ask for a decision
-only if this plan is not already covered by the user's request or prior approval.
-After approval, continue within that scope without asking at each agent/test/
-repair step. Ordinary small tasks within the user's request need no extra prompt.
-Use `--require-approval` for security, permission, financial, deployment, data
-loss, or ambiguous requirements even if the file names look harmless. MAF also
-holds manual-risk batch tasks, sensitive/broad path scopes and shell verification
-commands automatically. An `awaiting_approval` run cannot start an agent or test.
-Read `status RUN_ID` and show its frozen instructions, paths, tests, roles and
-approval reasons. Invoke `approve RUN_ID` only after the human confirms that
-scope, or when their existing approval clearly covers this exact scope. Never
-approve a changed plan by inference. New paths, commands or requirements need
-a new task and approval. Approval is for local execution only; publication and
-merge still require their own explicit authorization.
+During development run relevant modules; run the full suite once on the final integrated commit through
+MAF. Reuse a successful handoff only when exact SHA, base, paths, test argv and flow match AND dependencies
+and relevant external environment are confirmed unchanged. Unknown/changed means verify again. MAF does
+not cache by SHA. External verify failures stop for the main agent to fix, commit and submit a new run;
+never send a coder to repair an external main-agent commit. `MAF_NEEDS_HUMAN`/manual review findings require
+a human decision and new scope, not replay. Exhausted delegate repairs need a changed spec or main takeover;
+use `retry RUN_ID --note TEXT` for an authorized changed spec, preserving linked history.
 
-Prepare private task JSON with `id`, `title`, `instructions`, `paths`, `tests`,
-`risk`, optional boolean `independent`, and optional `acceptance_why` (the real purpose the tests
-must protect, so passing tests that assert nothing are caught), as described below. For `tests`, pick the
-smallest command that proves this task (one test module, not the full suite); run the full suite once on
-the final integrated commit. While you develop, run only the test modules for the code you changed; do
-not also run the full suite locally when a `verify` whose `tests` is the full-suite command will run it on the
-same commit. After fixing review
-notes, commit and `verify` again instead of repeating the full suite first. Keep the task file outside the
-Git worktree. Before
-`delegate` or `verify`, commit the current work and ensure the tree is fully
-clean; these commands snapshot exact HEAD. Do not stash or reset user changes.
-Read `mode` first. Follow the selected global or project flow; do not switch
-to another flow unless the user requests it.
+## Keep measurements honest
 
-- `delegate <task-file> [--mode NAME] [--isolated]` queues the selected Pi, Antigravity or Codex coder
-  at clean HEAD. Ordinary serial delegation uses the current checkout and commits on its source branch:
-  the main agent must pause edits until the run finishes, then inspect the scoped diff and handoff.
-  Use `--isolated` when the main agent must keep editing or wants a separate experimental branch.
-  Tasks marked `independent: true`, dependent runs, and unattended `night` chains use separate worktrees.
-  For multiple independent requirements, prepare and submit
-  each task before starting the worker. Resolve any `awaiting_approval` gate,
-  then run `work --once --run-id ID` with one `--run-id` per submitted task;
-  the worker runs eligible tasks concurrently and drains those IDs without
-  consuming unrelated queued work. Read each `handoff ID` after `tested` or `verified`
-  completion. Shared-checkout commits are already on the source branch; do not cherry-pick them.
-  Inspect each isolated run's scoped diff and integrate its commit range into the
-  main branch yourself. A cherry-pick creates a new SHA, so run `verify` on
-  that combined commit before calling it complete.
-- `verify <task-file> [--base ANCESTOR] [--mode NAME] [--isolated]` tests the current HEAD
-  and calls the selected independent reviewer only when enabled. The reviewer
-  and tests use the current checkout by default, without creating a worktree or copying dependencies.
-  Pause source edits until completion; `--isolated` keeps the source checkout available for continued work.
-  The worker checks the frozen HEAD, branch and clean tree before execution and after verification.
-  The reviewer must use a different runtime from the selected flow's main agent. By default it
-  compares with the merge-base of the configured base branch. For work on the
-  base branch, pass an exact ancestor with `--base`. The command executes only its new run once and
-  returns the handoff, including timings and `usage_text`; no follow-up `work` or `handoff` is needed.
-  Progress goes to stderr; stdout is one JSON result. Wait for completion without status polling.
-  On failure, the main agent fixes the source branch, commits, and starts a new verify
-  run. For approval, quota or a busy worker, follow the returned `next` on that same run ID;
-  do not submit a duplicate. Resolve any `awaiting_approval` gate before targeted `work`, then read `handoff`.
-  Never let a delegated coder
-  repair an external main-agent commit.
+Run state, logs and attempts remain under the target Git common directory's `maf/`, outside Git. Completed
+test attempts retain SHA, exit code, duration and repair round; agent attempts retain native usage, cache,
+model, status, duration and request size/hash. `analyze --json` exports these records without transcripts.
+`clean --apply` retires integrated worktrees, not historical run data. Missing historical metrics stay unknown.
 
-Before repeating verification, use an existing successful handoff only when the exact SHA, base,
-editable scope, test argv and selected flow match, and dependencies and relevant external environment
-are confirmed unchanged. If any of these are unknown or changed, verify again. SHA alone is insufficient;
-MAF does not automatically cache verification. Use `analyze` for recurring failures rather than blindly retrying.
+For a comparison, record a small `observe RUN_ID FILE.json` observation with `experiment`, `case`, `strategy`
+(`direct`/`delegate`), `main_runtime`, `source`, `scope` (`task`/`session`) and any observed `input_tokens`,
+`output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `seconds`. Unknown fields stay null, never zero.
+Record main usage only from a host/provider measurement; do not estimate it from Pi usage or account-wide
+limits, scrape transcripts, or attribute a whole session to one task. Source labels carry no secrets.
+Observations append with SHA/time; session counts are never added to child/task totals. When host main usage
+is unavailable, record that source and nulls. See `docs/IMPROVEMENT.md` only when preparing comparison data.
+Compare like tasks and environments, including failed attempts, wait time and rework; one pilot does not
+establish Opus savings. `stats` reports MAF child calls, not the main conversation or subscription charges.
 
-If the coder returns `MAF_NEEDS_HUMAN:` or the reviewer marks a security,
-permission or requirements finding as manual risk, stop and report the concrete
-question. Do not resume that run; settle the issue and submit a new scoped task.
-Ordinary test/review failures use the configured repair budget automatically.
+Only claim completion with passing returned evidence or a successful current-SHA `handoff`. Paste its
+`usage_text` verbatim in a code block. In Claude Code, add main session usage from one invocation:
 
-Read `coder_notes` (the coder's `UNVERIFIED:` items) before integrating; they often name the next task.
-The review's `notes` are non-blocking doubts that did not trigger a repair; weigh them yourself.
-Reviewers misread code: open each review finding's path:line and confirm it before acting; state a
-one-line reason for any finding you reject.
+```sh
+npx -y ccusage@latest claude session --id "$CLAUDE_CODE_SESSION_ID" --compact 2>/dev/null | tail -3
+```
 
-Only claim completion if `verify` returns passing handoff evidence or `handoff` succeeds for the current exact commit.
-When reporting completion, paste `handoff`'s `usage_text` verbatim in a code block; do not reformat,
-round or translate it. It is reference data for tuning later flows. In Claude Code, add the main chat's
-own usage in the same code block from one run of
-`npx -y ccusage@latest claude session --id "$CLAUDE_CODE_SESSION_ID" --compact 2>/dev/null | tail -3`
-(its cost is an API-price estimate, not a subscription charge). If the variable is unset or the command prints nothing
-(it fails silently), write `主對話用量：無法取得` and move on; never retry it or read transcripts instead. When the user asks
-how flows or models compare over time, run `stats` (default 30 days) and quote its table.
-Its native_ok_rate means native CLI completion, never review accuracy or approval.
-When review is off, report `tested` and do not claim independent review. When
-enabled and approved on the same SHA, report `verified`. Publish/auto-merge
-requires enabled independent review.
-Only when the user explicitly says to drop a run, `cancel RUN_ID --note "why"`, show any `unintegrated`
-commits it lists, then `clean --apply`; never cancel on your own judgement that a run looks obsolete.
-After integrating and pushing, run `clean --apply` once to remove the worktrees and branches of runs that
-are now in the base branch; it keeps anything unfinished, unintegrated or dirty.
-If current HEAD has moved since submission, the evidence is for the earlier
-SHA; submit a new verify run. Never auto-publish or merge a delegated run.
+If the variable is unset or output absent, say `主對話用量：無法取得`; never retry or read transcripts.
+When comparing historical flows/models, run `stats` and quote relevant rows. Native CLI success is not
+review accuracy; raw cached tokens and estimated USD are not subscription consumption.
 
-## Fewest main-chat turns
+## Gates, recovery and uncommon actions
 
-Each of your turns re-reads this whole conversation, so turns, not thinking, drive main-chat quota.
-For multi-task work: ask the user every decision and confirmation in one question; build your own
-part and commit it; run `night --plan PLAN_ID --approve --integrate` (or `night FILES… --approve
---integrate`) as one background command and wait for its completion notification without polling;
-read the final report once. The commands in this skill are exact; do not look up `--help`. Plain
-`work` and `night` exit on their own when nothing can progress without a person, so a background
-run always notifies you; only the Herdr supervisor uses `work --daemon`.
+`awaiting_approval` starts no model/test. Read `status RUN_ID` and show the frozen requirements, paths,
+commands, roles and reasons. `approve RUN_ID` only after human consent or existing authorization clearly
+covers that exact scope. Changed scope needs a new task. Execution approval does not authorize publication.
+Missing billing confirmation requires human attestation of exact provider/model subscription coverage and
+disabled overage; existing attestation suffices. Only then `confirm-billing --no-overage`. Login alone is
+not coverage. Never change accounts/billing/branch protection or add API fallback/bypass flags.
 
-## Overnight chains
+For blockers use `status RUN_ID` and only the relevant log tail. Verify old owned processes have stopped
+before `resume RUN_ID --acknowledge-stopped`; an overdue timer is not proof. Only use `--after` with a
+provider-confirmed reset time. Unknown auth/quota/corrupt state remains blocked, never change routing.
+Resume through targeted `work --once --run-id ID` and read handoff; keep saved roles and valid test evidence.
+Only cancel at the human's explicit request, showing unintegrated commits; do not drop inconvenient runs.
+After authorized integration/push, `clean --apply` once; unfinished/unintegrated/dirty runs are retained.
+Publishing needs enabled independent review and explicit authorization; never auto-publish/merge by inference.
 
-When the user wants a batch to run unattended (for example overnight), prefer the planned path:
-ask to run `maf-plan` (or the user invokes `/maf-plan`, Codex `$maf-plan`), which stores a structured plan; answer its decisions with
-`decide`, build its `main_agent` items yourself, then `night --plan PLAN_ID`. Without a plan: small
-tasks, correct acceptance tests, decisions made now. Write the task files, show the user the scopes, then
-run one command: `night A.json B.json C.json + D.json` (each file builds on the previous one's
-tested commit; `+` starts another chain). Add `--approve` only when the user confirmed those scopes.
-Each chain stays ordered; explicitly independent delegates from different chains can run in up to three lanes
-when the existing source-SHA, path, risk and approval gates allow it. It runs until all finish or stop, then prints the Chinese report; `--integrate`
-also cherry-picks each passing chain onto the current branch and verifies the result. Without
-`--approve`, it refuses to start when any task needs approval and lists them all at once. When the user
-asks for the morning report, run `report`: handle 需要你處理 first, then integrate each 可以整合
-range, inspect the diff and `verify` the integrated commit. `delegate --depends-on RUN_ID` remains
-for adding one task to an existing chain. A run stopped at stage `dependency` is never resumed; resolve its dependency and submit a
-new chain from there.
+Read only the relevant existing reference for uncommon work; reference paths are relative to the tool root:
 
-## Explicit batch run
+- `docs/CLI.md`: setup/install, mode/flows, approval, Herdr panes, publish/merge and explicit `submit` batches.
+- `docs/OVERNIGHT.md`: `night FILES…`/`night --plan PLAN_ID`, decisions and integration. Planner consent is
+  required; `--approve` means the human already accepted those scopes. Plain worker exits on blockers;
+  only the Herdr supervisor uses `--daemon`. No untracked `nohup` persistence.
+- `docs/IMPROVEMENT.md`: read-only `analyze --days 30`, private baseline, measured regressions and comparison.
+  No automatic tuning of roles, billing or production code from statistics.
+- `docs/LEARNINGS.md`: read before writing `AGENT_LEARNINGS.md`. Review `learning_candidates`, repairs,
+  first failure and surprises; take NO_ACTION (usually), CREATE/UPDATE, PROPOSE_PROMOTION or RETIRE.
+  Search first, no duplicates, no global rules; promotion to AGENTS.md needs human approval and its own
+  commit. Create files only in the user's own repos; never include learning files in delegate paths.
 
-1. Read `mode` and `progress --json`. Honor billing/auth blockers. If a previous
-   submission response was interrupted, inspect existing IDs before resubmitting.
-2. Read only relevant source and project instructions. Make one bounded task per
-   independently verifiable change. Reuse the current conversation's plan.
-3. Generate JSON with exactly `id`, `title`, `instructions`, `paths`, `tests`,
-   `risk`, plus optional `acceptance_why`. ID: lowercase letters/digits/hyphens, max 40 chars. Paths: narrow,
-   relative edit scopes. Tests: nonempty argv arrays of trusted, approved project
-   commands. Risk defaults `manual`; it controls merge eligibility, never the
-   reviewer model. No dummy tests to satisfy the schema.
-4. Briefly state scope, coding model, optional reviewer, and acceptance commands. Proceed
-   when authorized by the user or applicable project instructions. If approval
-   is missing, prepare this concrete task before asking. Do not repeatedly ask
-   for authorization already given in the conversation. Mark semantic high-risk
-   tasks with `--require-approval`.
-5. Save JSON in a private temporary file outside tracked files; call `submit
-   <task-file>` (optionally the explicitly requested `--mode MODE`). Respect the
-   clean tracked tree and configured base branch. If dirty, identify blocking
-   files; do not stash, reset, or commit them automatically. Never add `--publish`
-   or `--auto-merge` without explicit authorization.
-6. Capture the returned ID. If status is `awaiting_approval`, inspect the frozen
-   run and release it as described above. Then run `work --once --run-id RUN_ID` through the
-   host's managed long-running command/session facility. Only if the user-wide
-   `settings` has `herdr_enabled=true` and this session is inside Herdr with
-   `HERDR_ENV=1` and inherited `HERDR_PANE_ID`, append `--planner-pane <that-id>`
-   for main-pane progress. Never guess pane IDs. If an existing worker
-   owns the lock, inspect its status; do not start competing workers or resubmit.
-   If the human enabled Herdr and explicitly wants a visible agent pane for an
-   ad hoc run inside Herdr, add `--agent-panes`; the `herdr` supervisor launcher
-   enables these temporary observer panes automatically. They close after each
-   role, and their display is never verification evidence.
-7. Run the worker as a background command and wait for its completion notification:
-   it exits by itself once nothing can progress without a person. Read `progress --json`
-   only when the user asks. Do not detach with untracked `nohup` or promise persistence
-   if the host cannot retain the command session.
-8. Read the final snapshot. Report ID, status/stage, coding model, optional reviewer,
-   exact-SHA test/review evidence, blocker and next action. Tested or verified is not merged;
-   worker exit code zero alone is not success. Skip child transcripts unless
-   needed for a specific failure.
-
-## Experience memory
-
-Target repositories may keep `AGENT_LEARNINGS.md` (format and lifecycle: the tool's
-`docs/LEARNINGS.md`; read it before writing an entry). Before writing a task, `rg` that file
-for the task's modules and concepts and paste only matching `candidate`/`validated` entries
-into `instructions`; never the whole file. After integrating, read `learning_candidates`, `repairs` and `first_failure` from
-`handoff` (or the report's 經驗 lines for stuck runs) and your own surprises, then take exactly one action: NO_ACTION, CREATE (search
-first; no duplicates), UPDATE (occurrences, last verified, evidence), PROPOSE_PROMOTION or
-RETIRE. Most tasks are NO_ACTION. Promotion into `AGENTS.md` always asks the human first and is
-its own commit; never write global rules. Create or commit the file only in the user's own
-repositories; elsewhere, suggest the entry in chat. Never put learning files in a delegate's `paths`.
-
-## Status and recovery
-
-When asked to analyze history or improve recurring efficiency, run `analyze --days 30` first.
-It reads only private run state, ranks observed causes with case IDs, separates work kinds, and
-combines only explicitly linked retries. Run `stats` for model-call usage. Do not read transcripts
-for broad analysis or infer accuracy from approvals. Inspect a particular run/log only for a
-specific cause. Follow docs/IMPROVEMENT.md: save `analyze --json` under private Git state as a
-baseline, turn a confirmed cause into an anonymized regression plus a passing control, fix its
-shared root cause, then verify the final SHA once. Later `analyze --baseline FILE` considers only
-new runs; cross-period retries do not represent full lifecycle cost. Missing/unknown evidence
-stays unknown. Never auto-tune routing, billing, global settings or production code from statistics.
-The saved review's format repair disables all native tools (Pi/Claude only; unsupported runtimes
-stay blocked), is bounded and preserves every candidate field; failed or
-ambiguous conversions stay blocked. Resume that same run rather than redoing a full review.
-
-For status use `progress --json` without starting workers or reading transcripts.
-Show stage, elapsed/limit, and `attention`/`next`. Read `status RUN_ID` and the
-relevant log tail only to diagnose a blocker.
-
-For resume, inspect saved roles/evidence, find the cause, and perform safe
-authorized fixes. Authentication/account actions remain with the user. Do not
-bypass permissions or switch provider after quota failure. An overdue timer is
-not evidence that a process stopped. Confirm the supervisor/owned process group
-ended, or obtain the user's explicit stopped confirmation before `resume RUN_ID
---acknowledge-stopped`. `--after` requires a provider-confirmed reset time with
-timezone. Then execute only `work --once --run-id RUN_ID`, preserving saved roles.
-Before reusing tests, confirm the installed dependencies and external test environment have
-not changed. If that cannot be established, submit a new verify run instead of claiming reuse.
-
-Unknown quota, exhausted repairs, corrupt state, and policy changes stay blocked
-until resolved. Publication/merge uncertainty uses explicit `publish`/`merge`
-reconciliation within existing authorization, never coder/reviewer replay.
-Explain the exact blocker and smallest required user action.
-
-The skill is an entrypoint, not a safety boundary. The supervisor owns worktrees,
-commits, tests, optional independent review, retries, and GitHub policy.
+The skill is an entrypoint. The supervisor owns deterministic tests, commits, scope checks, optional
+review, repairs and GitHub policy; agent claims never replace exact-commit evidence.
