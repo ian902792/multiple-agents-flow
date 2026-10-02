@@ -1,10 +1,14 @@
 import contextlib
 import copy
+import os
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
-from maf import core, measurements
+from maf import core, history, measurements
 
 
 def observation(**extra):
@@ -153,6 +157,95 @@ class MeasurementTests(unittest.TestCase):
         self.assertEqual(data["experiment"], "exp-1")
         self.assertEqual(second["experiment"], "exp-1")
         self.assertEqual(measurements.validate(observation(seconds=10 ** 400))["seconds"], 10 ** 400)
+
+
+class MeasurementIntegrationTests(unittest.TestCase):
+    """The real Git/run-state boundary around measurements.record: no mocks, no agents, no user-wide config."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.config_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.config_temp.cleanup)
+        env = patch.dict(os.environ, {"XDG_CONFIG_HOME": self.config_temp.name})
+        env.start()
+        self.addCleanup(env.stop)
+        self.repo = Path(self.temp.name)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.repo)], check=True)
+        core.git(self.repo, "config", "user.email", "test@example.invalid")
+        core.git(self.repo, "config", "user.name", "Measurement Test")
+        (self.repo / "README.md").write_text("Before\n")
+        (self.repo / ".gitignore").write_text("__pycache__/\n")
+        core.git(self.repo, "add", ".")
+        core.git(self.repo, "commit", "-qm", "Initial")
+        core.init(self.repo, "economy")
+        core.git(self.repo, "add", ".maf.json")
+        core.git(self.repo, "commit", "-qm", "Configure MAF")
+        self.config = core.config_for(self.repo)
+        self.assertFalse(core.review_enabled(self.config))  # A verify with no reviewer call is possible.
+        core.confirm_billing(self.repo, self.config)
+
+    def verify_run(self, run_id="measure-answer"):
+        core.git(self.repo, "switch", "-c", "feature")
+        (self.repo / "answer.py").write_text("def answer():\n    return 42\n")
+        core.git(self.repo, "add", "answer.py")
+        core.git(self.repo, "commit", "-qm", "Add answer")
+        task = {"id": run_id, "title": "Add answer", "instructions": "Add the answer function.",
+                "paths": ["answer.py"], "tests": [self.task_tests()], "risk": "docs"}
+        return core.submit(self.repo, task, kind="verify", base_ref="HEAD^", isolated=True,
+                           main_runtime="codex", mode="configured")
+
+    def test_cleaned_integrated_run_keeps_recorded_observation_and_historical_proof(self):
+        run = self.verify_run()
+        with patch.object(core.agents, "run_agent", side_effect=AssertionError("model called")):
+            core.execute(self.repo, run)
+        tested = core.load(self.repo, run["id"])
+        self.assertEqual((tested["kind"], tested["main_runtime"], tested["status"], tested["stage"]),
+                         ("verify", "codex", "tested", "tested"))
+        self.assertNotIn("review", tested)
+        self.assertNotIn("reviewed_sha", tested)
+        self.assertEqual([t["argv"] for t in tested["tests"]], [self.task_tests()])
+        self.assertTrue(all(t["exit_code"] == 0 for t in tested["tests"]))
+        head_before = tested["tested_sha"]
+
+        core.git(self.repo, "switch", "-q", "main")
+        core.git(self.repo, "cherry-pick", head_before)  # Real integration into the base branch.
+        removed = core.clean(self.repo, apply=True)
+        self.assertEqual([row["run"] for row in removed["removed"]], [run["id"]])
+        cleaned = core.load(self.repo, run["id"])
+        self.assertTrue(cleaned["cleaned_at"])
+        self.assertFalse(Path(run["worktree"]).exists())
+        self.assertEqual(core.git(self.repo, "branch", "--list", run["branch"]), "")
+        before = core.load(self.repo, run["id"])
+
+        first = measurements.record(self.repo, run["id"], observation(case="first"))
+        second = measurements.record(self.repo, run["id"], observation(case="second"))
+        after = core.load(self.repo, run["id"])
+        self.assertEqual(after["tested_sha"], before["tested_sha"])
+        self.assertEqual(after["status"], before["status"])
+        self.assertEqual(after["approval"], before["approval"])
+        self.assertEqual(after["tests"], before["tests"])
+        self.assertEqual([entry["case"] for entry in after["observations"]], ["first", "second"])
+        self.assertEqual(after["observations"], [first["observation"], second["observation"]])
+        self.assertEqual(after["observations"][0]["head_sha"], before["tested_sha"])
+
+        data = history.analyze(self.repo)
+        case = next(item for item in data["cases"] if item["run"] == run["id"])
+        self.assertTrue(case["historical_proof"])
+        self.assertEqual(case["head_sha"], before["tested_sha"])
+        self.assertEqual(case["observations"], after["observations"])
+
+    def task_tests(self):
+        return [sys.executable, "-c", "from answer import answer; assert answer() == 42"]
+
+    def test_held_run_lock_blocks_record_and_leaves_state_bytes_unchanged(self):
+        run = self.verify_run(run_id="locked-answer")
+        state = core.run_path(self.repo, run["id"])
+        before = state.read_bytes()
+        with core.run_exclusive(self.repo, run["id"]):
+            with self.assertRaisesRegex(core.FlowError, "active"):
+                measurements.record(self.repo, run["id"], observation())
+        self.assertEqual(state.read_bytes(), before)
 
 
 if __name__ == "__main__":
